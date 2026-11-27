@@ -108,6 +108,15 @@ typedef struct markdown_core_block_turn {
     bool look;
     /* The item a front cut asks for (element.h, markdown_core_cut). */
     markdown_core_cut *cut;
+    /* Where the line starts in the data the reading's tokens count in,
+     * which the compile is handed: a token's bytes are at its `start`, and
+     * on the line at `start - base`. */
+    uint32_t base;
+    /* Where the line's bytes a start read are the line's text again, or
+     * UINT32_MAX: a handler that finds the start makes nothing of them (an
+     * underline under a paragraph its items took whole) gives them back
+     * (markdown_core_give_back), as a resolver makes a token text. */
+    uint32_t gives;
 } markdown_core_block_turn;
 
 /* What a continuation said of the line: not continued, continued, or the
@@ -132,6 +141,11 @@ static inline markdown_core_block_turn *markdown_core_block_turned(const markdow
  * (MARKDOWN_CORE_TOKEN_FLOW). */
 extern const markdown_core_compile_ops MARKDOWN_CORE_FLOW_TOKEN;
 markdown_core_state markdown_core_block_found(markdown_core_tokenizer *tokenizer, uint16_t kind);
+/* The token kind of the element's block token `kind` for the construct
+ * being tried, which enters and exits it itself. */
+static inline uint16_t markdown_core_block_token(const markdown_core_tokenizer *tokenizer, int kind) {
+    return (uint16_t)(((const markdown_core_element_instance *)markdown_core_self(tokenizer))->block_base + kind);
+}
 /* The same, the token reading the line's bytes to `end`, an offset on the
  * line, which the cursor does not move to: a block's text a later step of
  * the line reads from where the cursor stands. */

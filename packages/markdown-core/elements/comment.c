@@ -65,7 +65,7 @@ static bool comment_stops(const markdown_core_element_instance *self, const unsi
 }
 
 /* THE OPENER: a fence line a later fence closes. */
-enum { COMMENT_OPEN, COMMENT_KINDS };
+enum { COMMENT_OPEN, COMMENT_SHUT, COMMENT_KINDS };
 
 /* THE OPENER'S READING, a check of the document's reading: whether a later
  * line under the same prefixes is a fence line (markdown_core_look_next). */
@@ -167,8 +167,7 @@ static int block_matches(const markdown_core_element_instance *self, markdown_co
 }
 
 /* `%` ends a text run and is offered to the scanner, and that is the whole set. */
-static bool close_comment(const markdown_core_element_instance *self, markdown_core_parser *, markdown_core_node *,
-                          markdown_core_node *, markdown_core_reader *);
+static void close_comment(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index);
 
 /* An HTML block of type 2 that its own end condition closed and that
  * holds one comment became a CommentBlock as it closed
@@ -289,6 +288,7 @@ static const markdown_core_block_construct COMMENT_STARTS[] = {
 
 static const markdown_core_compile_ops COMMENT_BLOCK_TOKENS[COMMENT_KINDS] = {
     [COMMENT_OPEN] = {.enter = S_open},
+    [COMMENT_SHUT] = {.exit = close_comment},
 };
 
 static const markdown_core_open_ops COMMENT_OPENS = {
@@ -309,9 +309,9 @@ static markdown_core_state S_continue(markdown_core_tokenizer *tokenizer, int co
 }
 
 static const markdown_core_line_ops COMMENT_LINES = {
+    .shut = &COMMENT_BLOCK_TOKENS[COMMENT_SHUT],
     .continuation = {.start = S_continue},
     .beyond = true,
-    .close = close_comment,
 };
 
 static bufsize_t S_follow_html(const markdown_core_element_instance *self, markdown_core_parser *parser,
@@ -508,11 +508,20 @@ markdown_core_node *markdown_core_comment_make_inline(markdown_core_inline_state
     return markdown_core_inline_make_literal(inline_state, MARKDOWN_CORE_NODE_COMMENT, from, to, literal);
 }
 
-static bool close_comment(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                          markdown_core_node *b, markdown_core_node *parent, markdown_core_reader *reader) {
+static void close_comment(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
+    (void)token;
+    (void)index;
+    markdown_core_block_turn *turn = markdown_core_block_turned(compiler);
+    const markdown_core_element_instance *self = compiler->current->context;
+    markdown_core_parser *parser = turn->parser;
+    markdown_core_node *b = turn->node;
+    markdown_core_node *parent = *turn->container;
+    markdown_core_reader *reader = turn->reader;
     (void)self;
     (void)parser;
+    (void)b;
     (void)parent;
+    (void)reader;
     /* O3: a `%%` block comment arrives here with its lines in `content`:
      * the first is the rest of its fence line, and the closer line is not
      * there, because its matcher closed the block before the line could be
@@ -522,7 +531,6 @@ static bool close_comment(const markdown_core_element_instance *self, markdown_c
      * block comment never takes this arm: it is closed as the HTML block it
      * was parsed as and becomes a CommentBlock there. */
     markdown_core_literal_set(b, b->as.literal, S_percent_open(&b->content), b->content.size);
-    return true;
 }
 
 /* (services.h, MARKDOWN_CORE_SERVICE_HTML_COMMENTS) The comment the HTML

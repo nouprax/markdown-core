@@ -1,9 +1,7 @@
 #include "autolink_scanners.h"
-#include "code_block_scanners.h"
 #include "comment_scanners.h"
 #include "footnote_scanners.h"
 #include "formula_scanners.h"
-#include "heading_scanners.h"
 #include "html_scanners.h"
 #include "link_scanners.h"
 #include "table_scanners.h"
@@ -1689,7 +1687,7 @@ static markdown_core_state test_alone_first(markdown_core_tokenizer *tokenizer, 
  * events in the pass's tokenizer until the pass reads again. */
 static bool test_alone_read(markdown_core_pass *pass, test_alone *alone, const markdown_core_reader *reader,
                             size_t from) {
-    const markdown_core_read read = {.cut = UINT32_MAX, .reader = alone};
+    const markdown_core_read read = {.cut = UINT32_MAX, .reader = alone, .columns = true};
     alone->found = false;
     markdown_core_tokenizer_begin(&pass->tokenizer, &read, markdown_core_state_of(test_alone_first));
     const bool fed =
@@ -8031,9 +8029,6 @@ static void bounded_scanners(test_batch_runner *runner) {
                  {scan_html_block_end_4, "x>", -1},
                  {scan_html_block_end_5, "x]]>", -1},
                  {scan_link_title, "\"title\"", -1},
-                 {scan_atx_heading_start, "## ", -1},
-                 {scan_open_code_fence, "```lang\n", 3},
-                 {scan_close_code_fence, "``` \n", 3},
                  {scan_entity, "&amp;", -1},
                  {scan_dangerous_url, "javascript:", -1},
                  {scan_footnote_definition, "[^note]: ", -1},

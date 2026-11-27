@@ -1,5 +1,4 @@
 #include "services.h"
-#include "code_block_scanners.h"
 #include "code_block.h"
 #include "block_internal.h"
 #include <string.h>
@@ -12,7 +11,6 @@ static const char *const CODE_BLOCK_NEEDS[] = {[CODE_BLOCK_ATTRIBUTES] = MARKDOW
                                                [CODE_BLOCK_ESCAPES] = MARKDOWN_CORE_SERVICE_ESCAPES,
                                                [CODE_BLOCK_REFERENCES] = MARKDOWN_CORE_SERVICE_REFERENCES,
                                                NULL};
-#define peek_at(input, at) ((input)->data[(at)])
 
 /* The end of an indented code block's literal: past the line ending of its
  * last line that is not blank, or its start when every line is: a first
@@ -50,57 +48,24 @@ static bufsize_t S_indented_literal_end(const markdown_core_strbuf *content) {
     return 0;
 }
 
-static int continue_code(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                         markdown_core_reader *reader, markdown_core_node *container) {
-    bool res = false;
-
-    if (!container->as.code->fenced) { // indented
-        if (reader->indent >= CODE_INDENT) {
-            markdown_core_reader_advance(reader, CODE_INDENT, true);
-            res = true;
-        } else if (reader->blank) {
-            markdown_core_reader_skip(reader);
-            res = true;
-        }
-    } else { // fenced
-        bufsize_t matched = 0;
-
-        if (reader->indent <= 3 &&
-            (markdown_core_reader_peek(reader, reader->nonspace) == container->as.code->fence_char)) {
-            matched = scan_close_code_fence(markdown_core_reader_rest(reader, 0), markdown_core_reader_length(reader),
-                                            reader->nonspace);
-        }
-
-        if (matched >= container->as.code->fence_length) {
-            // closing fence - and since we're at
-            // the end of a line, we can stop processing it; the close
-            // notes the fence closed it (close_code):
-            markdown_core_reader_advance(reader, matched, false);
-            return MARKDOWN_CORE_TOKEN_CLOSE;
-        } else {
-            // skip opt. spaces of fence reader->offset
-            int i = container->as.code->fence_offset;
-
-            while (i > 0 && markdown_core_is_space_or_tab(markdown_core_reader_peek(reader, reader->offset))) {
-                markdown_core_reader_advance(reader, 1, true);
-                i--;
-            }
-            res = true;
-        }
-    }
-
-    return res;
-}
-
 /* A code block's literal is a view of its content: an indented block's
  * through its last line that is not blank, a fenced block's after its first
  * line, which is the rest of the fence line and gave the info string as the
  * block opened. */
-static bool close_code(const markdown_core_element_instance *self, markdown_core_parser *parser, markdown_core_node *b,
-                       markdown_core_node *parent, markdown_core_reader *reader) {
+static void close_code(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
+    (void)token;
+    (void)index;
+    markdown_core_block_turn *turn = markdown_core_block_turned(compiler);
+    const markdown_core_element_instance *self = compiler->current->context;
+    markdown_core_parser *parser = turn->parser;
+    markdown_core_node *b = turn->node;
+    markdown_core_node *parent = *turn->container;
+    markdown_core_reader *reader = turn->reader;
     (void)self;
     (void)parser;
+    (void)b;
     (void)parent;
+    (void)reader;
     /* The matcher only decides; what its fence closed is the close's to
      * write. */
     b->as.code->fence_closed = b->as.code->fenced && (b->flags & MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION) != 0;
@@ -108,7 +73,6 @@ static bool close_code(const markdown_core_element_instance *self, markdown_core
     const bufsize_t start = b->as.code->literal_start;
     const bufsize_t end = b->as.code->fenced ? content->size : S_indented_literal_end(content);
     markdown_core_literal_set(b, &b->as.code->literal, start, end);
-    return true;
 }
 /* The character reference at `at`, an `&`, when it spells whitespace, as
  * the info string's decoding reads it: its length; 0 when it spells
@@ -257,91 +221,177 @@ static void S_fence_info(const markdown_core_element_instance *self, markdown_co
         b->as.code->info = markdown_core_optional_chunk_present(info);
     }
 }
-static bool open_fenced(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                        markdown_core_node **container, markdown_core_reader *reader, block_start *start) {
-    bufsize_t matched = start->matched;
+/* WHAT THE FENCE'S START READ (the start's record): where its sequence
+ * begins and ends, offsets on the line. */
+typedef struct {
+    bufsize_t first, past;
+} code_fence;
+MARKDOWN_CORE_BLOCK_FOUND_FITS(code_fence, code_fence_fits);
 
-    *container =
-        markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_CODE_BLOCK, reader->nonspace + 1);
-    if (!*container) {
-        return false;
-    }
-    (*container)->as.code->fenced = true;
-    (*container)->as.code->fence_char = markdown_core_reader_peek(reader, reader->nonspace);
-    (*container)->as.code->fence_length = (matched > 255) ? 255 : (uint8_t)matched;
-    (*container)->as.code->fence_offset = (int8_t)(reader->nonspace - reader->offset);
-    (*container)->as.code->fence_closed = false;
-    markdown_core_reader_advance(reader, reader->nonspace + matched - reader->offset, false);
-    S_fence_info(self, parser, *container, reader);
+enum { CODE_BLOCK_INDENTED, CODE_BLOCK_FENCED, CODE_BLOCK_SEQUENCE, CODE_BLOCK_SHUT, CODE_BLOCK_BLOCKS };
 
-    return true;
+static void S_fence_sequence(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
+    (void)index;
+    markdown_core_block_turn *turn = markdown_core_block_turned(compiler);
+    code_fence *fence = MARKDOWN_CORE_BLOCK_FOUND(turn->start, code_fence);
+    fence->first = (bufsize_t)(token->start - turn->base);
+    fence->past = (bufsize_t)(token->end - turn->base);
 }
-static bool open_indented(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                          markdown_core_node **container, markdown_core_reader *reader, block_start *start) {
-    (void)self;
 
-    markdown_core_reader_advance(reader, CODE_INDENT, true);
-    *container = markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_CODE_BLOCK, reader->offset + 1);
-    if (!*container) {
-        return false;
+/* THE FENCED BLOCK opens as its token exits: at its sequence, which the
+ * spaces before it, its fence's offset, are stripped of every line of. The
+ * rest of its line is its first line of content, which gives its info
+ * string (S_fence_info). */
+static void S_code_block_fenced(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
+    (void)index;
+    markdown_core_block_turn *turn = markdown_core_block_turned(compiler);
+    const code_fence *fence = MARKDOWN_CORE_BLOCK_FOUND(turn->start, code_fence);
+    const bufsize_t matched = fence->past - fence->first;
+    markdown_core_node *const block =
+        markdown_core_parser_add_child(turn->parser, *turn->container, MARKDOWN_CORE_NODE_CODE_BLOCK, fence->first + 1);
+    *turn->container = block;
+    if (!block) {
+        return;
     }
-    (*container)->as.code->fenced = false;
-    (*container)->as.code->fence_char = 0;
-    (*container)->as.code->fence_length = 0;
-    (*container)->as.code->fence_offset = 0;
-    (*container)->as.code->fence_closed = false;
+    block->as.code->fenced = true;
+    block->as.code->fence_char = compiler->data[turn->base + (uint32_t)fence->first];
+    block->as.code->fence_length = (matched > 255) ? 255 : (uint8_t)matched;
+    block->as.code->fence_offset = (int8_t)(fence->first - (bufsize_t)(token->start - turn->base));
+    block->as.code->fence_closed = false;
+    S_fence_info(markdown_core_compile_self(compiler), turn->parser, block, turn->reader);
+    turn->opened = true;
+}
+
+/* THE INDENTED BLOCK opens past its four columns of indentation. */
+static void S_code_block_indented(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
+    (void)index;
+    markdown_core_block_turn *turn = markdown_core_block_turned(compiler);
+    markdown_core_parser *parser = turn->parser;
+    const bufsize_t at = (bufsize_t)(token->end - turn->base);
+    markdown_core_node *const block =
+        markdown_core_parser_add_child(parser, *turn->container, MARKDOWN_CORE_NODE_CODE_BLOCK, at + 1);
+    *turn->container = block;
+    if (!block) {
+        return;
+    }
+    block->as.code->fenced = false;
+    block->as.code->fence_char = 0;
+    block->as.code->fence_length = 0;
+    block->as.code->fence_offset = 0;
+    block->as.code->fence_closed = false;
     /* An indented code block has no fence and therefore no info
      * string, ever. */
-    (*container)->as.code->info = markdown_core_optional_chunk_absent();
-    (*container)->as.code->literal_start = 0;
+    block->as.code->info = markdown_core_optional_chunk_absent();
+    block->as.code->literal_start = 0;
     /* Its literal starts where it does. */
-    const markdown_core_field_to fields = {parser, *container, NULL, reader, 0, NULL};
-    markdown_core_field_put(&fields, MARKDOWN_CORE_SLOT_NONE, MARKDOWN_CORE_FIELD_LINES, reader->offset, reader->offset,
-                            false);
-
-    return true;
-}
-enum { CODE_BLOCK_INDENTED, CODE_BLOCK_FENCED, CODE_BLOCK_BLOCKS };
-
-static void S_code_block_indented(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
-    (void)token;
-    (void)index;
-    markdown_core_block_turn *turn = markdown_core_block_turned(compiler);
-    turn->opened = open_indented(markdown_core_compile_self(compiler), turn->parser, turn->container,
-                                 turn->context->reader, turn->start);
+    const markdown_core_field_to fields = {parser, block, NULL, turn->reader, 0, NULL};
+    markdown_core_field_put(&fields, MARKDOWN_CORE_SLOT_NONE, MARKDOWN_CORE_FIELD_LINES, at, at, false);
+    turn->opened = true;
 }
 
-static void S_code_block_fenced(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
-    (void)token;
-    (void)index;
-    markdown_core_block_turn *turn = markdown_core_block_turned(compiler);
-    turn->opened = open_fenced(markdown_core_compile_self(compiler), turn->parser, turn->container,
-                               turn->context->reader, turn->start);
+/* THE CODE'S CONSTRUCTS (micromark's codeIndented and codeFenced). The
+ * frame keeps the column the construct began at, the fence's marker and
+ * its sequence's length. */
+enum { CODE_COLUMN, CODE_MARKER, CODE_COUNT };
+
+/* The line's end, after spaces. */
+static markdown_core_state S_blank_after(markdown_core_tokenizer *tokenizer, int code) {
+    return markdown_core_code_ending(code) ? markdown_core_ok(tokenizer) : markdown_core_nok(tokenizer);
 }
 
-static markdown_core_state scan_code(markdown_core_tokenizer *tokenizer, int code) {
+static markdown_core_state S_found(markdown_core_tokenizer *tokenizer, int code) {
     (void)code;
-    block_start_context *context = markdown_core_block_turn_of(tokenizer)->context;
-    block_start *start = markdown_core_block_turn_of(tokenizer)->start;
-    uint16_t open = CODE_BLOCK_INDENTED;
-    if (context->reader->indent >= CODE_INDENT) {
-        /* Indented code interrupts no paragraph, and a lazy line is text. */
-        if (context->paragraph || context->lazy ||
-            markdown_core_is_line_end(markdown_core_reader_peek(context->reader, context->reader->nonspace))) {
-            return markdown_core_nok(tokenizer);
-        }
-        open = CODE_BLOCK_INDENTED;
-    } else {
-        start->matched = scan_open_code_fence(markdown_core_reader_rest(context->reader, 0),
-                                              markdown_core_reader_length(context->reader), context->reader->nonspace);
-        if (!start->matched) {
-            return markdown_core_nok(tokenizer);
-        }
-        open = CODE_BLOCK_FENCED;
-    }
-    start->kind = MARKDOWN_CORE_NODE_CODE_BLOCK;
-    return markdown_core_block_found(tokenizer, open);
+    return markdown_core_ok(tokenizer);
 }
+
+static markdown_core_state S_lost(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    return markdown_core_nok(tokenizer);
+}
+
+/* Four columns of indentation, a line not blank past them. */
+static markdown_core_state S_indented_after(markdown_core_tokenizer *tokenizer, int code) {
+    if (markdown_core_column(tokenizer) - markdown_core_frame_local(tokenizer)[CODE_COLUMN] < CODE_INDENT) {
+        return markdown_core_nok(tokenizer);
+    }
+    markdown_core_exit(tokenizer, markdown_core_block_token(tokenizer, CODE_BLOCK_INDENTED));
+    /* A blank line opens none. The indentation's codes read the bytes that
+     * continue a scalar after them as theirs (markdown_core_consume): a line
+     * of a stray one is not blank, though the indentation took it. */
+    if (tokenizer->data[tokenizer->position - 1] != ' ' && tokenizer->data[tokenizer->position - 1] != '\t') {
+        return S_found(tokenizer, code);
+    }
+    return markdown_core_check(tokenizer, &markdown_core_blank_line, markdown_core_state_of(S_lost),
+                               markdown_core_state_of(S_found), code);
+}
+
+static markdown_core_state S_indented(markdown_core_tokenizer *tokenizer, int code) {
+    const block_start_context *context = markdown_core_block_turn_of(tokenizer)->context;
+    /* Indented code interrupts no paragraph, and a lazy line is text. */
+    if (context->paragraph || context->lazy) {
+        return markdown_core_nok(tokenizer);
+    }
+    markdown_core_block_turn_of(tokenizer)->start->kind = MARKDOWN_CORE_NODE_CODE_BLOCK;
+    markdown_core_frame_local(tokenizer)[CODE_COLUMN] = markdown_core_column(tokenizer);
+    markdown_core_enter(tokenizer, markdown_core_block_token(tokenizer, CODE_BLOCK_INDENTED));
+    return markdown_core_spaces(tokenizer, markdown_core_state_of(S_indented_after), 0, CODE_INDENT, code);
+}
+
+/* THE INFO: the rest of the fence's line holds no backtick after a fence
+ * of backticks, the sequence's last byte. */
+static markdown_core_state S_info(markdown_core_tokenizer *tokenizer, int code) {
+    if (markdown_core_code_ending(code)) {
+        return markdown_core_ok(tokenizer);
+    }
+    if (code == '`') {
+        return markdown_core_nok(tokenizer);
+    }
+    markdown_core_consume(tokenizer);
+    return markdown_core_state_of(S_info);
+}
+
+static markdown_core_state S_info_start(markdown_core_tokenizer *tokenizer, int code) {
+    if (markdown_core_code_at(tokenizer, -1) != '`') {
+        /* A fence of tildes takes any info. */
+        return markdown_core_ok(tokenizer);
+    }
+    return S_info(tokenizer, code);
+}
+
+static const markdown_core_construct CODE_INFO = {.start = S_info_start};
+
+static markdown_core_state S_fence(markdown_core_tokenizer *tokenizer, int code) {
+    uint32_t *words = markdown_core_frame_local(tokenizer);
+    if (code == (int)words[CODE_MARKER]) {
+        markdown_core_consume(tokenizer);
+        words[CODE_COUNT]++;
+        return markdown_core_state_of(S_fence);
+    }
+    if (words[CODE_COUNT] < 3) {
+        return markdown_core_nok(tokenizer);
+    }
+    markdown_core_exit(tokenizer, markdown_core_block_token(tokenizer, CODE_BLOCK_SEQUENCE));
+    markdown_core_exit(tokenizer, markdown_core_block_token(tokenizer, CODE_BLOCK_FENCED));
+    return markdown_core_check(tokenizer, &CODE_INFO, markdown_core_state_of(S_found), markdown_core_state_of(S_lost),
+                               code);
+}
+
+static markdown_core_state S_fence_first(markdown_core_tokenizer *tokenizer, int code) {
+    if (code != '`' && code != '~') {
+        return markdown_core_nok(tokenizer);
+    }
+    markdown_core_frame_local(tokenizer)[CODE_MARKER] = (uint32_t)code;
+    markdown_core_enter(tokenizer, markdown_core_block_token(tokenizer, CODE_BLOCK_SEQUENCE));
+    return S_fence(tokenizer, code);
+}
+
+static markdown_core_state S_fenced(markdown_core_tokenizer *tokenizer, int code) {
+    markdown_core_block_turn_of(tokenizer)->start->kind = MARKDOWN_CORE_NODE_CODE_BLOCK;
+    markdown_core_enter(tokenizer, markdown_core_block_token(tokenizer, CODE_BLOCK_FENCED));
+    return markdown_core_spaces(tokenizer, markdown_core_state_of(S_fence_first), MARKDOWN_CORE_TOKEN_SPACE, UINT32_MAX,
+                                code);
+}
+
 static bool blank_line(const markdown_core_element_instance *self, markdown_core_parser *parser,
                        markdown_core_node *node, markdown_core_reader *reader) {
     (void)reader;
@@ -380,35 +430,95 @@ static const markdown_core_content_ops CODE_BLOCK_CONTENT = {
 };
 
 static const markdown_core_block_construct CODE_BLOCK_STARTS[] = {
-    {.bytes = "`~", .indent = INT_MAX, .construct = {.start = scan_code}},
+    {.bytes = "", .indent = INT_MAX, .construct = {.start = S_indented}},
+    {.bytes = "`~", .indent = 3, .construct = {.start = S_fenced}},
 };
 
 static const markdown_core_compile_ops CODE_BLOCK_BLOCK_TOKENS[CODE_BLOCK_BLOCKS] = {
     [CODE_BLOCK_INDENTED] = {.enter = S_code_block_indented},
-    [CODE_BLOCK_FENCED] = {.enter = S_code_block_fenced},
+    [CODE_BLOCK_FENCED] = {.exit = S_code_block_fenced},
+    [CODE_BLOCK_SEQUENCE] = {.enter = S_fence_sequence},
+    [CODE_BLOCK_SHUT] = {.exit = close_code},
 };
 
 static const markdown_core_open_ops CODE_BLOCK_OPENS = {
     .starts = CODE_BLOCK_STARTS,
-    .start_count = 1,
+    .start_count = 2,
     .tokens = CODE_BLOCK_BLOCK_TOKENS,
     .token_count = CODE_BLOCK_BLOCKS,
 };
 
-/* THE CONTINUATION (element.h, markdown_core_line_ops `continuation`). */
+/* THE CONTINUATION (element.h, markdown_core_line_ops `continuation`): an
+ * indented block's four columns of indentation, or a blank line; a fenced
+ * block's closing fence, which closes it on its line, or the spaces of its
+ * fence's offset. A block of its kind holds no block a lookahead adds. */
+static markdown_core_state S_closing_after(markdown_core_tokenizer *tokenizer, int code) {
+    if (!markdown_core_code_ending(code)) {
+        return markdown_core_nok(tokenizer);
+    }
+    return markdown_core_block_continued(tokenizer, MARKDOWN_CORE_TOKEN_CLOSE);
+}
+
+static markdown_core_state S_closing(markdown_core_tokenizer *tokenizer, int code) {
+    const markdown_core_node *node = markdown_core_block_turn_of(tokenizer)->node;
+    uint32_t *words = markdown_core_frame_local(tokenizer);
+    if (code == node->as.code->fence_char) {
+        markdown_core_consume(tokenizer);
+        words[CODE_COUNT]++;
+        return markdown_core_state_of(S_closing);
+    }
+    if (words[CODE_COUNT] < 3 || words[CODE_COUNT] < node->as.code->fence_length) {
+        return markdown_core_nok(tokenizer);
+    }
+    return markdown_core_spaces(tokenizer, markdown_core_state_of(S_closing_after), MARKDOWN_CORE_TOKEN_PREFIX,
+                                UINT32_MAX, code);
+}
+
+static markdown_core_state S_closing_first(markdown_core_tokenizer *tokenizer, int code) {
+    return code == markdown_core_block_turn_of(tokenizer)->node->as.code->fence_char ? S_closing(tokenizer, code)
+                                                                                     : markdown_core_nok(tokenizer);
+}
+
+static markdown_core_state S_closing_start(markdown_core_tokenizer *tokenizer, int code) {
+    return markdown_core_spaces(tokenizer, markdown_core_state_of(S_closing_first), MARKDOWN_CORE_TOKEN_PREFIX, 3,
+                                code);
+}
+
+static const markdown_core_construct CODE_CLOSING = {.start = S_closing_start};
+
+static markdown_core_state S_offset(markdown_core_tokenizer *tokenizer, int code) {
+    const markdown_core_node *node = markdown_core_block_turn_of(tokenizer)->node;
+    return markdown_core_spaces(tokenizer, markdown_core_state_of(S_found), MARKDOWN_CORE_TOKEN_PREFIX,
+                                (uint32_t)node->as.code->fence_offset, code);
+}
+
+static markdown_core_state S_indent_after(markdown_core_tokenizer *tokenizer, int code) {
+    if (markdown_core_column(tokenizer) - markdown_core_frame_local(tokenizer)[CODE_COLUMN] >= CODE_INDENT) {
+        return markdown_core_ok(tokenizer);
+    }
+    /* A blank line goes on in the block, past its spaces. */
+    return markdown_core_spaces(tokenizer, markdown_core_state_of(S_blank_after), MARKDOWN_CORE_TOKEN_PREFIX,
+                                UINT32_MAX, code);
+}
+
 static markdown_core_state S_continue(markdown_core_tokenizer *tokenizer, int code) {
-    (void)code;
     markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
-    /* A block of its kind holds no block a lookahead adds. */
-    return markdown_core_block_verdict(
-        tokenizer, turn->look ? MARKDOWN_CORE_LINE_OFF
-                              : continue_code(markdown_core_self(tokenizer), turn->parser, turn->reader, turn->node));
+    if (turn->look) {
+        return markdown_core_nok(tokenizer);
+    }
+    if (turn->node->as.code->fenced) {
+        return markdown_core_attempt(tokenizer, &CODE_CLOSING, markdown_core_state_of(S_found),
+                                     markdown_core_state_of(S_offset), code);
+    }
+    markdown_core_frame_local(tokenizer)[CODE_COLUMN] = markdown_core_column(tokenizer);
+    return markdown_core_spaces(tokenizer, markdown_core_state_of(S_indent_after), MARKDOWN_CORE_TOKEN_PREFIX,
+                                CODE_INDENT, code);
 }
 
 static const markdown_core_line_ops CODE_BLOCK_LINES = {
+    .shut = &CODE_BLOCK_BLOCK_TOKENS[CODE_BLOCK_SHUT],
     .continuation = {.start = S_continue},
     .beyond = true,
-    .close = close_code,
     .blank_last = blank_line,
 };
 

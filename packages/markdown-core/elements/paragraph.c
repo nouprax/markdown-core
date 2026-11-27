@@ -6,10 +6,21 @@
 /* A paragraph closing inside `parent`, past the items its text opened with
  * (`cuts`, blocks.c, THE FRONT CUT), yields itself less a block identifier
  * at the back of its text. */
-static bool close_paragraph(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                            markdown_core_node *paragraph, markdown_core_node *parent, markdown_core_reader *reader) {
+static void close_paragraph(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
+    (void)token;
+    (void)index;
+    markdown_core_block_turn *turn = markdown_core_block_turned(compiler);
+    const markdown_core_element_instance *self = compiler->current->context;
+    markdown_core_parser *parser = turn->parser;
+    markdown_core_node *paragraph = turn->node;
+    markdown_core_node *parent = *turn->container;
+    markdown_core_reader *reader = turn->reader;
+    (void)self;
+    (void)parser;
+    (void)paragraph;
+    (void)parent;
+    (void)reader;
     markdown_core_block_attach_paragraph_identifier(self->state, parser, paragraph, parent, reader);
-    return true;
 }
 
 static int continue_paragraph(const markdown_core_element_instance *self, markdown_core_parser *parser,
@@ -54,7 +65,7 @@ static const markdown_core_follow PARAGRAPH_FOLLOWS[] = {
  * the nearest container that holds one, but an identifier line, which
  * names the block before it when the boundary follows (block_identifier.c,
  * THE IDENTIFIER LINE), read by a check of the document's reading. */
-enum { PARAGRAPH_OPEN, PARAGRAPH_NAMES, PARAGRAPH_BLOCKS };
+enum { PARAGRAPH_OPEN, PARAGRAPH_NAMES, PARAGRAPH_SHUT, PARAGRAPH_BLOCKS };
 
 typedef struct {
     markdown_core_node *parent;
@@ -158,6 +169,7 @@ static const markdown_core_block_construct PARAGRAPH_CONTENT_START = {.construct
 static const markdown_core_compile_ops PARAGRAPH_BLOCK_TOKENS[PARAGRAPH_BLOCKS] = {
     [PARAGRAPH_OPEN] = {.enter = S_paragraph_open},
     [PARAGRAPH_NAMES] = {.enter = S_paragraph_names},
+    [PARAGRAPH_SHUT] = {.exit = close_paragraph},
 };
 
 static const markdown_core_open_ops PARAGRAPH_OPENS = {
@@ -178,10 +190,10 @@ static markdown_core_state S_continue(markdown_core_tokenizer *tokenizer, int co
 }
 
 static const markdown_core_line_ops PARAGRAPH_LINES = {
+    .shut = &PARAGRAPH_BLOCK_TOKENS[PARAGRAPH_SHUT],
     .continuation = {.start = S_continue},
     .beyond = true,
     .lazy = accepts_lazy,
-    .close = close_paragraph,
     .cuts = true,
 };
 

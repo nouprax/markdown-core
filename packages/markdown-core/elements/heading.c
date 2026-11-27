@@ -1,6 +1,5 @@
 #include "alloc.h"
 #include "claim.h"
-#include "heading_scanners.h"
 #include "heading.h"
 #include "services.h"
 #include "inline_internal.h"
@@ -33,8 +32,18 @@ typedef struct {
 /* A heading closes and asks the names service for a name (names.h),
  * which it assigns as the parse ends; the heading declares its label as
  * its inline content is parsed (markdown_core_headings_prepare). */
-static bool close_heading(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                          markdown_core_node *node, markdown_core_node *parent, markdown_core_reader *reader) {
+static void close_heading(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
+    (void)token;
+    (void)index;
+    markdown_core_block_turn *turn = markdown_core_block_turned(compiler);
+    const markdown_core_element_instance *self = compiler->current->context;
+    markdown_core_parser *parser = turn->parser;
+    markdown_core_node *node = turn->node;
+    markdown_core_node *parent = *turn->container;
+    markdown_core_reader *reader = turn->reader;
+    (void)self;
+    (void)parser;
+    (void)node;
     (void)parent;
     (void)reader;
     /* The end of its text is offered (element.h, markdown_core_follow):
@@ -43,7 +52,6 @@ static bool close_heading(const markdown_core_element_instance *self, markdown_c
     const markdown_core_field_to fields = {parser, node, &node->content_map, NULL, node->cut_front, NULL};
     node->cut_back += markdown_core_parser_offer(parser, node, text.data, 0, text.len, false, &fields);
     markdown_core_parser_name(parser, self, node);
-    return true;
 }
 
 /* Whether a line ends in the `size` bytes at `bytes`: read a window at a
@@ -398,102 +406,129 @@ void markdown_core_heading_begin_inlines(const markdown_core_element_instance *s
     run->label_end = markdown_core_inline_size(inline_state);
 }
 
-#define peek_at(input, at) ((input)->data[(at)])
-static bool open_atx(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                     markdown_core_node **container, markdown_core_reader *reader, block_start *start) {
-    (void)self;
-    bufsize_t matched = start->matched;
+enum { HEADING_ATX, HEADING_SETEXT, HEADING_SEQUENCE, HEADING_SHUT, HEADING_BLOCKS };
 
-    bufsize_t hashpos;
-    int level = 0;
-    bufsize_t heading_startpos = reader->nonspace;
-
-    markdown_core_reader_advance(reader, reader->nonspace + matched - reader->offset, false);
-    *container = markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_HEADING, heading_startpos + 1);
-    if (!*container) {
-        return false;
+/* THE ATX HEADING opens as its token is compiled, at the token's first
+ * byte; its sequence gives its level. What its start read is its own: the
+ * text after it, the line's to give it, is its content. */
+static void S_heading_atx(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
+    (void)index;
+    markdown_core_block_turn *turn = markdown_core_block_turned(compiler);
+    const bufsize_t at = (bufsize_t)(token->start - turn->base), end = (bufsize_t)(token->end - turn->base);
+    *turn->container =
+        markdown_core_parser_add_child(turn->parser, *turn->container, MARKDOWN_CORE_NODE_HEADING, at + 1);
+    if (!*turn->container) {
+        return;
     }
-
-    markdown_core_chunk line = {(unsigned char *)markdown_core_reader_rest(reader, 0),
-                                markdown_core_reader_length(reader), 0};
-    hashpos = markdown_core_chunk_strchr(&line, '#', reader->nonspace);
-
-    while (markdown_core_reader_peek(reader, hashpos) == '#') {
-        level++;
-        hashpos++;
-    }
-
-    (*container)->as.heading->level = level;
-    (*container)->as.heading->setext = false;
-    (*container)->internal_offset = matched;
-
-    return true;
+    (*turn->container)->as.heading->setext = false;
+    /* A start that read to the line's end read its ending too. */
+    (*turn->container)->internal_offset = end - at + (end + 1 == markdown_core_reader_length(turn->reader));
+    turn->opened = true;
 }
-static bool open_setext(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                        markdown_core_node **container, markdown_core_reader *reader, block_start *start) {
-    (void)self;
-    bufsize_t matched = start->matched;
-    /* The change of kind cuts the items the paragraph's text opens with
-     * first (blocks.c, THE FRONT CUT): what is left becomes the heading. */
-    markdown_core_node *parent = markdown_core_parser_parent(parser, *container);
-    markdown_core_node_set_kind_result result =
-        markdown_core_parser_set_node_kind(parser, *container, parent, MARKDOWN_CORE_NODE_HEADING);
+
+static void S_heading_sequence(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
+    (void)index;
+    markdown_core_block_turn *turn = markdown_core_block_turned(compiler);
+    if (turn->opened) {
+        (*turn->container)->as.heading->level = (int)(token->end - token->start);
+    }
+}
+
+/* THE UNDERLINE makes the paragraph it follows a heading, its level by
+ * its marker. The change of kind cuts the items the paragraph's text opens
+ * with first (blocks.c, THE FRONT CUT): what is left becomes the
+ * heading. */
+static void S_heading_setext(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
+    (void)index;
+    markdown_core_block_turn *turn = markdown_core_block_turned(compiler);
+    markdown_core_parser *parser = turn->parser;
+    markdown_core_node *const node = *turn->container;
+    const markdown_core_node_set_kind_result result = markdown_core_parser_set_node_kind(
+        parser, node, markdown_core_parser_parent(parser, node), MARKDOWN_CORE_NODE_HEADING);
     if (result == MARKDOWN_CORE_NODE_SET_KIND_CUT) {
-        return true;
+        /* The paragraph's items took its text whole: the underline is the
+         * text of the paragraph it is left. */
+        turn->gives = token->start;
+        turn->opened = true;
+        return;
     }
     if (result != MARKDOWN_CORE_NODE_SET_KIND_OK) {
+        /* A heading its holder declines: the underline is the paragraph's
+         * text. */
         if (result == MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         }
-        return false;
+        turn->gives = token->start;
+        return;
     }
-    (*container)->as.heading->level = matched;
-    (*container)->as.heading->setext = true;
-    markdown_core_reader_end(reader);
-    return true;
-}
-enum { HEADING_ATX, HEADING_SETEXT, HEADING_BLOCKS };
-
-static void S_heading_atx(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
-    (void)token;
-    (void)index;
-    markdown_core_block_turn *turn = markdown_core_block_turned(compiler);
-    turn->opened = open_atx(markdown_core_compile_self(compiler), turn->parser, turn->container, turn->context->reader,
-                            turn->start);
+    node->as.heading->level = compiler->data[token->start] == '=' ? 1 : 2;
+    node->as.heading->setext = true;
+    turn->opened = true;
 }
 
-static void S_heading_setext(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
-    (void)token;
-    (void)index;
-    markdown_core_block_turn *turn = markdown_core_block_turned(compiler);
-    turn->opened = open_setext(markdown_core_compile_self(compiler), turn->parser, turn->container,
-                               turn->context->reader, turn->start);
+/* THE HEADING'S START (micromark's headingAtx, and setextUnderline on a
+ * paragraph's line): an ATX heading's sequence of one to six `#`, then
+ * spaces or the line's end; an underline's run of `=` or `-` and only
+ * spaces after it. The frame keeps the count and the marker. */
+enum { HEADING_COUNT, HEADING_MARKER };
+
+static markdown_core_state S_atx_after(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    markdown_core_exit(tokenizer, markdown_core_block_token(tokenizer, HEADING_ATX));
+    return markdown_core_ok(tokenizer);
+}
+
+static markdown_core_state S_atx_sequence(markdown_core_tokenizer *tokenizer, int code) {
+    uint32_t *words = markdown_core_frame_local(tokenizer);
+    if (code == '#' && words[HEADING_COUNT] < 6) {
+        markdown_core_consume(tokenizer);
+        words[HEADING_COUNT]++;
+        return markdown_core_state_of(S_atx_sequence);
+    }
+    if (markdown_core_code_space(code) || markdown_core_code_ending(code)) {
+        markdown_core_exit(tokenizer, markdown_core_block_token(tokenizer, HEADING_SEQUENCE));
+        return markdown_core_spaces(tokenizer, markdown_core_state_of(S_atx_after), MARKDOWN_CORE_TOKEN_SPACE,
+                                    UINT32_MAX, code);
+    }
+    return markdown_core_nok(tokenizer);
+}
+
+static markdown_core_state S_underline_after(markdown_core_tokenizer *tokenizer, int code) {
+    if (!markdown_core_code_ending(code)) {
+        return markdown_core_nok(tokenizer);
+    }
+    markdown_core_exit(tokenizer, markdown_core_block_token(tokenizer, HEADING_SETEXT));
+    return markdown_core_ok(tokenizer);
+}
+
+static markdown_core_state S_underline(markdown_core_tokenizer *tokenizer, int code) {
+    if (code == (int)markdown_core_frame_local(tokenizer)[HEADING_MARKER]) {
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_underline);
+    }
+    return markdown_core_spaces(tokenizer, markdown_core_state_of(S_underline_after), MARKDOWN_CORE_TOKEN_SPACE,
+                                UINT32_MAX, code);
+}
+
+static markdown_core_state S_heading_first(markdown_core_tokenizer *tokenizer, int code) {
+    const block_start_context *context = markdown_core_block_turn_of(tokenizer)->context;
+    if (code == '#') {
+        markdown_core_enter(tokenizer, markdown_core_block_token(tokenizer, HEADING_ATX));
+        markdown_core_enter(tokenizer, markdown_core_block_token(tokenizer, HEADING_SEQUENCE));
+        return S_atx_sequence(tokenizer, code);
+    }
+    if (context->paragraph && (code == '=' || code == '-')) {
+        markdown_core_frame_local(tokenizer)[HEADING_MARKER] = (uint32_t)code;
+        markdown_core_enter(tokenizer, markdown_core_block_token(tokenizer, HEADING_SETEXT));
+        return S_underline(tokenizer, code);
+    }
+    return markdown_core_nok(tokenizer);
 }
 
 static markdown_core_state scan_heading(markdown_core_tokenizer *tokenizer, int code) {
-    (void)code;
-    block_start_context *context = markdown_core_block_turn_of(tokenizer)->context;
-    block_start *start = markdown_core_block_turn_of(tokenizer)->start;
-    uint16_t open = HEADING_ATX;
-    /* The line is read past its first byte only when that byte may begin
-     * the heading's line: a `#`, or an underline's `=` or `-`. */
-    const unsigned char first = markdown_core_reader_peek(context->reader, context->reader->nonspace);
-    if (first == '#' && (start->matched = scan_atx_heading_start(markdown_core_reader_rest(context->reader, 0),
-                                                                 markdown_core_reader_length(context->reader),
-                                                                 context->reader->nonspace))) {
-        open = HEADING_ATX;
-    } else if (context->paragraph && (first == '=' || first == '-') &&
-               markdown_core_reader_blank_from(
-                   context->reader, context->reader->nonspace +
-                                        markdown_core_reader_run(context->reader, context->reader->nonspace, first))) {
-        /* An underline: a run of one of them, and only spaces after it. */
-        start->matched = first == '=' ? 1 : 2;
-        open = HEADING_SETEXT;
-    } else {
-        return markdown_core_nok(tokenizer);
-    }
-    start->kind = MARKDOWN_CORE_NODE_HEADING;
-    return markdown_core_block_found(tokenizer, open);
+    markdown_core_block_turn_of(tokenizer)->start->kind = MARKDOWN_CORE_NODE_HEADING;
+    return markdown_core_spaces(tokenizer, markdown_core_state_of(S_heading_first), MARKDOWN_CORE_TOKEN_SPACE,
+                                UINT32_MAX, code);
 }
 static int continue_heading(const markdown_core_element_instance *self, markdown_core_parser *parser,
                             markdown_core_reader *reader, markdown_core_node *container) {
@@ -620,6 +655,8 @@ static const markdown_core_block_construct HEADING_STARTS[] = {
 static const markdown_core_compile_ops HEADING_BLOCK_TOKENS[HEADING_BLOCKS] = {
     [HEADING_ATX] = {.enter = S_heading_atx},
     [HEADING_SETEXT] = {.enter = S_heading_setext},
+    [HEADING_SEQUENCE] = {.enter = S_heading_sequence},
+    [HEADING_SHUT] = {.exit = close_heading},
 };
 
 static const markdown_core_open_ops HEADING_OPENS = {
@@ -641,9 +678,9 @@ static markdown_core_state S_continue(markdown_core_tokenizer *tokenizer, int co
 }
 
 static const markdown_core_line_ops HEADING_LINES = {
+    .shut = &HEADING_BLOCK_TOKENS[HEADING_SHUT],
     .continuation = {.start = S_continue},
     .beyond = true,
-    .close = close_heading,
     .blank_opaque = true,
 };
 

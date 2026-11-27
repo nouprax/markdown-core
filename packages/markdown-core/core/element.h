@@ -572,17 +572,19 @@ struct markdown_core_line_ops {
      * the document's reading (the turn's `node` the block): its success
      * closes the block there. Its start NULL for none. */
     markdown_core_construct ends;
-    /* THE CLOSE HOOK, asked of a block as it closes inside the block that
-     * holds it, which it settles into later. It reads the block -- its
-     * content, its children and its open state -- and makes the node the
-     * block settles as from them, never writing them: what it makes of the
-     * content is a view of it, a literal or the cuts of its text. What the
-     * block yields to its holder is settled into the holder before it (a
-     * paragraph's References) or written on the holder (a block identifier
-     * on a list item's first line). False when the block yields no node of
-     * its own: a paragraph whose text was all reference definitions. */
-    bool (*close)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
-                  markdown_core_node *, markdown_core_reader *);
+    /* THE BLOCK'S EXIT (plan symbols-cleanroom.md 23.16.1, P2): the token
+     * of the element's (one of its open ops' `tokens`) whose exit the core
+     * compiles as a block of the element's closes inside the block that
+     * holds it, which it settles into later, NULL for none. Its handler
+     * reads the block through the turn (`node`, `*container` the holder,
+     * `reader`) -- its content, its children and its open state -- and
+     * makes the node the block settles as from them, never writing them:
+     * what it makes of the content is a view of it, a literal or the cuts of
+     * its text. What the block yields to its holder is settled into the
+     * holder before it or written on the holder (a block identifier on a
+     * list item's first line). The token covers no bytes: the block's are
+     * read. */
+    const struct markdown_core_compile_ops *shut;
     /* Its blocks' text may open with items the dialect's elements cut off
      * its front (blocks.c, THE FRONT CUT), which the engine cuts as a block
      * closes or changes kind; a block whose text was all such items yields

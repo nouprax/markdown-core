@@ -196,7 +196,7 @@ static bool markdown_core_definition_list_open(const markdown_core_element_insta
     return true;
 }
 
-enum { DEFINITION_LIST_BODY, DEFINITION_LIST_TERM, DEFINITION_LIST_BLOCKS };
+enum { DEFINITION_LIST_BODY, DEFINITION_LIST_TERM, DEFINITION_LIST_SHUT, DEFINITION_LIST_BLOCKS };
 
 static void S_definition_list_body(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
     (void)token;
@@ -309,17 +309,25 @@ static bool continue_container(const markdown_core_element_instance *self, markd
 /* A definition list, a definition and a body end where their last child
  * ends, and a body without children ends with its marker's line: taken as
  * each closes, once its children have settled. */
-static bool close_block(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                        markdown_core_node *node, markdown_core_node *parent, markdown_core_reader *reader) {
+static void close_block(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
+    (void)token;
+    (void)index;
+    markdown_core_block_turn *turn = markdown_core_block_turned(compiler);
+    const markdown_core_element_instance *self = compiler->current->context;
+    markdown_core_parser *parser = turn->parser;
+    markdown_core_node *node = turn->node;
+    markdown_core_node *parent = *turn->container;
+    markdown_core_reader *reader = turn->reader;
     (void)self;
     (void)parser;
+    (void)node;
     (void)parent;
+    (void)reader;
     if (node->child_count) {
         node->place.end = node->children[node->child_count - 1]->place.end;
     } else if (node->kind == MARKDOWN_CORE_NODE_DEFINITION_BODY) {
         node->place.end = (uint32_t)node->internal_offset;
     }
-    return true;
 }
 
 static const markdown_core_node_type DEFINITION_LIST_KINDS[] = {MARKDOWN_CORE_NODE_DEFINITION_LIST,
@@ -382,6 +390,7 @@ static const markdown_core_block_construct DEFINITION_LIST_STARTS[] = {
 static const markdown_core_compile_ops DEFINITION_LIST_TOKENS[DEFINITION_LIST_BLOCKS] = {
     [DEFINITION_LIST_BODY] = {.enter = S_definition_list_body},
     [DEFINITION_LIST_TERM] = {.enter = S_definition_list_term},
+    [DEFINITION_LIST_SHUT] = {.exit = close_block},
 };
 
 static const markdown_core_open_ops DEFINITION_LIST_OPENS = {
@@ -474,8 +483,8 @@ static markdown_core_state S_continue(markdown_core_tokenizer *tokenizer, int co
 }
 
 static const markdown_core_line_ops DEFINITION_LIST_LINES = {
+    .shut = &DEFINITION_LIST_TOKENS[DEFINITION_LIST_SHUT],
     .continuation = {.start = S_continue},
-    .close = close_block,
 };
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_DEFINITION_LIST = {

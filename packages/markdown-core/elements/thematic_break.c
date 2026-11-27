@@ -1,79 +1,91 @@
 #include "thematic_break.h"
 #include "block_internal.h"
 
-/* WHERE A BREAK FAILED ON THE LINE (the element's parse record): a scan
- * from a byte at or before it fails there too, for every container the
- * line opens asks again at a later byte ("- - - a" asks at each marker),
- * so the line is scanned once. It holds for the visit of the line it was
- * noted on, while the line keeps its length. */
+/* WHERE A BREAK FAILED ON THE LINE (the element's parse record): a start
+ * at a byte at or before it fails there too, for every container the line
+ * opens asks again at a later byte ("- - - a" asks at each marker), so the
+ * line is read once. It holds for the visit of the line it was noted on,
+ * the line starting at `base` (a line that grows is visited again). */
 typedef struct {
     size_t visit;
-    bufsize_t length, kill;
+    uint32_t base, kill;
 } thematic_break_work;
 
-static int S_scan_thematic_break(markdown_core_reader *reader, bufsize_t offset, bufsize_t *kill) {
-    bufsize_t i;
-    char c;
-    char nextc = '\0';
-    int count;
-    i = offset;
-    c = markdown_core_reader_peek(reader, i);
-    if (!(c == '*' || c == '_' || c == '-')) {
-        *kill = i;
-        return 0;
-    }
-    count = 1;
-    while ((nextc = markdown_core_reader_peek(reader, ++i))) {
-        if (nextc == c) {
-            count++;
-        } else if (!markdown_core_is_space_or_tab(nextc)) {
-            break;
-        }
-    }
-    if (count >= 3 && (nextc == '\r' || nextc == '\n')) {
-        return (i - offset) + 1;
-    }
-    *kill = i;
-    return 0;
-}
-
-enum { THEMATIC_BREAK_OPEN, THEMATIC_BREAK_BLOCKS };
+enum { THEMATIC_BREAK_OPEN, THEMATIC_BREAK_SEQUENCE, THEMATIC_BREAK_BLOCKS };
 
 /* The break opens as its token is compiled: it's only now that we know the
  * line is not part of a setext heading. */
 static void S_open(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
-    (void)token;
     (void)index;
     markdown_core_block_turn *turn = markdown_core_block_turned(compiler);
-    markdown_core_reader *reader = turn->context->reader;
     *turn->container = markdown_core_parser_add_child(turn->parser, *turn->container, MARKDOWN_CORE_NODE_THEMATIC_BREAK,
-                                                      reader->nonspace + 1);
+                                                      (int)(token->start - turn->base) + 1);
     if (!*turn->container) {
         return;
     }
-    markdown_core_reader_end(reader);
     turn->opened = true;
 }
 
+/* THE BREAK (micromark's thematicBreak): three or more of one marker, `*`,
+ * `-` or `_`, spaces between them and after, to the line's end. The frame
+ * keeps the marker and how many of it the break read. */
+enum { BREAK_MARKER, BREAK_COUNT };
+
+static markdown_core_state S_at_break(markdown_core_tokenizer *tokenizer, int code);
+
+static markdown_core_state S_sequence(markdown_core_tokenizer *tokenizer, int code) {
+    uint32_t *words = markdown_core_frame_local(tokenizer);
+    if (code == (int)words[BREAK_MARKER]) {
+        markdown_core_consume(tokenizer);
+        words[BREAK_COUNT]++;
+        return markdown_core_state_of(S_sequence);
+    }
+    markdown_core_exit(tokenizer, markdown_core_block_token(tokenizer, THEMATIC_BREAK_SEQUENCE));
+    if (markdown_core_code_space(code)) {
+        return markdown_core_spaces(tokenizer, markdown_core_state_of(S_at_break), MARKDOWN_CORE_TOKEN_SPACE,
+                                    UINT32_MAX, code);
+    }
+    return S_at_break(tokenizer, code);
+}
+
+static markdown_core_state S_at_break(markdown_core_tokenizer *tokenizer, int code) {
+    uint32_t *words = markdown_core_frame_local(tokenizer);
+    if (code == (int)words[BREAK_MARKER]) {
+        markdown_core_enter(tokenizer, markdown_core_block_token(tokenizer, THEMATIC_BREAK_SEQUENCE));
+        return S_sequence(tokenizer, code);
+    }
+    if (words[BREAK_COUNT] >= 3 && markdown_core_code_ending(code)) {
+        markdown_core_exit(tokenizer, markdown_core_block_token(tokenizer, THEMATIC_BREAK_OPEN));
+        return markdown_core_ok(tokenizer);
+    }
+    thematic_break_work *work = ((const markdown_core_element_instance *)markdown_core_self(tokenizer))->state;
+    work->kill = tokenizer->position;
+    return markdown_core_nok(tokenizer);
+}
+
+static markdown_core_state S_before(markdown_core_tokenizer *tokenizer, int code) {
+    thematic_break_work *work = ((const markdown_core_element_instance *)markdown_core_self(tokenizer))->state;
+    if ((code != '*' && code != '-' && code != '_') || work->kill > tokenizer->position) {
+        return markdown_core_nok(tokenizer);
+    }
+    markdown_core_frame_local(tokenizer)[BREAK_MARKER] = (uint32_t)code;
+    markdown_core_enter(tokenizer, markdown_core_block_token(tokenizer, THEMATIC_BREAK_OPEN));
+    return S_at_break(tokenizer, code);
+}
+
 static markdown_core_state S_start(markdown_core_tokenizer *tokenizer, int code) {
-    (void)code;
-    block_start_context *context = markdown_core_block_turn_of(tokenizer)->context;
-    block_start *start = markdown_core_block_turn_of(tokenizer)->start;
+    const block_start_context *context = markdown_core_block_turn_of(tokenizer)->context;
     if (context->paragraph && !context->all_matched) {
         return markdown_core_nok(tokenizer);
     }
     thematic_break_work *work = ((const markdown_core_element_instance *)markdown_core_self(tokenizer))->state;
     const size_t visit = markdown_core_parser_visit(markdown_core_block_turn_of(tokenizer)->parser);
-    markdown_core_reader *reader = context->reader;
-    if (work->visit != visit || work->length != markdown_core_reader_length(reader)) {
-        *work = (thematic_break_work){visit, markdown_core_reader_length(reader), 0};
+    if (work->visit != visit || work->base != tokenizer->base) {
+        *work = (thematic_break_work){visit, tokenizer->base, 0};
     }
-    if (work->kill > reader->nonspace ||
-        !(start->matched = S_scan_thematic_break(reader, reader->nonspace, &work->kill))) {
-        return markdown_core_nok(tokenizer);
-    }
-    start->kind = MARKDOWN_CORE_NODE_THEMATIC_BREAK;
-    return markdown_core_block_found(tokenizer, THEMATIC_BREAK_OPEN);
+    markdown_core_block_turn_of(tokenizer)->start->kind = MARKDOWN_CORE_NODE_THEMATIC_BREAK;
+    return markdown_core_spaces(tokenizer, markdown_core_state_of(S_before), MARKDOWN_CORE_TOKEN_SPACE, UINT32_MAX,
+                                code);
 }
 
 static const markdown_core_block_construct THEMATIC_BREAK_STARTS[] = {
@@ -82,6 +94,7 @@ static const markdown_core_block_construct THEMATIC_BREAK_STARTS[] = {
 
 static const markdown_core_compile_ops THEMATIC_BREAK_BLOCK_TOKENS[THEMATIC_BREAK_BLOCKS] = {
     [THEMATIC_BREAK_OPEN] = {.enter = S_open},
+    [THEMATIC_BREAK_SEQUENCE] = {0},
 };
 
 static const markdown_core_open_ops THEMATIC_BREAK_OPENS = {

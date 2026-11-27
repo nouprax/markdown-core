@@ -37,6 +37,18 @@ extern "C" {
 
 #define MARKDOWN_CORE_EOF (-1)
 
+/* A TAB IS VIRTUAL SPACES (micromark's preprocess, plan symbols-cleanroom.md
+ * 23.16.1): a block reading (markdown_core_read, `columns`) hands a tab as
+ * MARKDOWN_CORE_HT, its first column, then a MARKDOWN_CORE_VS for every
+ * other column up to the next tab stop, each its own code to consume; the
+ * reading's place is then the tab's byte and the columns of it read
+ * (`split`, `column`). A text reading hands a tab as its byte: no construct
+ * of the text counts columns. A look ahead (markdown_core_code_at with an
+ * offset) sees the bytes. */
+#define MARKDOWN_CORE_HT (-2)
+#define MARKDOWN_CORE_VS (-3)
+#define MARKDOWN_CORE_TAB_STOP 4
+
 typedef struct markdown_core_tokenizer markdown_core_tokenizer;
 typedef struct markdown_core_state markdown_core_state;
 struct markdown_core_state {
@@ -111,6 +123,10 @@ typedef struct markdown_core_frame {
     markdown_core_reader *cursor;
     markdown_core_reader_stand stand;
     uint32_t base;
+    /* The column the reading stood at, whether it was counted, and whether
+     * it stood inside a tab (the tokenizer's `column`, `counted`, `split`). */
+    uint32_t column, ending;
+    bool counted, split;
 } markdown_core_frame;
 
 /* A MARK: a token a construct keeps on the reading's list of marks, with
@@ -179,6 +195,9 @@ typedef struct markdown_core_read {
      * construct scanned it consumes as it ends its token
      * (markdown_core_cursor_move). */
     markdown_core_reader *cursor;
+    /* Whether the reading counts columns: a block reading, which hands a
+     * tab as virtual spaces (MARKDOWN_CORE_HT). */
+    bool columns;
 } markdown_core_read;
 
 struct markdown_core_tokenizer {
@@ -239,6 +258,18 @@ struct markdown_core_tokenizer {
     void *context;
     markdown_core_reader *cursor;
     uint32_t base;
+    /* THE COLUMNS of a block reading (`columns`): the column of the place,
+     * counted from the line's start at `base`, each scalar and each column
+     * of a tab one, known while `counted` (a move over a span leaves it to
+     * be counted when asked, markdown_core_column); `split`, the place is
+     * inside a tab, some of its columns read. */
+    bool columns, counted, split;
+    uint32_t column;
+    /* Where the line ends, before its terminator, or UINT32_MAX: a block
+     * reading hands its end as one line feed, whatever ends it (a carriage
+     * return, both, the end of the text), as micromark hands one code for
+     * a line ending. */
+    uint32_t ending;
 };
 
 void markdown_core_tokenizer_init(markdown_core_tokenizer *tokenizer);
@@ -270,14 +301,28 @@ bool markdown_core_tokenizer_feed(markdown_core_tokenizer *tokenizer, const unsi
 markdown_core_state markdown_core_pause(markdown_core_tokenizer *tokenizer, markdown_core_state next);
 bool markdown_core_tokenizer_end(markdown_core_tokenizer *tokenizer);
 
-/* The cursor's line starts at `base` in the data. */
-static inline void markdown_core_cursor_line(markdown_core_tokenizer *tokenizer, uint32_t base) {
+/* The cursor's line starts at `base` in the data and ends at `ending`,
+ * before its terminator: the reading stands at its first column. */
+static inline void markdown_core_cursor_line(markdown_core_tokenizer *tokenizer, uint32_t base, uint32_t ending) {
     tokenizer->base = base;
+    tokenizer->ending = ending;
+    tokenizer->column = 0;
+    tokenizer->counted = tokenizer->position == base;
+    tokenizer->split = false;
 }
 
-/* The reading consumes what its cursor scanned: its position moves on to
+/* The reading consumes what its cursor scanned: its place moves on to
  * where the cursor stands, when that is past it. */
 void markdown_core_cursor_move(markdown_core_tokenizer *tokenizer);
+/* The cursor follows the reading: what a construct read code by code, the
+ * cursor stands past, when the reading is past it. */
+void markdown_core_cursor_follow(markdown_core_tokenizer *tokenizer);
+/* The reading goes back to `at` on the cursor's line, at no tab's inside,
+ * outside any attempt: what was read from there on is to be read again, as
+ * a resolver makes what a construct read text. */
+void markdown_core_give_back(markdown_core_tokenizer *tokenizer, uint32_t at);
+/* The column of the place, from the line's start. */
+uint32_t markdown_core_column(markdown_core_tokenizer *tokenizer);
 
 /* EFFECTS. */
 uint32_t markdown_core_enter(markdown_core_tokenizer *tokenizer, uint16_t kind);
@@ -314,14 +359,58 @@ void markdown_core_met_end(markdown_core_tokenizer *tokenizer);
 
 /* The code `offset` bytes from where the reading is, or MARKDOWN_CORE_EOF:
  * negative offsets look back. A look past the end reads the end. */
+/* A construct of a block reading read the code at `at`: its cursor notes
+ * it (reader.h, `far`), the line's end as a read past the line's bytes.
+ * Only a construct reads: the document's own states, at no attempt, do
+ * not. */
+static inline void markdown_core_note_read(markdown_core_tokenizer *tokenizer, int64_t at) {
+    markdown_core_reader *cursor = tokenizer->cursor;
+    if (!cursor || !tokenizer->frame_count || at < (int64_t)tokenizer->base) {
+        return;
+    }
+    const bufsize_t far =
+        at >= (int64_t)tokenizer->ending ? cursor->line.len + 1 : (bufsize_t)(at - (int64_t)tokenizer->base) + 1;
+    cursor->far = far > cursor->far ? far : cursor->far;
+}
+
 static inline int markdown_core_code_at(markdown_core_tokenizer *tokenizer, int64_t offset) {
     const int64_t at = (int64_t)tokenizer->position + offset;
+    if (tokenizer->columns) {
+        markdown_core_note_read(tokenizer, at);
+        if (at == (int64_t)tokenizer->ending) {
+            return '\n';
+        }
+    }
     if (at >= (int64_t)tokenizer->size) {
         markdown_core_met_end(tokenizer);
         return MARKDOWN_CORE_EOF;
     }
-    return at < 0 ? MARKDOWN_CORE_EOF : tokenizer->data[at];
+    if (at < 0) {
+        return MARKDOWN_CORE_EOF;
+    }
+    const int code = tokenizer->data[at];
+    if (code == '\t' && !offset && tokenizer->columns) {
+        return tokenizer->split ? MARKDOWN_CORE_VS : MARKDOWN_CORE_HT;
+    }
+    return code;
 }
+
+/* Whether `code` is a space or a tab's column; a line's end, or the end. */
+static inline bool markdown_core_code_space(int code) {
+    return code == ' ' || code == '\t' || code == MARKDOWN_CORE_HT || code == MARKDOWN_CORE_VS;
+}
+static inline bool markdown_core_code_ending(int code) {
+    return code == '\n' || code == '\r' || code == MARKDOWN_CORE_EOF;
+}
+
+/* THE SPACE (micromark's factorySpace): spaces and tab columns from the
+ * code handed, at most `most` columns, as one token of `kind` (none for
+ * 0), then `ok`, handed the code after them; with none, `ok` at once. */
+/* THE BLANK LINE (micromark's blankLine): spaces, then the line's end. */
+extern const markdown_core_construct markdown_core_blank_line;
+
+markdown_core_state markdown_core_spaces(markdown_core_tokenizer *tokenizer, markdown_core_state ok, uint16_t kind,
+                                         uint32_t most, int code);
 
 /* The element instance of the construct being tried: the context of the
  * innermost attempt's construct that has one. */

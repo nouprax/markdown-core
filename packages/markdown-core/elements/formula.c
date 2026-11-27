@@ -176,7 +176,7 @@ static int scan_formula_block_close(const unsigned char *data, bufsize_t len, bu
     return 0;
 }
 
-enum { FORMULA_OPEN, FORMULA_BLOCKS };
+enum { FORMULA_OPEN, FORMULA_SHUT, FORMULA_BLOCKS };
 
 static markdown_core_state S_block_start(markdown_core_tokenizer *tokenizer, int code) {
     (void)code;
@@ -719,15 +719,23 @@ static bufsize_t S_follow_fence(const markdown_core_element_instance *formula, m
 /* A FormulaBlock's literal is the trimmed view of the lines it read. A
  * paragraph whose only content is a standalone formula stays a paragraph that
  * holds that Formula. */
-static bool close_formula_block(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                markdown_core_node *node, markdown_core_node *parent, markdown_core_reader *reader) {
+static void close_formula_block(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
+    (void)token;
+    (void)index;
+    markdown_core_block_turn *turn = markdown_core_block_turned(compiler);
+    const markdown_core_element_instance *self = compiler->current->context;
+    markdown_core_parser *parser = turn->parser;
+    markdown_core_node *node = turn->node;
+    markdown_core_node *parent = *turn->container;
+    markdown_core_reader *reader = turn->reader;
     (void)self;
     (void)parser;
+    (void)node;
     (void)parent;
+    (void)reader;
     node_formula *formula = get_formula(node);
     markdown_core_chunk_free(&formula->literal);
     S_trim_into(node, formula, 0, node->content.size);
-    return true;
 }
 
 /* `$` and `\\` open a formula, and that is the whole set. `\\` is in the dispatch
@@ -798,6 +806,7 @@ static const markdown_core_block_construct FORMULA_STARTS[] = {
 
 static const markdown_core_compile_ops FORMULA_BLOCK_TOKENS[FORMULA_BLOCKS] = {
     [FORMULA_OPEN] = {.enter = S_block_open},
+    [FORMULA_SHUT] = {.exit = close_formula_block},
 };
 
 static const markdown_core_open_ops FORMULA_OPENS = {
@@ -819,9 +828,9 @@ static markdown_core_state S_continue(markdown_core_tokenizer *tokenizer, int co
 }
 
 static const markdown_core_line_ops FORMULA_LINES = {
+    .shut = &FORMULA_BLOCK_TOKENS[FORMULA_SHUT],
     .continuation = {.start = S_continue},
     .beyond = true,
-    .close = close_formula_block,
 };
 
 static const markdown_core_node_type FORMULA_LEADERS[] = {MARKDOWN_CORE_NODE_CODE_BLOCK, MARKDOWN_CORE_NODE_NONE};

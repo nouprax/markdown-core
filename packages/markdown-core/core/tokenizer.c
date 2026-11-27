@@ -94,30 +94,117 @@ uint32_t markdown_core_exit(markdown_core_tokenizer *tokenizer, uint16_t kind) {
     return token;
 }
 
+void markdown_core_give_back(markdown_core_tokenizer *tokenizer, uint32_t at) {
+    assert(!tokenizer->frame_count && at >= tokenizer->base && at <= tokenizer->position);
+    /* What is read again is the engine's work, as what an attempt gives
+     * back is. */
+    tokenizer->rewound += tokenizer->position - at;
+    tokenizer->position = at;
+    tokenizer->counted = tokenizer->split = false;
+    markdown_core_reader *cursor = tokenizer->cursor;
+    if (cursor) {
+        cursor->offset = (bufsize_t)(at - tokenizer->base);
+        cursor->column = (bufsize_t)markdown_core_column(tokenizer);
+        cursor->split = false;
+        /* What the first non-space byte tells is found again. */
+        cursor->nonspace = cursor->offset;
+    }
+}
+
+uint32_t markdown_core_column(markdown_core_tokenizer *tokenizer) {
+    if (!tokenizer->counted) {
+        /* Counted from the line's start: a tab to the next stop, a scalar
+         * at its first byte. The place is at no tab's inside. */
+        uint32_t column = 0;
+        for (uint32_t at = tokenizer->base; at < tokenizer->position; at++) {
+            const unsigned char byte = tokenizer->data[at];
+            if (byte == '\t') {
+                column += MARKDOWN_CORE_TAB_STOP - column % MARKDOWN_CORE_TAB_STOP;
+            } else {
+                /* A scalar is counted at its last byte. */
+                column += at + 1 >= tokenizer->size || (tokenizer->data[at + 1] & 0xC0) != 0x80;
+            }
+        }
+        tokenizer->column = column;
+        tokenizer->counted = true;
+    }
+    return tokenizer->column;
+}
+
 void markdown_core_consume(markdown_core_tokenizer *tokenizer) {
     assert(!tokenizer->consumed && tokenizer->position < tokenizer->size);
-    tokenizer->position++;
     tokenizer->consumed = true;
+    if (!tokenizer->columns) {
+        tokenizer->position++;
+        return;
+    }
+    const unsigned char byte = tokenizer->data[tokenizer->position];
+    if (byte == '\t') {
+        /* A column of the tab: the tab is read at its stop. */
+        const uint32_t column = markdown_core_column(tokenizer) + 1;
+        tokenizer->column = column;
+        tokenizer->split = column % MARKDOWN_CORE_TAB_STOP != 0;
+        tokenizer->position += !tokenizer->split;
+        return;
+    }
+    /* A code is a scalar: its continuation bytes are read with it, and so
+     * are any after a byte that begins none, as the column cursor reads
+     * them (reader.h). */
+    uint32_t at = tokenizer->position + 1;
+    while (at < tokenizer->ending && at < tokenizer->size && (tokenizer->data[at] & 0xC0) == 0x80) {
+        at++;
+    }
+    tokenizer->column++;
+    tokenizer->position = at;
 }
 
 void markdown_core_consume_to(markdown_core_tokenizer *tokenizer, uint32_t end) {
     assert(!tokenizer->consumed && tokenizer->position < end && end <= tokenizer->size);
     tokenizer->position = end;
     tokenizer->consumed = true;
+    tokenizer->counted = tokenizer->split = false;
 }
 
 void markdown_core_move_to(markdown_core_tokenizer *tokenizer, uint32_t end) {
     assert(tokenizer->position <= end && end <= tokenizer->size);
-    tokenizer->position = end;
     tokenizer->consumed = true;
+    if (end != tokenizer->position) {
+        tokenizer->position = end;
+        tokenizer->counted = tokenizer->split = false;
+    }
 }
 
 void markdown_core_cursor_move(markdown_core_tokenizer *tokenizer) {
-    if (tokenizer->cursor) {
-        const uint32_t at = tokenizer->base + (uint32_t)tokenizer->cursor->offset;
-        if (at > tokenizer->position && at <= tokenizer->size) {
-            markdown_core_move_to(tokenizer, at);
+    const markdown_core_reader *cursor = tokenizer->cursor;
+    if (cursor) {
+        const uint32_t at = tokenizer->base + (uint32_t)cursor->offset;
+        if (at > tokenizer->size || at < tokenizer->position) {
+            return;
         }
+        /* Inside a tab, the cursor is past the reading when it read more of
+         * the tab's columns. */
+        if (at > tokenizer->position ||
+            (cursor->split && (!tokenizer->split || (uint32_t)cursor->column > tokenizer->column))) {
+            tokenizer->position = at;
+            tokenizer->consumed = true;
+            tokenizer->column = (uint32_t)cursor->column;
+            tokenizer->split = cursor->split;
+            tokenizer->counted = true;
+        }
+    }
+}
+
+void markdown_core_cursor_follow(markdown_core_tokenizer *tokenizer) {
+    markdown_core_reader *cursor = tokenizer->cursor;
+    if (!cursor || tokenizer->position < tokenizer->base) {
+        return;
+    }
+    const bufsize_t offset = (bufsize_t)(tokenizer->position - tokenizer->base);
+    if (offset > cursor->offset || (offset == cursor->offset && tokenizer->split &&
+                                    (!cursor->split || markdown_core_column(tokenizer) > (uint32_t)cursor->column))) {
+        cursor->offset = offset;
+        cursor->column = (bufsize_t)markdown_core_column(tokenizer);
+        cursor->split = tokenizer->split;
     }
 }
 
@@ -231,7 +318,11 @@ static bool S_push_frame(markdown_core_tokenizer *tokenizer, markdown_core_state
                                                              .notes = tokenizer->note_count,
                                                              .check = check,
                                                              .cursor = tokenizer->cursor,
-                                                             .base = tokenizer->base};
+                                                             .base = tokenizer->base,
+                                                             .column = tokenizer->column,
+                                                             .ending = tokenizer->ending,
+                                                             .counted = tokenizer->counted,
+                                                             .split = tokenizer->split};
     if (tokenizer->cursor) {
         frames[tokenizer->frame_count - 1].stand = markdown_core_reader_stand_of(tokenizer->cursor);
     }
@@ -244,6 +335,12 @@ static markdown_core_state S_begin(markdown_core_tokenizer *tokenizer, markdown_
     assert(count);
     if (!S_push_frame(tokenizer, ok, nok, list, one, count, check)) {
         return markdown_core_state_of(S_end_step);
+    }
+    /* The construct is handed the code where the reading stands, which it
+     * has not consumed whatever the state that tried it moved past. */
+    tokenizer->consumed = false;
+    if (tokenizer->columns) {
+        markdown_core_note_read(tokenizer, tokenizer->position);
     }
     return S_tried(&tokenizer->frames[tokenizer->frame_count - 1])->start(tokenizer, code);
 }
@@ -269,6 +366,10 @@ static void S_restore(markdown_core_tokenizer *tokenizer, const markdown_core_fr
     tokenizer->rewound += tokenizer->position - frame->position;
     tokenizer->position = frame->position;
     tokenizer->base = frame->base;
+    tokenizer->column = frame->column;
+    tokenizer->ending = frame->ending;
+    tokenizer->counted = frame->counted;
+    tokenizer->split = frame->split;
     tokenizer->cursor = frame->cursor;
     if (tokenizer->cursor) {
         markdown_core_reader_stand_back(tokenizer->cursor, &frame->stand);
@@ -595,6 +696,11 @@ static void S_reset(markdown_core_tokenizer *tokenizer, const markdown_core_read
     tokenizer->context = read->context;
     tokenizer->cursor = read->cursor;
     tokenizer->base = 0;
+    tokenizer->columns = read->columns;
+    tokenizer->column = 0;
+    tokenizer->counted = read->from == 0;
+    tokenizer->split = false;
+    tokenizer->ending = UINT32_MAX;
     tokenizer->halts = read->halts;
     tokenizer->halted = false;
     tokenizer->done = false;
@@ -610,6 +716,8 @@ static void S_run(markdown_core_tokenizer *tokenizer, markdown_core_state state)
     while (!tokenizer->done && !tokenizer->events.failed) {
         tokenizer->consumed = false;
         const uint32_t at = tokenizer->position;
+        const uint32_t column = tokenizer->split ? tokenizer->column : 0;
+        const size_t rewound = tokenizer->rewound;
         if (code == MARKDOWN_CORE_EOF) {
             markdown_core_met_end(tokenizer);
         }
@@ -622,8 +730,13 @@ static void S_run(markdown_core_tokenizer *tokenizer, markdown_core_state state)
             continue;
         }
         /* Every state consumes the code it is handed or names an end. */
-        assert(tokenizer->consumed && tokenizer->position > at);
+        /* A column of a tab is read when the place moves into the tab or
+         * on in it. */
+        assert(tokenizer->consumed && (tokenizer->position > at || (tokenizer->split && tokenizer->column > column) ||
+                                       tokenizer->rewound > rewound));
         (void)at;
+        (void)column;
+        (void)rewound;
         code = markdown_core_code_at(tokenizer, 0);
     }
 }
@@ -677,7 +790,10 @@ bool markdown_core_tokenizer_feed(markdown_core_tokenizer *tokenizer, const unsi
     assert(!tokenizer->frame_count && !tokenizer->open_count);
     tokenizer->data = data;
     tokenizer->size = size;
-    tokenizer->position = from;
+    if (tokenizer->position != from) {
+        tokenizer->position = from;
+        tokenizer->counted = tokenizer->split = false;
+    }
     tokenizer->done = false;
     S_run(tokenizer, tokenizer->resume);
     return !tokenizer->events.failed;
@@ -710,3 +826,47 @@ bool markdown_core_tokenizer_settled(const markdown_core_tokenizer *tokenizer) {
     }
     return true;
 }
+
+/* THE SPACE: the frame's words are the most columns, the token's kind, the
+ * columns read and whether the token is entered. */
+enum { SPACE_MOST, SPACE_KIND, SPACE_READ, SPACE_ENTERED };
+
+static markdown_core_state S_space(markdown_core_tokenizer *tokenizer, int code) {
+    uint32_t *words = markdown_core_frame_local(tokenizer);
+    if (markdown_core_code_space(code) && words[SPACE_READ] < words[SPACE_MOST]) {
+        if (words[SPACE_KIND] && !words[SPACE_ENTERED]) {
+            markdown_core_enter(tokenizer, (uint16_t)words[SPACE_KIND]);
+            words[SPACE_ENTERED] = 1;
+        }
+        markdown_core_consume(tokenizer);
+        words[SPACE_READ]++;
+        return markdown_core_state_of(S_space);
+    }
+    if (words[SPACE_ENTERED]) {
+        markdown_core_exit(tokenizer, (uint16_t)words[SPACE_KIND]);
+    }
+    return markdown_core_ok(tokenizer);
+}
+
+static const markdown_core_construct S_SPACE = {.start = S_space};
+
+markdown_core_state markdown_core_spaces(markdown_core_tokenizer *tokenizer, markdown_core_state ok, uint16_t kind,
+                                         uint32_t most, int code) {
+    if (!S_push_frame(tokenizer, ok, ok, NULL, &S_SPACE, 1, false)) {
+        return markdown_core_state_of(S_end_step);
+    }
+    uint32_t *words = markdown_core_frame_local(tokenizer);
+    words[SPACE_MOST] = most;
+    words[SPACE_KIND] = kind;
+    return S_space(tokenizer, code);
+}
+
+static markdown_core_state S_blank_after(markdown_core_tokenizer *tokenizer, int code) {
+    return markdown_core_code_ending(code) ? markdown_core_ok(tokenizer) : markdown_core_nok(tokenizer);
+}
+
+static markdown_core_state S_blank_line(markdown_core_tokenizer *tokenizer, int code) {
+    return markdown_core_spaces(tokenizer, markdown_core_state_of(S_blank_after), 0, UINT32_MAX, code);
+}
+
+const markdown_core_construct markdown_core_blank_line = {.start = S_blank_line};

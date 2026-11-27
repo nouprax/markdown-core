@@ -1788,6 +1788,29 @@ static inline void S_shut(markdown_core_parser *parser, markdown_core_node *bloc
     block->flags &= (markdown_core_node_internal_flags) ~(MARKDOWN_CORE_NODE__OPEN | MARKDOWN_CORE_NODE__PUBLISHED);
 }
 
+/* THE BLOCK'S EXIT (element.h, markdown_core_line_ops `shut`): the exit
+ * of the element's token compiled for `b`, closing in `parent`. False, with
+ * the parse failed, when the handler failed. */
+static bool S_block_exit(markdown_core_parser *parser, const markdown_core_element_instance *structure,
+                         markdown_core_node *b, markdown_core_node *parent) {
+    const markdown_core_dialect *dialect = parser->dialect;
+    const markdown_core_compile_ops *shut = structure->lines->shut;
+    markdown_core_token token = {
+        .kind = (uint16_t)(structure->block_base + (size_t)(shut - structure->element->opens->tokens))};
+    markdown_core_event event = {MARKDOWN_CORE_EXIT, 0};
+    markdown_core_events events = {.tokens = &token, .token_count = 1, .items = &event, .count = 1};
+    markdown_core_block_turn turn = {.parser = parser, .node = b, .container = &parent, .reader = &parser->at.read};
+    markdown_core_compiler compiler;
+    markdown_core_compiler_init(&compiler);
+    const bool compiled =
+        markdown_core_compile(&compiler, &events, parser->input.source, dialect->compiles, dialect->token_kinds, &turn);
+    markdown_core_compiler_free(&compiler);
+    if (!compiled && !parser->error) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    }
+    return !parser->error;
+}
+
 /* A BLOCK CLOSES, its range settled, inside `parent`: its element's close
  * hook makes the node it settles as, and a block that takes text lines
  * in a container takes the runs of its own lines. False when the block
@@ -1809,7 +1832,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_close_hook(markdow
     if (structure->lines->cuts && !markdown_core_reader_cut_front(&parser->at.read, parser, b, parent)) {
         return false;
     }
-    if (structure->lines->close && !structure->lines->close(structure, parser, b, parent, &parser->at.read)) {
+    if (structure->lines->shut && !S_block_exit(parser, structure, b, parent)) {
         return false;
     }
     /* Another element may follow the block as it closes, by the kind the
@@ -8627,7 +8650,7 @@ static markdown_core_state S_look_line(markdown_core_tokenizer *tokenizer, int c
         if (tokenizer->position < at) {
             markdown_core_move_to(tokenizer, at);
         }
-        markdown_core_cursor_line(tokenizer, at);
+        markdown_core_cursor_line(tokenizer, at, (uint32_t)geometry->end);
     }
     /* The look's cursor is the reading's while it reads, and the turn's
      * reader (the check it is read in gives the reading's back). */
@@ -8983,7 +9006,8 @@ static bool S_walk_compile(markdown_core_tokenizer *tokenizer) {
     if (parser->error) {
         return false;
     }
-    if (!markdown_core_compile(walk->compiler, &tokenizer->events, walk->turn.reader->line.data, dialect->compiles,
+    walk->turn.base = tokenizer->base;
+    if (!markdown_core_compile(walk->compiler, &tokenizer->events, tokenizer->data, dialect->compiles,
                                dialect->token_kinds, &walk->turn)) {
         if (!parser->error) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
@@ -9090,6 +9114,7 @@ static markdown_core_state S_verdict(markdown_core_tokenizer *tokenizer, int cod
 
 /* The continuation succeeded: its verdict is its last token, if any. */
 static markdown_core_state S_continued(markdown_core_tokenizer *tokenizer, int code) {
+    markdown_core_cursor_follow(tokenizer);
     return S_verdict(tokenizer, code, S_prefix_verdict(tokenizer, 0));
 }
 
@@ -9165,7 +9190,12 @@ static markdown_core_state S_started(markdown_core_tokenizer *tokenizer, int cod
     S_walk *walk = S_walk_of(tokenizer);
     markdown_core_parser *parser = walk->turn.parser;
     walk->found = walk->tried;
+    markdown_core_cursor_follow(tokenizer);
+    walk->turn.gives = UINT32_MAX;
     S_walk_compile(tokenizer);
+    if (walk->turn.gives != UINT32_MAX) {
+        markdown_core_give_back(tokenizer, walk->turn.gives);
+    }
     S_reader_close(parser);
     if (parser->error) {
         return S_walk_eol(tokenizer, code);
@@ -9302,11 +9332,18 @@ static void S_walk_line_op(S_walk *walk, const markdown_core_element_instance *s
     markdown_core_events_clear(&tokenizer->events);
 }
 
-/* The end condition met: the block closes on the line. */
+/* The end condition met: the block takes the line and closes on it. */
 static markdown_core_state S_ends_met(markdown_core_tokenizer *tokenizer, int code) {
     S_walk *walk = S_walk_of(tokenizer);
-    walk->container->flags |= MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION;
-    (void)markdown_core_block_close(walk->turn.parser, walk->container);
+    if (S_walk_flow(tokenizer, walk->container)) {
+        walk->container->flags |= MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION;
+        (void)markdown_core_block_close(walk->turn.parser, walk->container);
+    }
+    return S_walk_tail(tokenizer, code);
+}
+
+static markdown_core_state S_ends_unmet(markdown_core_tokenizer *tokenizer, int code) {
+    S_walk_flow(tokenizer, S_walk_of(tokenizer)->container);
     return S_walk_tail(tokenizer, code);
 }
 
@@ -9380,13 +9417,14 @@ static markdown_core_state S_text_of(markdown_core_tokenizer *tokenizer, int cod
 
     walk->container = container;
     if (accepts_lines) {
-        S_walk_flow(tokenizer, container);
-        if (structure->lines->ends.start && !parser->error) {
-            /* The end condition, a check of the line's reading. */
+        if (structure->lines->ends.start) {
+            /* The end condition, a check of the line's text before the
+             * block takes it. */
             S_walk_line_op(walk, structure, &structure->lines->ends, tokenizer);
             return markdown_core_check(tokenizer, &walk->one, markdown_core_state_of(S_ends_met),
-                                       markdown_core_state_of(S_walk_tail), markdown_core_code_at(tokenizer, 0));
+                                       markdown_core_state_of(S_ends_unmet), markdown_core_code_at(tokenizer, 0));
         }
+        S_walk_flow(tokenizer, container);
     } else if (reader->blank) {
         // ??? do nothing
     } else if (kind->flags & MARKDOWN_CORE_KIND_PROSE) {
@@ -9426,7 +9464,8 @@ static markdown_core_state S_walk_start(markdown_core_tokenizer *tokenizer, int 
     markdown_core_parser *parser = walk->turn.parser;
     const markdown_core_line_stop *from = parser->walk->from;
     walk->turn.reader = &parser->at.read;
-    markdown_core_cursor_line(tokenizer, tokenizer->position);
+    markdown_core_cursor_line(tokenizer, tokenizer->position,
+                              tokenizer->position + (uint32_t)walk->turn.reader->line.len - 1);
     if (parser->walk->rest.on) {
         return S_rest_start(tokenizer, code);
     }
@@ -9545,7 +9584,8 @@ static bool S_walk_begin(markdown_core_parser *parser) {
         return false;
     }
     reading->walk = (S_walk){.turn = {.parser = parser}, .compiler = &reading->pass->compiler};
-    const markdown_core_read read = {.cut = UINT32_MAX, .reader = &reading->walk, .cursor = &parser->at.read};
+    const markdown_core_read read = {
+        .cut = UINT32_MAX, .reader = &reading->walk, .cursor = &parser->at.read, .columns = true};
     markdown_core_tokenizer_begin(&reading->pass->tokenizer, &read, markdown_core_state_of(S_walk_start));
     reading->open = true;
     return true;
