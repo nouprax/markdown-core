@@ -41,7 +41,6 @@ const elements = [
     "thematic_break.c",
     "autolink_scanners.c",
     "comment_scanners.c",
-    "formula_scanners.c",
     "html_scanners.c",
     "link_scanners.c",
     "text_scanners.c",

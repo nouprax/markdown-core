@@ -1,6 +1,5 @@
 #include "autolink_scanners.h"
 #include "comment_scanners.h"
-#include "formula_scanners.h"
 #include "html_scanners.h"
 #include "link_scanners.h"
 #include "text_scanners.h"
@@ -8034,12 +8033,7 @@ static void bounded_scanners(test_batch_runner *runner) {
                  {scan_html_block_end_5, "x]]>", -1},
                  {scan_link_title, "\"title\"", -1},
                  {scan_entity, "&amp;", -1},
-                 {scan_dangerous_url, "javascript:", -1},
-                 {scan_formula_dollar_inline_open, "$", -1},
-                 {scan_formula_dollar_backtick_open, "$`", -1},
-                 {scan_formula_dollar_display_open, "$$", -1},
-                 {scan_formula_latex_backslash_inline_open, "\\\\(", -1},
-                 {scan_formula_latex_backslash_display_open, "\\\\[", -1}};
+                 {scan_dangerous_url, "javascript:", -1}};
     for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); i++) {
         size_t length = strlen(cases[i].text);
         int expected = cases[i].expected < 0 ? (int)length : cases[i].expected;

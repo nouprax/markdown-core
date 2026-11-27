@@ -1,5 +1,4 @@
 #include "alloc.h"
-#include "formula_scanners.h"
 #include "formula.h"
 #include "attention.h"
 #include "element.h"
@@ -290,9 +289,6 @@ static void S_block_open(markdown_core_compiler *compiler, const markdown_core_t
     turn->opened = true;
 }
 
-static int scan_formula_closer(const unsigned char *data, int length, int at, markdown_core_delimiter_rule rule,
-                               bool *closes);
-
 static markdown_core_node *make_formula_span(const markdown_core_element *element, markdown_core_parser *parser,
                                              markdown_core_inline_state *inline_state, markdown_core_node *parent,
                                              markdown_core_delimiter_rule rule, bufsize_t start, bufsize_t from,
@@ -300,55 +296,6 @@ static markdown_core_node *make_formula_span(const markdown_core_element *elemen
 
 static bool formula_body_admitted(markdown_core_delimiter_rule rule, const unsigned char *body, bufsize_t len) {
     return rule != FORMULA_DELIM_DOLLAR_INLINE || !len || body[0] != '`' || (len >= 2 && body[len - 1] == '`');
-}
-
-static bufsize_t scan_backslash_close(const unsigned char *data, bufsize_t len, bufsize_t offset,
-                                      unsigned char close_char, int slash_count) {
-    int i;
-
-    if (offset + slash_count + 1 > len) {
-        return 0;
-    }
-
-    for (i = 0; i < slash_count; i++) {
-        if (data[offset + i] != '\\') {
-            return 0;
-        }
-    }
-
-    if (data[offset + slash_count] == close_char) {
-        return (bufsize_t)(slash_count + 1);
-    }
-
-    return 0;
-}
-
-/* A body's delimiter units are recognized before any other inline syntax.
- * Skipping paired dollars and escaped punctuation preserves delimiter spelling;
- * code, links and element tokens inside the body are never dispatched. */
-static int scan_formula_closer(const unsigned char *data, int length, int at, markdown_core_delimiter_rule rule,
-                               bool *closes) {
-    if (rule == FORMULA_DELIM_LATEX_BACKSLASH_INLINE || rule == FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY) {
-        unsigned char end = rule == FORMULA_DELIM_LATEX_BACKSLASH_INLINE ? ')' : ']';
-        int width = scan_backslash_close(data, length, at, end, 2);
-        if (width) {
-            *closes = true;
-            return width;
-        }
-    } else if (data[at] == '$') {
-        bool pair = at + 1 < length && data[at + 1] == '$';
-        if (rule == FORMULA_DELIM_DOLLAR_DISPLAY) {
-            *closes = pair;
-        } else if (!pair) {
-            *closes = at > 0 && !markdown_core_is_whitespace(data[at - 1]) &&
-                      (at + 1 == length || !markdown_core_isdigit(data[at + 1]));
-        }
-        return pair ? 2 : 1;
-    }
-    if (data[at] == '\\' && at + 1 < length && markdown_core_ispunct(data[at + 1])) {
-        return 2;
-    }
-    return 1;
 }
 
 static markdown_core_formula_mode mode_for_delim(markdown_core_delimiter_rule delim_char) {
@@ -495,6 +442,9 @@ enum { FORMULA_FORMS = 4 };
 typedef struct formula_record {
     uint32_t failed[FORMULA_FORMS];
     uint32_t opaque;
+    /* The body the check reads: its rule and where it starts, and where
+     * its closer was found. */
+    uint32_t rule, from, close;
 } formula_record;
 
 static unsigned S_form(markdown_core_delimiter_rule rule) { return (unsigned)(rule - FORMULA_DELIM_DOLLAR_INLINE); }
@@ -504,30 +454,109 @@ static uint32_t S_span_word(markdown_core_delimiter_rule rule, uint32_t open, ui
     return (uint32_t)rule | open << 8 | close << 16;
 }
 
-/* The first closer of `rule` from `from`, or -1. */
-static int64_t S_find(markdown_core_tokenizer *tokenizer, formula_record *record, markdown_core_delimiter_rule rule,
-                      uint32_t from) {
-    const unsigned form = S_form(rule);
-    if (record->failed[form] && from >= record->failed[form] - 1) {
-        markdown_core_met_end(tokenizer);
-        return -1;
-    }
-    const int size = (int)tokenizer->size;
-    for (int at = (int)from; at < size;) {
-        bool closes = false;
-        const int width = scan_formula_closer(tokenizer->data, size, at, rule, &closes);
-        if (closes) {
-            if (at + width >= size) {
-                markdown_core_met_end(tokenizer);
-            }
-            return at;
-        }
-        at += width;
-    }
-    markdown_core_met_end(tokenizer);
-    record->failed[form] = from + 1;
-    return -1;
+/* THE BODY (a check, code by code): from `from` to the first closer of
+ * the rule the run's record names, whose place it keeps; a `\` before
+ * punctuation reads the two. A dollar is its closer when display and
+ * paired, or when inline and alone, after no whitespace and before no
+ * digit; a paired dollar inline is the body's. A body no closer ends
+ * marks its form failed from there, which a later one reads at once. */
+static formula_record *S_record(markdown_core_tokenizer *tokenizer) {
+    return markdown_core_read_record(
+        tokenizer, ((const markdown_core_element_instance *)markdown_core_self(tokenizer))->run_offset);
 }
+
+static bool S_latex(uint32_t rule) {
+    return rule == FORMULA_DELIM_LATEX_BACKSLASH_INLINE || rule == FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY;
+}
+
+static markdown_core_state S_closed_at(markdown_core_tokenizer *tokenizer, uint32_t at, uint32_t width) {
+    S_record(tokenizer)->close = at;
+    if (at + width >= tokenizer->size) {
+        markdown_core_met_end(tokenizer);
+    }
+    return markdown_core_ok(tokenizer);
+}
+
+static markdown_core_state S_body(markdown_core_tokenizer *tokenizer, int code);
+
+static markdown_core_state S_body_escaped(markdown_core_tokenizer *tokenizer, int code) {
+    if (code >= 0 && code < 0x80 && markdown_core_ispunct((char)code)) {
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_body);
+    }
+    return S_body(tokenizer, code);
+}
+
+/* After `\\` in a LaTeX body: its closing byte closes it. */
+static markdown_core_state S_body_slashes(markdown_core_tokenizer *tokenizer, int code) {
+    const uint32_t rule = S_record(tokenizer)->rule;
+    if (code == (rule == FORMULA_DELIM_LATEX_BACKSLASH_INLINE ? ')' : ']')) {
+        return S_closed_at(tokenizer, tokenizer->position - 2, 3);
+    }
+    return S_body(tokenizer, code);
+}
+
+static markdown_core_state S_body_slash(markdown_core_tokenizer *tokenizer, int code) {
+    if (code == '\\' && S_latex(S_record(tokenizer)->rule)) {
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_body_slashes);
+    }
+    return S_body_escaped(tokenizer, code);
+}
+
+static markdown_core_state S_body_dollar(markdown_core_tokenizer *tokenizer, int code) {
+    const uint32_t rule = S_record(tokenizer)->rule;
+    const uint32_t at = tokenizer->position - 1;
+    if (code == '$') {
+        if (rule == FORMULA_DELIM_DOLLAR_DISPLAY) {
+            return S_closed_at(tokenizer, at, 2);
+        }
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_body);
+    }
+    if (rule == FORMULA_DELIM_DOLLAR_INLINE && at > 0 && !markdown_core_is_whitespace(tokenizer->data[at - 1]) &&
+        !(code >= '0' && code <= '9')) {
+        return S_closed_at(tokenizer, at, 1);
+    }
+    return S_body(tokenizer, code);
+}
+
+static markdown_core_state S_body(markdown_core_tokenizer *tokenizer, int code) {
+    if (code == MARKDOWN_CORE_EOF) {
+        formula_record *record = S_record(tokenizer);
+        record->failed[S_form((markdown_core_delimiter_rule)record->rule)] = record->from + 1;
+        return markdown_core_nok(tokenizer);
+    }
+    markdown_core_consume(tokenizer);
+    if (code == '\\') {
+        return markdown_core_state_of(S_body_slash);
+    }
+    if (code == '$' && !S_latex(S_record(tokenizer)->rule)) {
+        return markdown_core_state_of(S_body_dollar);
+    }
+    return markdown_core_state_of(S_body);
+}
+
+/* The opener, read first. */
+static markdown_core_state S_body_open(markdown_core_tokenizer *tokenizer, int code) {
+    if (tokenizer->position < S_record(tokenizer)->from) {
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_body_open);
+    }
+    return S_body(tokenizer, code);
+}
+
+static markdown_core_state S_body_start(markdown_core_tokenizer *tokenizer, int code) {
+    const formula_record *record = S_record(tokenizer);
+    const unsigned form = S_form((markdown_core_delimiter_rule)record->rule);
+    if (record->failed[form] && record->from >= record->failed[form] - 1) {
+        markdown_core_met_end(tokenizer);
+        return markdown_core_nok(tokenizer);
+    }
+    return S_body_open(tokenizer, code);
+}
+
+static const markdown_core_construct FORMULA_BODY = {.start = S_body_start};
 
 /* Whether a run of `rule` on the stack opened that none closed: the runs
  * of a form alternate. */
@@ -536,46 +565,77 @@ static bool S_open(const markdown_core_tokenizer *tokenizer, markdown_core_delim
     return inline_state->delim_openers[rule] > inline_state->delim_closers[rule];
 }
 
-static markdown_core_state S_run(markdown_core_tokenizer *tokenizer, markdown_core_delimiter_rule rule, uint32_t length,
-                                 bool opens, bool closes) {
+/* THE RUN: the frame's words are its rule, its length, and whether it
+ * opens and closes. */
+enum { RUN_RULE, RUN_LENGTH, RUN_OPENS, RUN_CLOSES };
+
+/* A run that can do neither is its text. */
+static markdown_core_state S_sequence(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
     const markdown_core_element_instance *self = markdown_core_self(tokenizer);
-    formula_record *record = markdown_core_read_record(tokenizer, self->run_offset);
-    const markdown_core_inline_state *inline_state = tokenizer->reader;
-    const uint32_t start = tokenizer->position, from = start + length;
-    if (opens) {
-        const int64_t close = S_find(tokenizer, record, rule, from);
-        /* An opener with no closer opens a formula once one follows. */
-        if (close < 0) {
-            markdown_core_text_give_up(tokenizer, MARKDOWN_CORE_KIND_FORMULA, (bufsize_t)start, (bufsize_t)from, NULL,
-                                       0);
-        }
-        if (close >= 0 && formula_body_admitted(rule, tokenizer->data + from, (bufsize_t)((uint32_t)close - from))) {
-            /* A dynamic owner's policy is asked as the pass pairs, in
-             * order with the other pairs; a fixed one takes it now. */
-            markdown_core_node *owner = inline_state->owner;
-            if (!markdown_core_node_allows(owner) &&
-                markdown_core_node_can_contain_type(owner, MARKDOWN_CORE_NODE_FORMULA)) {
-                const uint32_t token = markdown_core_enter(tokenizer, (uint16_t)(self->token_base + FORMULA_SPAN));
-                markdown_core_consume_to(tokenizer, (uint32_t)close + length);
-                markdown_core_exit(tokenizer, (uint16_t)(self->token_base + FORMULA_SPAN));
-                if (token != UINT32_MAX) {
-                    tokenizer->events.tokens[token].data = S_span_word(rule, length, length);
-                }
-                return markdown_core_ok(tokenizer);
-            }
-            record->opaque = (uint32_t)close;
-        }
-    }
-    /* A run that can do neither is its text. */
+    const uint32_t *words = markdown_core_frame_local(tokenizer);
+    const bool opens = words[RUN_OPENS], closes = words[RUN_CLOSES];
+    const unsigned rule = words[RUN_RULE];
     const unsigned kind = opens || closes ? MARKDOWN_CORE_ATTENTION_SEQUENCE : MARKDOWN_CORE_ATTENTION_LITERAL;
     const uint32_t token = markdown_core_enter(tokenizer, (uint16_t)(self->token_base + kind));
-    markdown_core_consume_to(tokenizer, from);
+    markdown_core_consume_to(tokenizer, tokenizer->position + words[RUN_LENGTH]);
     markdown_core_exit(tokenizer, (uint16_t)(self->token_base + kind));
     if (token != UINT32_MAX && kind == MARKDOWN_CORE_ATTENTION_SEQUENCE) {
-        tokenizer->events.tokens[token].data = markdown_core_attention_word(opens, closes, (unsigned)rule, length);
-        markdown_core_attention_count(tokenizer, (unsigned)rule, opens, closes);
+        tokenizer->events.tokens[token].data = markdown_core_attention_word(opens, closes, rule, words[RUN_LENGTH]);
+        markdown_core_attention_count(tokenizer, rule, opens, closes);
     }
     return markdown_core_ok(tokenizer);
+}
+
+/* An opener with no closer opens a formula once one follows. */
+static markdown_core_state S_unclosed(markdown_core_tokenizer *tokenizer, int code) {
+    const uint32_t start = tokenizer->position;
+    markdown_core_text_give_up(tokenizer, MARKDOWN_CORE_KIND_FORMULA, (bufsize_t)start,
+                               (bufsize_t)(start + markdown_core_frame_local(tokenizer)[RUN_LENGTH]), NULL, 0);
+    return S_sequence(tokenizer, code);
+}
+
+static markdown_core_state S_closes(markdown_core_tokenizer *tokenizer, int code) {
+    const markdown_core_element_instance *self = markdown_core_self(tokenizer);
+    formula_record *record = S_record(tokenizer);
+    const markdown_core_inline_state *inline_state = tokenizer->reader;
+    const uint32_t *words = markdown_core_frame_local(tokenizer);
+    const markdown_core_delimiter_rule rule = (markdown_core_delimiter_rule)words[RUN_RULE];
+    const uint32_t length = words[RUN_LENGTH], from = tokenizer->position + length, close = record->close;
+    if (!formula_body_admitted(rule, tokenizer->data + from, (bufsize_t)(close - from))) {
+        return S_sequence(tokenizer, code);
+    }
+    /* A dynamic owner's policy is asked as the pass pairs, in order with
+     * the other pairs; a fixed one takes it now. */
+    markdown_core_node *owner = inline_state->owner;
+    if (!markdown_core_node_allows(owner) && markdown_core_node_can_contain_type(owner, MARKDOWN_CORE_NODE_FORMULA)) {
+        const uint32_t token = markdown_core_enter(tokenizer, (uint16_t)(self->token_base + FORMULA_SPAN));
+        markdown_core_consume_to(tokenizer, close + length);
+        markdown_core_exit(tokenizer, (uint16_t)(self->token_base + FORMULA_SPAN));
+        if (token != UINT32_MAX) {
+            tokenizer->events.tokens[token].data = S_span_word(rule, length, length);
+        }
+        return markdown_core_ok(tokenizer);
+    }
+    record->opaque = close;
+    return S_sequence(tokenizer, code);
+}
+
+static markdown_core_state S_run(markdown_core_tokenizer *tokenizer, markdown_core_delimiter_rule rule, uint32_t length,
+                                 bool opens, bool closes, int code) {
+    uint32_t *words = markdown_core_frame_local(tokenizer);
+    words[RUN_RULE] = (uint32_t)rule;
+    words[RUN_LENGTH] = length;
+    words[RUN_OPENS] = opens;
+    words[RUN_CLOSES] = closes;
+    if (!opens) {
+        return S_sequence(tokenizer, code);
+    }
+    formula_record *record = S_record(tokenizer);
+    record->rule = (uint32_t)rule;
+    record->from = tokenizer->position + length;
+    return markdown_core_check(tokenizer, &FORMULA_BODY, markdown_core_state_of(S_closes),
+                               markdown_core_state_of(S_unclosed), code);
 }
 
 static bool S_can_open(const unsigned char *data, uint32_t size, uint32_t at) {
@@ -598,36 +658,31 @@ static markdown_core_state S_start(markdown_core_tokenizer *tokenizer, int code)
     if (at + 3 > size) {
         markdown_core_met_end(tokenizer);
     }
+    const int next = markdown_core_code_at(tokenizer, 1);
     if (code == '$') {
-        if (scan_formula_dollar_display_open(data, size, at)) {
+        if (next == '$') {
             const bool open = S_open(tokenizer, FORMULA_DELIM_DOLLAR_DISPLAY);
-            return S_run(tokenizer, FORMULA_DELIM_DOLLAR_DISPLAY, 2, !open, open);
+            return S_run(tokenizer, FORMULA_DELIM_DOLLAR_DISPLAY, 2, !open, open, code);
         }
-        if (scan_formula_dollar_inline_open(data, size, at)) {
-            const bool open = S_open(tokenizer, FORMULA_DELIM_DOLLAR_INLINE);
-            return S_run(tokenizer, FORMULA_DELIM_DOLLAR_INLINE, 1,
-                         !open && S_can_open(data, (uint32_t)size, (uint32_t)at),
-                         open && S_can_close(data, (uint32_t)size, (uint32_t)at));
-        }
-        return markdown_core_nok(tokenizer);
+        const bool open = S_open(tokenizer, FORMULA_DELIM_DOLLAR_INLINE);
+        return S_run(tokenizer, FORMULA_DELIM_DOLLAR_INLINE, 1, !open && S_can_open(data, (uint32_t)size, (uint32_t)at),
+                     open && S_can_close(data, (uint32_t)size, (uint32_t)at), code);
     }
-    bufsize_t length = scan_formula_latex_backslash_display_open(data, size, at);
-    if (length) {
-        return S_run(tokenizer, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY, (uint32_t)length,
-                     !S_open(tokenizer, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY), false);
+    /* `\\(`, `\\[` open, `\\)`, `\\]` close an open one. */
+    const int last = next == '\\' ? markdown_core_code_at(tokenizer, 2) : MARKDOWN_CORE_EOF;
+    if (last == '[') {
+        return S_run(tokenizer, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY, 3,
+                     !S_open(tokenizer, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY), false, code);
     }
-    length = scan_formula_latex_backslash_inline_open(data, size, at);
-    if (length) {
-        return S_run(tokenizer, FORMULA_DELIM_LATEX_BACKSLASH_INLINE, (uint32_t)length,
-                     !S_open(tokenizer, FORMULA_DELIM_LATEX_BACKSLASH_INLINE), false);
+    if (last == '(') {
+        return S_run(tokenizer, FORMULA_DELIM_LATEX_BACKSLASH_INLINE, 3,
+                     !S_open(tokenizer, FORMULA_DELIM_LATEX_BACKSLASH_INLINE), false, code);
     }
-    length = scan_backslash_close(data, size, at, ']', 2);
-    if (length && S_open(tokenizer, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY)) {
-        return S_run(tokenizer, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY, (uint32_t)length, false, true);
+    if (last == ']' && S_open(tokenizer, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY)) {
+        return S_run(tokenizer, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY, 3, false, true, code);
     }
-    length = scan_backslash_close(data, size, at, ')', 2);
-    if (length && S_open(tokenizer, FORMULA_DELIM_LATEX_BACKSLASH_INLINE)) {
-        return S_run(tokenizer, FORMULA_DELIM_LATEX_BACKSLASH_INLINE, (uint32_t)length, false, true);
+    if (last == ')' && S_open(tokenizer, FORMULA_DELIM_LATEX_BACKSLASH_INLINE)) {
+        return S_run(tokenizer, FORMULA_DELIM_LATEX_BACKSLASH_INLINE, 3, false, true, code);
     }
     return markdown_core_nok(tokenizer);
 }

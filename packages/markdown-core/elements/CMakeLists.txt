@@ -24,7 +24,6 @@ set(LIBRARY_SOURCES
     escape.c
     footnote.c
     formula.c
-    formula_scanners.c
     heading.c
     html.c
     html_block.c
@@ -65,7 +64,6 @@ if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
     set_source_files_properties(
         autolink_scanners.c
         comment_scanners.c
-        formula_scanners.c
         html_scanners.c
         link_scanners.c
         text_scanners.c
