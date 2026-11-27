@@ -230,7 +230,7 @@ static const char OOM_CITATION_CORPUS[] = "^^ *^^* ^^^^ [^^]{} ^[^^]\n\n"
 
 static const char OOM_DEFINITION_LIST_CORPUS[] =
     "# Reserved\n\n::: {#reserved .box k=value}\n*Term* @key\n: first ^[footnote]\n: second\n\n"
-    "Loose\n\n~ inner\n  : body\n\n    continued\n\n"
+    "Loose\n\n: inner\n  : body\n\n    continued\n\n"
     "Code\n: ```\n  :::\n  ```\n\n"
     "[reference]: /url {.attr}\n\nT\n: [reference]\n::: \n\n::: warning\n:::\n\n::: {}\n:::\n";
 

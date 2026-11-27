@@ -297,6 +297,24 @@
             "inputDigest": "dd383580da6a6cf5aeed7dcf8f90c36ee40e277d495d3aedf5112d45af756071",
             "oracleDigest": "90473850631816cf58d2ed03ede03e8736cd0c850cee14342599a3b4d51e0847",
             "coreDigest": "aeafac01221fa149cbba9e6bfe4011a99441ff2a1db3ca742de01afb312c7c0f"
+        },
+        {
+            "id": "definition-list-compact",
+            "item": "P10",
+            "status": "projection",
+            "reason": "Only `:` marks a definition body: the dialect dropped Pandoc's `~` marker, so Core reads each `~` line as paragraph text, while Pandoc's definition_lists reader makes a DefinitionList.",
+            "inputDigest": "00484e1a513cf498e03b1c4a017aac21bc862b89e0854351f2298a5983531241",
+            "oracleDigest": "53e4d458438713d8201f04dd14b41a1c46bae5b2eb54bb0fcfa47f374395dbac",
+            "coreDigest": "d28c10c13fc2eb2412a91173d2f8b3da2933b080ebbca154e5b5d1d1bee302db"
+        },
+        {
+            "id": "p10-marker-only",
+            "item": "P10",
+            "status": "projection",
+            "reason": "Only `:` marks a definition body: the dialect dropped Pandoc's `~` marker, so Core reads each `~` line as paragraph text, while Pandoc's definition_lists reader makes a DefinitionList. Here the lone `~` and the indented `body` are one paragraph's lines in Core.",
+            "inputDigest": "b00e33ae6c48342445b06dffd43f0baf2bbffa536eccf4d2a903a50b6aed325f",
+            "oracleDigest": "6a652458a4afe93a2bb395ee31d2ecd193be87141ca07dbe48929c9714db06f7",
+            "coreDigest": "232795ab502ca79c8b8f09733f735fc793b0715e81d8089a6924b582b9e22371"
         }
     ]
 }

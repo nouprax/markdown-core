@@ -1,6 +1,6 @@
 *Term* `code`
 : first
-~ second
+: second
 
 Loose
 
@@ -21,4 +21,4 @@ Blocks
   ```
 
 Empty
-~
+:

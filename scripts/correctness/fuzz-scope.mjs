@@ -66,7 +66,7 @@ function pandocTableSegments(input) {
  */
 export function outsideSharedFuzzScope(input) {
     if (input.includes("-") && pandocTableSegments(input)) return "pandoc-tables";
-    if (!/[[:~]/u.test(input)) return null;
+    if (!/[[:]/u.test(input)) return null;
     const pending = [commonmark.parse(input)];
     let heading = false;
     let unresolvedBracket = false;
@@ -83,7 +83,7 @@ export function outsideSharedFuzzScope(input) {
         }
         if (node.type === "paragraph") {
             const raw = input.slice(node.position.start.offset, node.position.end.offset);
-            if (/(?:^|\n)[^\r\n]+\r?\n(?:[ \t]*\r?\n)?[ \t]*[:~](?:[ \t]|\r?\n|$)/u.test(raw)) {
+            if (/(?:^|\n)[^\r\n]+\r?\n(?:[ \t]*\r?\n)?[ \t]*:(?:[ \t]|\r?\n|$)/u.test(raw)) {
                 return "definition-lists";
             }
         }

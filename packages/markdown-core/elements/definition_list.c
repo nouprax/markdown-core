@@ -74,11 +74,11 @@ static bool accepts_blank(const markdown_core_element_instance *self, markdown_c
 static inline bool markdown_core_block_definition_marker(markdown_core_reader *reader) {
     const bufsize_t at = reader->nonspace;
     return reader->indent < 4 && !markdown_core_reader_ends(reader, at + 1) &&
-           (markdown_core_reader_peek(reader, at) == ':' || markdown_core_reader_peek(reader, at) == '~') &&
+           markdown_core_reader_peek(reader, at) == ':' &&
            markdown_core_is_whitespace(markdown_core_reader_peek(reader, at + 1));
 }
 
-/* A definition marker is ':' or '~' followed by a space, a tab or the line
+/* A definition marker is ':' followed by a space, a tab or the line
  * end. Asking whether the NEXT line carries one used to mean opening a full
  * lookahead transaction -- chain walk, reserve, snapshot, then a line pulled
  * at 548 Ir -- on every line of every document, because a definition TERM is
@@ -115,12 +115,12 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool definition_next_line
         const markdown_core_node *container = parent;
         while (c >= 0 && parser->dialect->container_prefix[c]) {
             /* A declared prefix byte that is also a marker byte -- a
-             * container whose continuation strips ':' or '~' -- cannot be
+             * container whose continuation strips ':' -- cannot be
              * told from the marker here; only the transaction can, so the
              * key admits. No element declares one today; the rule is what
              * lets one do so without this key silently refusing the
              * definitions inside it. */
-            if (c == ':' || c == '~') {
+            if (c == ':') {
                 return true;
             }
             if (!markdown_core_is_space_or_tab((unsigned char)c)) {
@@ -135,7 +135,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool definition_next_line
             return false;
         }
         if (!markdown_core_is_line_end((unsigned char)c)) {
-            if (c != ':' && c != '~') {
+            if (c != ':') {
                 return false;
             }
             const int next = markdown_core_reader_byte(reader, parser, at + 1);
@@ -433,7 +433,7 @@ static const markdown_core_candidate_ops DEFINITION_LIST_CANDIDATE = {
 static const markdown_core_open_ops DEFINITION_LIST_OPENS = {
     .indent = 3,
     .scan = markdown_core_definition_list_scan,
-    .scan_needs = {.bytes = ":~"},
+    .scan_needs = {.bytes = ":"},
     .last = try_paragraph,
 };
 

@@ -9,7 +9,7 @@ import kotlin.test.assertTrue
 class AstTest {
     @Test
     fun definitionTermsAndOrderedBodiesSurviveNativeReleaseAndWalkWithoutWrappers() {
-        val block = Document.parse("::: box\n*T*\n: one\n~\n\nU\n\n: two\n:::\n").content.single() as DirectiveBlock
+        val block = Document.parse("::: box\n*T*\n: one\n:\n\nU\n\n: two\n:::\n").content.single() as DirectiveBlock
         assertNull(block.name)
         assertEquals(listOf("box"), block.attributes.classes)
         val list = block.content.single() as DefinitionList

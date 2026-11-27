@@ -9,7 +9,7 @@
 //! ; Restriction: the body follows a definition term, whose line is before
 //! ; it with at most one blank line between, or another definition body.
 //! definition_body ::= prefix [flow *(eol *space_or_tab flow)]
-//! prefix ::= 0*3space_or_tab (':' | '~') (eol | 1*4space_or_tab)
+//! prefix ::= 0*3space_or_tab ':' (eol | 1*4space_or_tab)
 //! ```
 //!
 //! A body is a container like a [list item][list_item], with its padding
@@ -100,7 +100,7 @@ fn start(tokenizer: &mut Tokenizer) -> State {
 ///     ^
 /// ```
 fn before(tokenizer: &mut Tokenizer) -> State {
-    if matches!(tokenizer.current, Some(b':' | b'~')) {
+    if matches!(tokenizer.current, Some(b':')) {
         tokenizer.enter(Name::DefinitionBodyMarker);
         tokenizer.consume();
         tokenizer.exit(Name::DefinitionBodyMarker);
@@ -282,7 +282,7 @@ fn indent(min: usize, max: usize) -> StateName {
 }
 
 /// A definition marker, as a test of a whole line: no more than three
-/// columns of indentation, `:` or `~`, and then whitespace or the line's end.
+/// columns of indentation, `:`, and then whitespace or the line's end.
 ///
 /// ```markdown
 ///   | a
@@ -309,7 +309,7 @@ fn marker_start(tokenizer: &mut Tokenizer) -> State {
 ///     ^
 /// ```
 fn marker_test(tokenizer: &mut Tokenizer) -> State {
-    if matches!(tokenizer.current, Some(b':' | b'~')) {
+    if matches!(tokenizer.current, Some(b':')) {
         tokenizer.consume();
         State::Next(StateName::DefinitionBody(Step::MarkerTestAfter))
     } else {
@@ -339,7 +339,7 @@ pub fn marks(bytes: &[u8], mut index: usize) -> bool {
     while index < bytes.len() && matches!(bytes[index], b'\t' | b' ' | b'>') {
         index += 1;
     }
-    matches!(bytes.get(index), Some(b':' | b'~'))
+    matches!(bytes.get(index), Some(b':'))
         && matches!(
             bytes.get(index + 1),
             None | Some(b'\t' | b'\n' | b'\r' | b' ')

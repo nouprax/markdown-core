@@ -7935,7 +7935,6 @@ static void definition_gate_reads_the_prefix_not_the_line(test_batch_runner *run
                                            "Term\n\n: body\n",
                                            "> Term\n> : body\n",
                                            "> Term\n>\n> : body\n",
-                                           "Term\n~ body\n",
                                            "Term\n:\n",
                                            "- Term\n  : body\n",
                                            "1. Term\n   : body\n",
@@ -8022,21 +8021,12 @@ static const markdown_core_element COLON_PREFIX_CONTAINER = {
     .name = "colon-prefix",
     .lines = &COLON_PREFIX_CONTAINER_LINES,
 };
-static const markdown_core_line_ops TILDE_PREFIX_CONTAINER_LINES = {
-    .prefix_bytes = "~",
-};
-
-static const markdown_core_element TILDE_PREFIX_CONTAINER = {
-    .name = "tilde-prefix",
-    .lines = &TILDE_PREFIX_CONTAINER_LINES,
-};
 static bool attach_marker_prefix_containers(markdown_core_dialect_builder *builder, void *context) {
     (void)context;
-    return markdown_core_dialect_builder_attach(builder, &COLON_PREFIX_CONTAINER) &&
-           markdown_core_dialect_builder_attach(builder, &TILDE_PREFIX_CONTAINER) && attach_work_recorder(builder);
+    return markdown_core_dialect_builder_attach(builder, &COLON_PREFIX_CONTAINER) && attach_work_recorder(builder);
 }
 static void a_prefix_byte_that_is_a_marker_byte_hands_the_line_to_the_transaction(test_batch_runner *runner) {
-    static const char *const sources[] = {"Term\n: body\n", "Term\n~ body\n", "> Term\n> : body\n"};
+    static const char *const sources[] = {"Term\n: body\n", "Term\n\n: body\n", "> Term\n> : body\n"};
     for (size_t i = 0; i < sizeof(sources) / sizeof(*sources); i++) {
         inline_work work = {0};
         markdown_core_node *root = markdown_core_parse_document_with_setup(sources[i], strlen(sources[i]),
@@ -10848,7 +10838,7 @@ static void session_edits_replaced_label(test_batch_runner *runner) {
  * inline content whole lists the inline notes of the paragraph's old tail
  * again: the old ones go, to the paragraph's end (blocks.c, THE LEAP). */
 static void session_edits_nested_notes(test_batch_runner *runner) {
-    static const char source[] = "a\n~\n  $m$ |a|\n  word word\n[^n]\nq -\n  [^[n]\nafter\n";
+    static const char source[] = "a\n:\n  $m$ |a|\n  word word\n[^n]\nq -\n  [^[n]\nafter\n";
     markdown_core_session *session = NULL;
     const markdown_core_document *document = NULL;
     const markdown_core_position line = {5, 1}, next = {6, 1};

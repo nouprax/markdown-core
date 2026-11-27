@@ -639,7 +639,7 @@ static void check_table_model(void) {
 }
 
 static void check_definition_model(void) {
-    static const uint8_t input[] = "::: box\n*T*\n: one\n~\n\nU\n\n: two\n:::\n\n:::named\n:::\n";
+    static const uint8_t input[] = "::: box\n*T*\n: one\n:\n\nU\n\n: two\n:::\n\n:::named\n:::\n";
     markdown_core_document *document = parse(input, sizeof(input) - 1);
     if (!document) {
         return;

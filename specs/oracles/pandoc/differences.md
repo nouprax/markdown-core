@@ -63,6 +63,8 @@ requires distinguishing reader configuration from failed-candidate fallback.
 | 34 | `p10-empty-bodies`: compactness of empty definition bodies | The same AST-information difference as item 32, with an empty first body. The empty body and subsequent bodies are preserved and compared. Only Core's explicitly retained compactness information differs. |
 | 35 | `attribute-class-html-whitespace`: separators in a `class=` value | Core splits a `class=` value where HTML splits a `class` attribute: at tab, LF, form feed, CR and space. The case writes `a`, a space, `b`, NBSP, `c`, IDEOGRAPHIC SPACE, `d`, `&#11;` and `e`. Core has two classes: `a`, and one holding everything after the space. Pandoc splits at every Unicode space, the referenced vertical tab included, and has the five classes `a` to `e`. |
 | 36 | `p7-braced-key-whitespace`: whitespace in a braced citation key | A braced key excludes whitespace, which is a space, a tab or a line ending, so Core keys `@{a b}`, written with NBSP, as `a b`, and `[@{c　d}, p. 1]`, written with IDEOGRAPHIC SPACE, as `c　d`. Pandoc excludes every Unicode space and keeps both as text. Both reject the ASCII space in `@{a b}`. |
+| 37 | `definition-list-compact`: the `~` definition marker | The dialect keeps only `:` as a definition marker. Core reads each `~ Definition` line as text of the term's paragraph; Pandoc's `definition_lists` reader also accepts `~` and makes a DefinitionList. |
+| 38 | `p10-marker-only`: a lone `~` before an indented body | The same rule as item 37: the lone `~` and the indented `body` are lines of one paragraph in Core, and a definition with a code-indented body in Pandoc. |
 
 The clearest repeated relationships are:
 
@@ -72,6 +74,7 @@ The clearest repeated relationships are:
   sites.
 - 32–34: one compactness-information difference across nested blocks, code
   blocks, and empty bodies.
+- 37, 38: the dropped `~` definition marker.
 
 These records are governed by the existing modules:
 [scripts](../../../docs/specs/dialect/superscript-and-subscript.md),

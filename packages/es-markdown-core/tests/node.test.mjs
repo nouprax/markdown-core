@@ -1863,7 +1863,7 @@ test("ast: P2 attributes preserve native arrays, ownership, dimensions and occur
 });
 
 test("ast: definition terms and ordered bodies are owned and walk without body wrapper nodes", () => {
-    const bytes = nativeMessage("::: box\n*T*\n: one\n~\n\nU\n\n: two\n:::\n");
+    const bytes = nativeMessage("::: box\n*T*\n: one\n:\n\nU\n\n: two\n:::\n");
     const block = decoder(bytes).decode().content[0];
     bytes.fill(0);
     assert.equal(block.name, null);

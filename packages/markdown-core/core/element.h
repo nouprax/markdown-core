@@ -620,7 +620,7 @@ struct markdown_core_line_ops {
      * make the parser slower, it makes it WRONG: the construct inside this
      * container is silently never recognised. Projected with the hooks into
      * the dialect's `container_prefix`. A declared byte that is also the marker
-     * byte of the grammar asking (':' or '~' for a definition) cannot be told
+     * byte of the grammar asking (':' for a definition) cannot be told
      * from that marker in raw source, so the key hands such a line to the
      * lookahead rather than walking over it. */
     const char *prefix_bytes;
