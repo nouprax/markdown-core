@@ -129,6 +129,12 @@ markdown_core_state markdown_core_block_continued(markdown_core_tokenizer *token
  * succeeds, a verdict token's kind succeeds with that token. */
 markdown_core_state markdown_core_block_verdict(markdown_core_tokenizer *tokenizer, int verdict);
 
+/* THE INDENTED CONTINUATION (micromark's list item and footnote
+ * continuations): the line goes on past `columns` columns of indentation,
+ * its PREFIX, or, when `blank` lets it, on a blank line, past its spaces. */
+markdown_core_state markdown_core_block_indented(markdown_core_tokenizer *tokenizer, uint32_t columns, bool blank,
+                                                 int code);
+
 static inline markdown_core_block_turn *markdown_core_block_turn_of(const markdown_core_tokenizer *tokenizer) {
     return (markdown_core_block_turn *)tokenizer->reader;
 }
@@ -168,7 +174,10 @@ bool markdown_core_alone_read(markdown_core_parser *parser, markdown_core_alone 
                               const markdown_core_construct *construct, const unsigned char *data, uint32_t size);
 void markdown_core_alone_end(markdown_core_parser *parser, markdown_core_alone *alone);
 
-int markdown_core_block_consume_item_marker(markdown_core_reader *reader, int marker_width);
+/* THE ITEM'S PADDING (list.c): one to four columns of space after an item
+ * marker, not followed by the line's end; refused, the reading reads one
+ * column of space if there is one, padding of one column. */
+extern const markdown_core_construct markdown_core_item_padding;
 /* Adds the rest of the line in hand, from the reader's offset, to `node`'s content. */
 void markdown_core_block_add_line(markdown_core_parser *parser, markdown_core_node *node);
 markdown_core_node *markdown_core_block_parent_for(markdown_core_parser *parser, markdown_core_node *parent,

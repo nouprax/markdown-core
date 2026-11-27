@@ -42,7 +42,6 @@ add_library(
     "${MARKDOWN_CORE_ELEMENTS_DIR}/thematic_break.c"
     "${MARKDOWN_CORE_ELEMENTS_DIR}/autolink_scanners.c"
     "${MARKDOWN_CORE_ELEMENTS_DIR}/comment_scanners.c"
-    "${MARKDOWN_CORE_ELEMENTS_DIR}/footnote_scanners.c"
     "${MARKDOWN_CORE_ELEMENTS_DIR}/formula_scanners.c"
     "${MARKDOWN_CORE_ELEMENTS_DIR}/html_scanners.c"
     "${MARKDOWN_CORE_ELEMENTS_DIR}/link_scanners.c"

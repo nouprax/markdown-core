@@ -2,7 +2,18 @@
 #include "tasklist.h"
 #include "block_internal.h"
 
-MARKDOWN_CORE_BLOCK_FOUND_FITS(markdown_core_list, list_marker_fits);
+/* What a list's start found (WHAT THE START FOUND, block_internal.h): the
+ * item's facts, then where its marker and numeral stand on the line, the
+ * column it started at and the numeral's first byte. */
+typedef struct {
+    markdown_core_list list;
+    bufsize_t marker, begin, end;
+    /* The columns where the start began, its marker, and past the marker. */
+    uint32_t column, from, past;
+    int first;
+    bool closed;
+} list_found;
+MARKDOWN_CORE_BLOCK_FOUND_FITS(list_found, list_found_fits);
 
 /* The list element's flags, on a List. */
 enum {
@@ -16,10 +27,6 @@ enum {
 };
 
 static bool markdown_core_block_list_facts_match(const markdown_core_list *list, const markdown_core_list *item);
-static bufsize_t markdown_core_block_parse_list_marker(markdown_core_list_work *counts, markdown_core_parser *parser,
-                                                       markdown_core_reader *reader, bufsize_t pos,
-                                                       markdown_core_node *container, int first_column,
-                                                       bool interrupts_paragraph, markdown_core_list *data);
 /* The upper-case roman letters: the terms of ordered_numeral's roman variant. */
 static bool roman_letter(unsigned char c) { return c && strchr("MDCLXVI", c) != NULL; }
 static bool ordered_numeral(markdown_core_list_work *counts, const unsigned char *input, bufsize_t begin, bufsize_t end,
@@ -95,120 +102,6 @@ static bool markdown_core_block_list_facts_match(const markdown_core_list *list,
            list->delimiter.kind == item->delimiter.kind && list->delimiter.closed == item->delimiter.closed;
 }
 
-static bufsize_t markdown_core_block_parse_list_marker(markdown_core_list_work *counts, markdown_core_parser *parser,
-                                                       markdown_core_reader *reader, bufsize_t pos,
-                                                       markdown_core_node *container, int first_column,
-                                                       bool interrupts_paragraph, markdown_core_list *data) {
-    bufsize_t startpos = pos;
-    unsigned char c = markdown_core_reader_peek(reader, pos);
-    const markdown_core_list *committed = container->kind == MARKDOWN_CORE_NODE_LIST ? container->as.list : NULL;
-    *data = (markdown_core_list){0};
-    counts->markers++;
-    if (c == '*' || c == '-' || c == '+') {
-        data->flavor = MARKDOWN_CORE_LIST_FLAVOR_BULLET;
-        data->bullet_char = c;
-        pos++;
-    } else {
-        bool closed = c == '(';
-        pos += closed;
-        bufsize_t begin = pos;
-        c = markdown_core_reader_peek(reader, pos);
-        /* The numeral is scanned by the class its first byte names, which is
-         * the set ordered_numeral accepts: one automatic marker, decimal
-         * digits (ten fail there as surely as here), or letters -- ONE, or
-         * roman letters of the first one's case. A run that leaves its class
-         * was refused by the numeral, so the scan that stops at the class
-         * boundary refuses it at the delimiter instead, and a prose word
-         * that reached this far ends the probe on its second byte rather
-         * than at its end. */
-        if (c == '#') {
-            pos++;
-        } else if (markdown_core_isdigit(c)) {
-            while (markdown_core_isdigit(markdown_core_reader_peek(reader, pos)) && pos - begin < 10) {
-                counts->markers++;
-                pos++;
-            }
-        } else if (markdown_core_isalpha(c)) {
-            unsigned char offset = c >= 'a' ? 'a' - 'A' : 0;
-            do {
-                counts->markers++;
-                pos++;
-            } while (roman_letter((unsigned char)(c - offset)) &&
-                     roman_letter((unsigned char)(markdown_core_reader_peek(reader, pos) - offset)));
-        }
-        if (pos == begin) {
-            return 0;
-        }
-        bufsize_t end = pos;
-        unsigned char delim = markdown_core_reader_peek(reader, pos++);
-        if (delim != ')' && (closed || delim != '.')) {
-            return 0;
-        }
-        data->flavor = MARKDOWN_CORE_LIST_FLAVOR_ORDERED;
-        data->delimiter =
-            (markdown_core_ordered_list_delimiter){delim == '.' ? MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD
-                                                                : MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PARENTHESIS,
-                                                   closed};
-        data->variant.lowercased = c >= 'a' && c <= 'z';
-        data->variant.kind = c == '#'                                   ? MARKDOWN_CORE_ORDERED_LIST_VARIANT_DEFAULT
-                             : markdown_core_isdigit(c)                 ? MARKDOWN_CORE_ORDERED_LIST_VARIANT_DECIMAL
-                             : end == begin + 1 && c != 'i' && c != 'I' ? MARKDOWN_CORE_ORDERED_LIST_VARIANT_ALPHA
-                                                                        : MARKDOWN_CORE_ORDERED_LIST_VARIANT_ROMAN;
-        if (committed && committed->flavor == MARKDOWN_CORE_LIST_FLAVOR_ORDERED &&
-            ordered_numeral(counts, markdown_core_reader_bytes(reader, 0), begin, end, committed->variant,
-                            &data->start)) {
-            data->variant = committed->variant;
-        } else if (!ordered_numeral(counts, markdown_core_reader_bytes(reader, 0), begin, end, data->variant,
-                                    &data->start)) {
-            return 0;
-        }
-        if (c == '#' && delim == '.' &&
-            (!committed || committed->delimiter.kind == MARKDOWN_CORE_ORDERED_LIST_DELIMITER_DEFAULT)) {
-            data->delimiter.kind = MARKDOWN_CORE_ORDERED_LIST_DELIMITER_DEFAULT;
-        }
-        if (interrupts_paragraph && data->start != 1) {
-            return 0;
-        }
-        if (!committed || !markdown_core_block_list_facts_match(committed, data)) {
-            if (data->start != 1 &&
-                markdown_core_parser_inside(parser, container,
-                                            markdown_core_node_block_kind_bit(MARKDOWN_CORE_NODE_LIST_ITEM) |
-                                                markdown_core_node_block_kind_bit(MARKDOWN_CORE_NODE_SPECIMEN))) {
-                return 0;
-            }
-        }
-        if (end == begin + 1 && c >= 'A' && c <= 'Z' && delim == '.') {
-            int column = first_column + (pos - startpos);
-            int initial_column = column;
-            bufsize_t at = pos;
-            while (markdown_core_is_space_or_tab(markdown_core_reader_peek(reader, at))) {
-                counts->markers++;
-                column += markdown_core_reader_peek(reader, at++) == '\t' ? 4 - column % 4 : 1;
-                if (column - initial_column >= 2) {
-                    break;
-                }
-            }
-            if (column - initial_column < 2 && !markdown_core_is_line_end(markdown_core_reader_peek(reader, at))) {
-                return 0;
-            }
-        }
-    }
-    if (!markdown_core_is_whitespace(markdown_core_reader_peek(reader, pos))) {
-        return 0;
-    }
-    if (interrupts_paragraph) {
-        bufsize_t at = pos;
-        while (markdown_core_is_space_or_tab(markdown_core_reader_peek(reader, at))) {
-            counts->markers++;
-            at++;
-        }
-        if (markdown_core_is_line_end(markdown_core_reader_peek(reader, at))) {
-            return 0;
-        }
-    }
-    return pos - startpos;
-}
-
 /* A LIST IS LOOSE when a blank line separates two of its items or two of
  * the blocks an item holds that the blank-line facts see: an item that is
  * not the last ends with one, or a child that some block follows does. Each
@@ -232,46 +125,35 @@ static markdown_core_node_internal_flags fold_child(const markdown_core_element_
                                                (followed_loose ? MARKDOWN_CORE_NODE__LIST_LOOSE_FOLLOWED : 0));
 }
 
+/* A list's open builds what its start read: the item, in the open list it
+ * continues or in a list it opens, and the task marker after it. The
+ * reading stands past the item's padding. */
 static bool markdown_core_list_open(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                     markdown_core_node **container, markdown_core_reader *reader, block_start *start) {
     (void)self;
-    bufsize_t matched = start->matched;
-    markdown_core_list *data = MARKDOWN_CORE_BLOCK_FOUND(start, markdown_core_list);
+    list_found *found = MARKDOWN_CORE_BLOCK_FOUND(start, list_found);
+    markdown_core_list *data = &found->list;
     markdown_core_node_type cont_type = (*container)->kind;
-
-    data->padding = markdown_core_block_consume_item_marker(reader, matched);
-
-    // check container; if it's a list, see if this list item
-    // can continue the list; otherwise, create a list container.
-
-    data->marker_offset = reader->indent;
-
     if (cont_type != MARKDOWN_CORE_NODE_LIST || !markdown_core_block_list_facts_match((*container)->as.list, data)) {
         /* The open list it does not continue gave it what its marker
          * leaves open, as a variant: its opener reads that list. */
         if (cont_type == MARKDOWN_CORE_NODE_LIST) {
             markdown_core_reader_open(reader, *container);
         }
-        *container = markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_LIST, reader->nonspace + 1);
+        *container = markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_LIST, found->marker + 1);
         if (!*container) {
             return false;
         }
-
         memcpy((*container)->as.list, data, sizeof(*data));
     }
-
-    // add the list item
-    *container = markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_LIST_ITEM, reader->nonspace + 1);
+    *container = markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_LIST_ITEM, found->marker + 1);
     if (!*container) {
         return false;
     }
     memcpy((*container)->as.list, data, sizeof(*data));
     markdown_core_reader_find(reader);
     markdown_core_parse_task_prefix(parser, *container, reader);
-    if (parser->error) {
-        return false;
-    }
-    return true;
+    return !parser->error;
 }
 
 enum { LIST_ITEM, LIST_BLOCKS };
@@ -284,47 +166,271 @@ static void S_list_item(markdown_core_compiler *compiler, const markdown_core_to
                                            turn->context->reader, turn->start);
 }
 
-static markdown_core_state markdown_core_list_scan(markdown_core_tokenizer *tokenizer, int code) {
-    (void)code;
-    const markdown_core_element_instance *self = markdown_core_self(tokenizer);
-    markdown_core_parser *parser = markdown_core_block_turn_of(tokenizer)->parser;
-    block_start_context *context = markdown_core_block_turn_of(tokenizer)->context;
-    block_start *start = markdown_core_block_turn_of(tokenizer)->start;
-    if (!((start->matched = markdown_core_block_parse_list_marker(
-               self->state, parser, context->reader, context->reader->nonspace, context->container,
-               context->reader->nonspace_column, context->paragraph,
-               MARKDOWN_CORE_BLOCK_FOUND(start, markdown_core_list))))) {
-        return markdown_core_nok(tokenizer);
-    }
-    start->kind = MARKDOWN_CORE_NODE_LIST;
+/* THE MARKER (micromark's list, code by code): up to three spaces, a
+ * bullet, or a numeral -- `(` before it, `)` or `.` after it -- whitespace
+ * after it, and the item's padding, the start's; then, as an indent, every
+ * later line's. */
+static inline bufsize_t S_offset(const markdown_core_tokenizer *tokenizer) {
+    return (bufsize_t)(tokenizer->position - tokenizer->base);
+}
+
+static inline list_found *S_found(const markdown_core_tokenizer *tokenizer) {
+    return MARKDOWN_CORE_BLOCK_FOUND(markdown_core_block_turn_of(tokenizer)->start, list_found);
+}
+
+static inline void S_count(markdown_core_tokenizer *tokenizer) {
+    ((markdown_core_list_work *)((const markdown_core_element_instance *)markdown_core_self(tokenizer))->state)
+        ->markers++;
+}
+
+/* The item's padding is its marker's columns and the columns of space
+ * past it, or one when the padding is refused. */
+static markdown_core_state S_item_at(markdown_core_tokenizer *tokenizer, uint32_t space) {
+    list_found *found = S_found(tokenizer);
+    found->list.marker_offset = (int)(found->column - found->from);
+    found->list.padding = (int)(found->past - found->column + space);
     return markdown_core_block_found(tokenizer, LIST_ITEM);
 }
 
-bool markdown_core_list_continue(markdown_core_parser *parser, markdown_core_node *container,
-                                 markdown_core_reader *reader, const markdown_core_node *joining, bool *taken) {
-    if (container->kind == MARKDOWN_CORE_NODE_LIST_ITEM) {
-        return markdown_core_reader_indented(reader, container->as.list->marker_offset + container->as.list->padding,
-                                             markdown_core_parser_last_child(container) != NULL ||
-                                                 joining == container);
-    }
-    if (reader->blank) {
-        if ((container->flags & MARKDOWN_CORE_NODE__LIST_LAST_LINE_BLANK) && reader->indent == 0) {
-            *taken = true;
-            return true;
-        }
-        container->flags |= MARKDOWN_CORE_NODE__LIST_LAST_LINE_BLANK;
-    } else {
-        container->flags &= ~MARKDOWN_CORE_NODE__LIST_LAST_LINE_BLANK;
-    }
-    return true;
+static markdown_core_state S_item(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    return S_item_at(tokenizer, markdown_core_column(tokenizer) - S_found(tokenizer)->past);
 }
 
-static bool continue_container(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                               markdown_core_node *node, markdown_core_reader *reader,
-                               const markdown_core_node *joining, bool *taken) {
-    (void)self;
-    return markdown_core_list_continue(parser, node, reader, joining, taken);
+static markdown_core_state S_item_one(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    return S_item_at(tokenizer, 1);
 }
+
+static markdown_core_state S_padded(markdown_core_tokenizer *tokenizer, int code) {
+    if (markdown_core_code_space(code)) {
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_item_one);
+    }
+    return S_item_one(tokenizer, code);
+}
+
+/* The marker stands: whitespace follows it, and the line is not blank
+ * past it when it interrupts a paragraph. */
+static markdown_core_state S_spaced(markdown_core_tokenizer *tokenizer, int code) {
+    S_found(tokenizer)->past = markdown_core_column(tokenizer);
+    return markdown_core_attempt(tokenizer, &markdown_core_item_padding, markdown_core_state_of(S_item),
+                                 markdown_core_state_of(S_padded), code);
+}
+
+static markdown_core_state S_refused(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    return markdown_core_nok(tokenizer);
+}
+
+static markdown_core_state S_marked(markdown_core_tokenizer *tokenizer, int code) {
+    S_count(tokenizer);
+    if (!markdown_core_code_space(code) && !markdown_core_code_ending(code)) {
+        return markdown_core_nok(tokenizer);
+    }
+    if (markdown_core_block_turn_of(tokenizer)->context->paragraph) {
+        return markdown_core_check(tokenizer, &markdown_core_blank_line, markdown_core_state_of(S_refused),
+                                   markdown_core_state_of(S_spaced), code);
+    }
+    return S_spaced(tokenizer, code);
+}
+
+/* An upper-case letter and a period stand as a marker when two columns of
+ * space or the line's end follow. */
+static markdown_core_state S_wide_end(markdown_core_tokenizer *tokenizer, int code) {
+    return markdown_core_code_ending(code) ||
+                   markdown_core_column(tokenizer) - markdown_core_frame_local(tokenizer)[0] >= 2
+               ? markdown_core_ok(tokenizer)
+               : markdown_core_nok(tokenizer);
+}
+
+static markdown_core_state S_wide(markdown_core_tokenizer *tokenizer, int code) {
+    markdown_core_frame_local(tokenizer)[0] = markdown_core_column(tokenizer);
+    return markdown_core_spaces(tokenizer, markdown_core_state_of(S_wide_end), 0, 2, code);
+}
+
+static const markdown_core_construct LIST_WIDE = {.start = S_wide};
+
+/* The numeral, past its delimiter, reads as its list's: a value in the
+ * variant of the list it continues or of its own first byte, which only a
+ * first item, or one in no item, may start past 1. */
+static markdown_core_state S_delimited(markdown_core_tokenizer *tokenizer, int code) {
+    markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
+    markdown_core_list_work *counts = ((const markdown_core_element_instance *)markdown_core_self(tokenizer))->state;
+    list_found *found = S_found(tokenizer);
+    markdown_core_list *data = &found->list;
+    markdown_core_node *container = turn->context->container;
+    const markdown_core_list *committed = container->kind == MARKDOWN_CORE_NODE_LIST ? container->as.list : NULL;
+    const unsigned char *line = tokenizer->data + tokenizer->base;
+    const int c = found->first;
+    const bufsize_t begin = found->begin, end = found->end;
+    const bool period = data->delimiter.kind == MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD;
+    data->variant.lowercased = c >= 'a' && c <= 'z';
+    data->variant.kind = c == '#'                                   ? MARKDOWN_CORE_ORDERED_LIST_VARIANT_DEFAULT
+                         : markdown_core_isdigit((unsigned char)c)  ? MARKDOWN_CORE_ORDERED_LIST_VARIANT_DECIMAL
+                         : end == begin + 1 && c != 'i' && c != 'I' ? MARKDOWN_CORE_ORDERED_LIST_VARIANT_ALPHA
+                                                                    : MARKDOWN_CORE_ORDERED_LIST_VARIANT_ROMAN;
+    if (committed && committed->flavor == MARKDOWN_CORE_LIST_FLAVOR_ORDERED &&
+        ordered_numeral(counts, line, begin, end, committed->variant, &data->start)) {
+        data->variant = committed->variant;
+    } else if (!ordered_numeral(counts, line, begin, end, data->variant, &data->start)) {
+        return markdown_core_nok(tokenizer);
+    }
+    if (c == '#' && period &&
+        (!committed || committed->delimiter.kind == MARKDOWN_CORE_ORDERED_LIST_DELIMITER_DEFAULT)) {
+        data->delimiter.kind = MARKDOWN_CORE_ORDERED_LIST_DELIMITER_DEFAULT;
+    }
+    if (turn->context->paragraph && data->start != 1) {
+        return markdown_core_nok(tokenizer);
+    }
+    if ((!committed || !markdown_core_block_list_facts_match(committed, data)) && data->start != 1 &&
+        markdown_core_parser_inside(turn->parser, container,
+                                    markdown_core_node_block_kind_bit(MARKDOWN_CORE_NODE_LIST_ITEM) |
+                                        markdown_core_node_block_kind_bit(MARKDOWN_CORE_NODE_SPECIMEN))) {
+        return markdown_core_nok(tokenizer);
+    }
+    if (end == begin + 1 && c >= 'A' && c <= 'Z' && period) {
+        return markdown_core_check(tokenizer, &LIST_WIDE, markdown_core_state_of(S_marked),
+                                   markdown_core_state_of(S_refused), code);
+    }
+    return S_marked(tokenizer, code);
+}
+
+static markdown_core_state S_delimiter(markdown_core_tokenizer *tokenizer, int code) {
+    list_found *found = S_found(tokenizer);
+    if (code != ')' && (found->closed || code != '.')) {
+        return markdown_core_nok(tokenizer);
+    }
+    found->end = S_offset(tokenizer);
+    found->list.flavor = MARKDOWN_CORE_LIST_FLAVOR_ORDERED;
+    found->list.delimiter = (markdown_core_ordered_list_delimiter){
+        code == '.' ? MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD : MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PARENTHESIS,
+        found->closed};
+    markdown_core_consume(tokenizer);
+    return markdown_core_state_of(S_delimited);
+}
+
+/* The numeral is read by the class its first byte names, which is the set
+ * ordered_numeral accepts: one automatic marker, decimal digits (ten fail
+ * there as surely as here), or letters -- ONE, or roman letters of the
+ * first one's case. A run that leaves its class was refused by the
+ * numeral, so the reading that stops at the class boundary refuses it at
+ * the delimiter instead, and a prose word that reached this far ends the
+ * reading on its second byte rather than at its end. */
+static markdown_core_state S_digits(markdown_core_tokenizer *tokenizer, int code) {
+    if (code >= '0' && code <= '9' && S_offset(tokenizer) - S_found(tokenizer)->begin < 10) {
+        S_count(tokenizer);
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_digits);
+    }
+    return S_delimiter(tokenizer, code);
+}
+
+static markdown_core_state S_letters(markdown_core_tokenizer *tokenizer, int code) {
+    const int first = S_found(tokenizer)->first;
+    const unsigned char offset = first >= 'a' ? 'a' - 'A' : 0;
+    if (code >= 0 && code < 0x100 && roman_letter((unsigned char)(first - offset)) &&
+        roman_letter((unsigned char)(code - offset))) {
+        S_count(tokenizer);
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_letters);
+    }
+    return S_delimiter(tokenizer, code);
+}
+
+static markdown_core_state S_numeral(markdown_core_tokenizer *tokenizer, int code) {
+    list_found *found = S_found(tokenizer);
+    found->begin = S_offset(tokenizer);
+    found->first = code;
+    if (code == '#') {
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_delimiter);
+    }
+    if (code >= '0' && code <= '9') {
+        S_count(tokenizer);
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_digits);
+    }
+    if (code >= 0 && code < 0x80 && markdown_core_isalpha((unsigned char)code)) {
+        S_count(tokenizer);
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_letters);
+    }
+    return markdown_core_nok(tokenizer);
+}
+
+static markdown_core_state S_marker(markdown_core_tokenizer *tokenizer, int code) {
+    list_found *found = S_found(tokenizer);
+    const uint32_t from = found->from;
+    *found = (list_found){.marker = S_offset(tokenizer), .column = markdown_core_column(tokenizer), .from = from};
+    S_count(tokenizer);
+    if (code == '*' || code == '-' || code == '+') {
+        found->list.flavor = MARKDOWN_CORE_LIST_FLAVOR_BULLET;
+        found->list.bullet_char = (unsigned char)code;
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_marked);
+    }
+    if (code == '(') {
+        found->closed = true;
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_numeral);
+    }
+    return S_numeral(tokenizer, code);
+}
+
+static markdown_core_state markdown_core_list_scan(markdown_core_tokenizer *tokenizer, int code) {
+    markdown_core_block_turn_of(tokenizer)->start->kind = MARKDOWN_CORE_NODE_LIST;
+    S_found(tokenizer)->from = markdown_core_column(tokenizer);
+    return markdown_core_spaces(tokenizer, markdown_core_state_of(S_marker), MARKDOWN_CORE_TOKEN_SPACE, 3, code);
+}
+
+/* THE PADDING (block_internal.h): one to four columns of space, not
+ * followed by the line's end, are the item's padding; else the one column
+ * the reading then reads, if a space. */
+static markdown_core_state S_pad_end(markdown_core_tokenizer *tokenizer, int code) {
+    const uint32_t padding = markdown_core_column(tokenizer) - markdown_core_frame_local(tokenizer)[0];
+    return padding >= 1 && padding < 5 && !markdown_core_code_ending(code) ? markdown_core_ok(tokenizer)
+                                                                           : markdown_core_nok(tokenizer);
+}
+
+static markdown_core_state S_pad(markdown_core_tokenizer *tokenizer, int code) {
+    markdown_core_frame_local(tokenizer)[0] = markdown_core_column(tokenizer);
+    return markdown_core_spaces(tokenizer, markdown_core_state_of(S_pad_end), 0, 5, code);
+}
+
+const markdown_core_construct markdown_core_item_padding = {.start = S_pad};
+
+/* THE CONTINUATION (element.h, markdown_core_line_ops `continuation`): an
+ * item goes on past its indent, its marker's columns and padding, or on a
+ * blank line once it holds a block or a lookahead joins it; a list goes on
+ * through one blank line and ends at a second one with no indent. */
+static markdown_core_state S_blank_on(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    markdown_core_block_turn_of(tokenizer)->node->flags |= MARKDOWN_CORE_NODE__LIST_LAST_LINE_BLANK;
+    return markdown_core_ok(tokenizer);
+}
+
+static markdown_core_state S_blank_off(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    markdown_core_block_turn_of(tokenizer)->node->flags &= ~MARKDOWN_CORE_NODE__LIST_LAST_LINE_BLANK;
+    return markdown_core_ok(tokenizer);
+}
+
+static markdown_core_state S_continue(markdown_core_tokenizer *tokenizer, int code) {
+    markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
+    markdown_core_node *node = turn->node;
+    if (node->kind == MARKDOWN_CORE_NODE_LIST_ITEM) {
+        return markdown_core_block_indented(tokenizer,
+                                            (uint32_t)(node->as.list->marker_offset + node->as.list->padding),
+                                            markdown_core_parser_last_child(node) || turn->joining == node, code);
+    }
+    if (markdown_core_code_ending(code) && (node->flags & MARKDOWN_CORE_NODE__LIST_LAST_LINE_BLANK)) {
+        return markdown_core_block_continued(tokenizer, MARKDOWN_CORE_TOKEN_TAKE);
+    }
+    return markdown_core_check(tokenizer, &markdown_core_blank_line, markdown_core_state_of(S_blank_on),
+                               markdown_core_state_of(S_blank_off), code);
+}
+
 static const markdown_core_node_type LIST_KINDS[] = {MARKDOWN_CORE_NODE_LIST, MARKDOWN_CORE_NODE_NONE};
 /* A list reopened at an item's line (blocks.c, THE NESTED REOPEN) is laid
  * out by none of its items yet, and its last line was blank as the line
@@ -385,18 +491,6 @@ static const markdown_core_open_ops LIST_OPENS = {
     .token_count = LIST_BLOCKS,
 };
 
-/* THE CONTINUATION (element.h, markdown_core_line_ops `continuation`). */
-static markdown_core_state S_continue(markdown_core_tokenizer *tokenizer, int code) {
-    (void)code;
-    markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
-    bool taken = false;
-    if (!continue_container(markdown_core_self(tokenizer), turn->parser, turn->node, turn->reader, turn->joining,
-                            &taken)) {
-        return markdown_core_nok(tokenizer);
-    }
-    return taken ? markdown_core_block_continued(tokenizer, MARKDOWN_CORE_TOKEN_TAKE) : markdown_core_ok(tokenizer);
-}
-
 static const markdown_core_line_ops LIST_LINES = {
     .continuation = {.start = S_continue},
     .blank_last = blank_line,
@@ -413,25 +507,6 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_LIST = {
     .opens = &LIST_OPENS,
     .lines = &LIST_LINES,
 };
-
-int markdown_core_block_consume_item_marker(markdown_core_reader *reader, int marker_width) {
-    markdown_core_reader_advance(reader, reader->nonspace + marker_width - reader->offset, false);
-    const markdown_core_reader_mark mark = markdown_core_reader_tell(reader);
-    const bufsize_t column = reader->column;
-    while (reader->column - column < 5 &&
-           markdown_core_is_space_or_tab(markdown_core_reader_peek(reader, reader->offset))) {
-        markdown_core_reader_advance(reader, 1, true);
-    }
-    int padding = reader->column - column;
-    if (padding < 1 || padding >= 5 || markdown_core_is_line_end(markdown_core_reader_peek(reader, reader->offset))) {
-        markdown_core_reader_back(reader, mark);
-        if (padding > 0) {
-            markdown_core_reader_advance(reader, 1, true);
-        }
-        padding = 1;
-    }
-    return marker_width + padding;
-}
 
 /* A list's record (markdown_core_record_ops): a bullet list of decimal
  * numbers until its first item says otherwise. */

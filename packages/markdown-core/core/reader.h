@@ -226,11 +226,6 @@ static inline void markdown_core_reader_end(markdown_core_reader *reader) {
     reader->far = reader->line.len + 1;
     markdown_core_reader_advance(reader, reader->line.len - 1 - reader->offset, false);
 }
-/* Whether the line continues a block by `continuation` columns of
- * indentation, or, when `blank` lets it, by being blank; a line that does
- * is advanced past them. */
-bool markdown_core_reader_indented(markdown_core_reader *reader, int continuation, bool blank);
-
 /* READS PAST THE LINE. markdown_core_reader_byte (parser.h, inline): the
  * byte at `place` in the active input, or -1 where the text ends there; the
  * reader notes it read through it. */

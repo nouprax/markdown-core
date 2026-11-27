@@ -179,18 +179,26 @@ static markdown_core_node *markdown_core_block_open_definition(markdown_core_def
     return definition;
 }
 
+/* What a body's start found (WHAT THE START FOUND, block_internal.h):
+ * where its marker stands, the column the start began at and the columns
+ * its marker and padding take past it, the body's continuation. */
+typedef struct {
+    bufsize_t marker;
+    uint32_t from, past, continuation;
+} body_found;
+MARKDOWN_CORE_BLOCK_FOUND_FITS(body_found, body_found_fits);
+
 static bool markdown_core_definition_list_open(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                                markdown_core_node **container, markdown_core_reader *reader,
                                                block_start *start) {
     (void)self;
-
-    int continuation = reader->indent + markdown_core_block_consume_item_marker(reader, 1);
+    const body_found *found = MARKDOWN_CORE_BLOCK_FOUND(start, body_found);
     *container =
-        markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_DEFINITION_BODY, reader->nonspace + 1);
+        markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_DEFINITION_BODY, found->marker + 1);
     if (!*container) {
         return false;
     }
-    (*container)->as.definition_body->continuation = continuation;
+    (*container)->as.definition_body->continuation = (int)found->continuation;
     const bufsize_t length = markdown_core_reader_length(reader);
     (*container)->internal_offset = (int)markdown_core_reader_span(reader, parser, length - 1, length - 1).end;
     return true;
@@ -206,21 +214,67 @@ static void S_definition_list_body(markdown_core_compiler *compiler, const markd
                                                       turn->container, turn->context->reader, turn->start);
 }
 
-static markdown_core_state markdown_core_definition_list_scan(markdown_core_tokenizer *tokenizer, int code) {
-    (void)code;
-    block_start_context *context = markdown_core_block_turn_of(tokenizer)->context;
-    block_start *start = markdown_core_block_turn_of(tokenizer)->start;
-    markdown_core_reader *reader = context->reader;
-    if (!(context->container->kind == MARKDOWN_CORE_NODE_DEFINITION && markdown_core_block_definition_marker(reader))) {
-        return markdown_core_nok(tokenizer);
-    }
-    start->kind = MARKDOWN_CORE_NODE_DEFINITION_BODY;
+/* THE MARKER (code by code, as a list item's): up to three spaces, `:` or
+ * `~` in a definition, whitespace after it, and the item's padding. */
+static inline body_found *S_body_found(const markdown_core_tokenizer *tokenizer) {
+    return MARKDOWN_CORE_BLOCK_FOUND(markdown_core_block_turn_of(tokenizer)->start, body_found);
+}
+
+/* The continuation is the marker's columns and the padding's past them,
+ * one when the padding is refused. */
+static markdown_core_state S_body_at(markdown_core_tokenizer *tokenizer, uint32_t space) {
+    body_found *found = S_body_found(tokenizer);
+    found->continuation = found->past - found->from + space;
     return markdown_core_block_found(tokenizer, DEFINITION_LIST_BODY);
 }
 
-bool markdown_core_definition_list_continue(markdown_core_parser *parser, markdown_core_node *container,
-                                            markdown_core_reader *reader) {
-    return markdown_core_reader_indented(reader, container->as.definition_body->continuation, true);
+static markdown_core_state S_body_item(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    return S_body_at(tokenizer, markdown_core_column(tokenizer) - S_body_found(tokenizer)->past);
+}
+
+static markdown_core_state S_body_one(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    return S_body_at(tokenizer, 1);
+}
+
+static markdown_core_state S_body_padded(markdown_core_tokenizer *tokenizer, int code) {
+    if (markdown_core_code_space(code)) {
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_body_one);
+    }
+    return S_body_one(tokenizer, code);
+}
+
+static markdown_core_state S_body_marked(markdown_core_tokenizer *tokenizer, int code) {
+    ((markdown_core_definition_list_work *)((const markdown_core_element_instance *)markdown_core_self(tokenizer))
+         ->state)
+        ->work++;
+    if (!markdown_core_code_space(code) && !markdown_core_code_ending(code)) {
+        return markdown_core_nok(tokenizer);
+    }
+    S_body_found(tokenizer)->past = markdown_core_column(tokenizer);
+    return markdown_core_attempt(tokenizer, &markdown_core_item_padding, markdown_core_state_of(S_body_item),
+                                 markdown_core_state_of(S_body_padded), code);
+}
+
+static markdown_core_state S_body_marker(markdown_core_tokenizer *tokenizer, int code) {
+    if (code != ':' && code != '~') {
+        return markdown_core_nok(tokenizer);
+    }
+    S_body_found(tokenizer)->marker = (bufsize_t)(tokenizer->position - tokenizer->base);
+    markdown_core_consume(tokenizer);
+    return markdown_core_state_of(S_body_marked);
+}
+
+static markdown_core_state markdown_core_definition_list_scan(markdown_core_tokenizer *tokenizer, int code) {
+    markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
+    if (turn->context->container->kind != MARKDOWN_CORE_NODE_DEFINITION) {
+        return markdown_core_nok(tokenizer);
+    }
+    turn->start->kind = MARKDOWN_CORE_NODE_DEFINITION_BODY;
+    *S_body_found(tokenizer) = (body_found){.from = markdown_core_column(tokenizer)};
+    return markdown_core_spaces(tokenizer, markdown_core_state_of(S_body_marker), MARKDOWN_CORE_TOKEN_SPACE, 3, code);
 }
 
 /* THE TERM, the paragraph opener's last call: a line its reading admits
@@ -299,13 +353,6 @@ static void S_definition_list_term(markdown_core_compiler *compiler, const markd
     }
 }
 
-static bool continue_container(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                               markdown_core_node *node, markdown_core_reader *reader,
-                               const markdown_core_node *joining, bool *taken) {
-    (void)self;
-    return node->kind != MARKDOWN_CORE_NODE_DEFINITION_BODY ||
-           markdown_core_definition_list_continue(parser, node, reader);
-}
 /* A definition list, a definition and a body end where their last child
  * ends, and a body without children ends with its marker's line: taken as
  * each closes, once its children have settled. */
@@ -400,15 +447,15 @@ static const markdown_core_open_ops DEFINITION_LIST_OPENS = {
     .token_count = DEFINITION_LIST_BLOCKS,
 };
 
-/* THE CONTINUATION (element.h, markdown_core_line_ops `continuation`). */
-static markdown_core_state S_continued(markdown_core_tokenizer *tokenizer) {
-    markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
-    bool taken = false;
-    if (!continue_container(markdown_core_self(tokenizer), turn->parser, turn->node, turn->reader, turn->joining,
-                            &taken)) {
-        return markdown_core_nok(tokenizer);
+/* THE CONTINUATION (element.h, markdown_core_line_ops `continuation`): a
+ * body goes on past its continuation's columns, or on a blank line; a list
+ * and a definition go on. */
+static markdown_core_state S_lines(markdown_core_tokenizer *tokenizer, int code) {
+    const markdown_core_node *node = markdown_core_block_turn_of(tokenizer)->node;
+    if (node->kind != MARKDOWN_CORE_NODE_DEFINITION_BODY) {
+        return markdown_core_ok(tokenizer);
     }
-    return taken ? markdown_core_block_continued(tokenizer, MARKDOWN_CORE_TOKEN_TAKE) : markdown_core_ok(tokenizer);
+    return markdown_core_block_indented(tokenizer, (uint32_t)node->as.definition_body->continuation, true, code);
 }
 
 /* A BODY TAKES A BLANK LINE its reading admits: a check of the document's
@@ -435,7 +482,7 @@ static markdown_core_state S_body_next(markdown_core_tokenizer *tokenizer, int c
 
 static const markdown_core_construct BODY_LOOK = {.start = S_body_next};
 
-static markdown_core_state S_body_read(markdown_core_tokenizer *tokenizer, bool continues) {
+static markdown_core_state S_body_read(markdown_core_tokenizer *tokenizer, bool continues, int code) {
     markdown_core_definition_list_work *work =
         ((const markdown_core_element_instance *)markdown_core_self(tokenizer))->state;
     markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
@@ -448,30 +495,27 @@ static markdown_core_state S_body_read(markdown_core_tokenizer *tokenizer, bool 
         return markdown_core_nok(tokenizer);
     }
     body->as.definition_body->continuation_line = parser->look->line - 1;
-    return S_continued(tokenizer);
+    return S_lines(tokenizer, code);
 }
 
 static markdown_core_state S_body_continues(markdown_core_tokenizer *tokenizer, int code) {
-    (void)code;
-    return S_body_read(tokenizer, true);
+    return S_body_read(tokenizer, true, code);
 }
 
 static markdown_core_state S_body_stops(markdown_core_tokenizer *tokenizer, int code) {
-    (void)code;
-    return S_body_read(tokenizer, false);
+    return S_body_read(tokenizer, false, code);
 }
 
-static markdown_core_state S_continue(markdown_core_tokenizer *tokenizer, int code) {
+/* A blank line in a body, past the line its run was found to go on to:
+ * the look decides. */
+static markdown_core_state S_body_blank(markdown_core_tokenizer *tokenizer, int code) {
     markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
     markdown_core_node *body = turn->node;
-    if (turn->look || !turn->reader->blank || body->kind != MARKDOWN_CORE_NODE_DEFINITION_BODY) {
-        return S_continued(tokenizer);
-    }
     markdown_core_definition_list_work *work =
         ((const markdown_core_element_instance *)markdown_core_self(tokenizer))->state;
     work->work++;
     if (body->as.definition_body->continuation_line > turn->reader->number) {
-        return S_continued(tokenizer);
+        return S_lines(tokenizer, code);
     }
     markdown_core_parser *parser = turn->parser;
     work->body = body;
@@ -480,6 +524,15 @@ static markdown_core_state S_continue(markdown_core_tokenizer *tokenizer, int co
                                         .construct = &BODY_LOOK};
     return markdown_core_look(tokenizer, &ask, markdown_core_state_of(S_body_continues),
                               markdown_core_state_of(S_body_stops), code);
+}
+
+static markdown_core_state S_continue(markdown_core_tokenizer *tokenizer, int code) {
+    markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
+    if (turn->look || turn->node->kind != MARKDOWN_CORE_NODE_DEFINITION_BODY) {
+        return S_lines(tokenizer, code);
+    }
+    return markdown_core_check(tokenizer, &markdown_core_blank_line, markdown_core_state_of(S_body_blank),
+                               markdown_core_state_of(S_lines), code);
 }
 
 static const markdown_core_line_ops DEFINITION_LIST_LINES = {

@@ -1,6 +1,5 @@
 #include <string.h>
 #include "alloc.h"
-#include "footnote_scanners.h"
 #define MAX_FOOTNOTE_DEPTH 100
 #include "footnote.h"
 #include "attention.h"
@@ -18,12 +17,6 @@ const markdown_core_space MARKDOWN_CORE_FOOTNOTE_SPACE = {.name = "footnote", .f
 enum { FOOTNOTE_LABELS };
 static const markdown_core_space *const FOOTNOTE_SPACES[] = {[FOOTNOTE_LABELS] = &MARKDOWN_CORE_FOOTNOTE_SPACE, NULL};
 
-static bool continue_container(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                               markdown_core_node *node, markdown_core_reader *reader,
-                               const markdown_core_node *joining, bool *taken) {
-    (void)self;
-    return markdown_core_footnote_continue(parser, node, reader);
-}
 static const markdown_core_edit_ops FOOTNOTE_EDIT = {
     .reopens = true,
 };
@@ -257,26 +250,26 @@ static const markdown_core_inline_ops FOOTNOTE_INLINES = {
     .closer = ']',
 };
 
+/* What a definition's start found (WHAT THE START FOUND, block_internal.h):
+ * where its `[` stands and its label ends, and how far past the `[` it
+ * read, the spaces after the colon with it. */
+typedef struct {
+    bufsize_t marker, label, matched;
+} note_found;
+MARKDOWN_CORE_BLOCK_FOUND_FITS(note_found, note_found_fits);
+
 static bool markdown_core_footnote_open(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                         markdown_core_node **container, markdown_core_reader *reader,
                                         block_start *start) {
-    bufsize_t matched = start->matched;
-
-    markdown_core_chunk c = {(unsigned char *)markdown_core_reader_bytes(reader, reader->nonspace + 2), matched - 2, 0};
-
-    while (c.data[c.len - 1] != ']') {
-        --c.len;
-    }
-    --c.len;
-
+    const note_found *found = MARKDOWN_CORE_BLOCK_FOUND(start, note_found);
+    const bufsize_t matched = found->matched;
+    const bufsize_t label = found->marker + 2;
+    markdown_core_chunk c = {(unsigned char *)markdown_core_reader_bytes(reader, label), found->label - label, 0};
     if (!markdown_core_chunk_to_cstr(&c)) {
         /* The label would keep borrowing the transient line buffer. */
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return false;
     }
-
-    const bufsize_t label = reader->nonspace + 2;
-    markdown_core_reader_advance(reader, reader->nonspace + matched - reader->offset, false);
     /* THE ANCHOR RULE (§5.1): a definition is a block node at the byte
      * where its OPENING BRACKET was written. It used to start at the
      * byte after `[^label]:`, which is a column that need not exist --
@@ -284,7 +277,7 @@ static bool markdown_core_footnote_open(const markdown_core_element_instance *se
      * began at column 13. Every other block in this engine starts at
      * its own first byte and the marker is inside it; a footnote
      * definition was the one that started after its own marker. */
-    *container = markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_FOOTNOTE, reader->nonspace + 1);
+    *container = markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_FOOTNOTE, found->marker + 1);
     if (!*container) {
         markdown_core_chunk_free(&c);
         return false;
@@ -337,19 +330,72 @@ static void S_footnote_open(markdown_core_compiler *compiler, const markdown_cor
                                                turn->context->reader, turn->start);
 }
 
-static markdown_core_state markdown_core_footnote_scan(markdown_core_tokenizer *tokenizer, int code) {
-    (void)code;
-    block_start_context *context = markdown_core_block_turn_of(tokenizer)->context;
-    block_start *start = markdown_core_block_turn_of(tokenizer)->start;
-    markdown_core_reader *reader = context->reader;
-    int first = reader->nonspace;
-    if (!(context->depth < MAX_FOOTNOTE_DEPTH &&
-          (start->matched = scan_footnote_definition(markdown_core_reader_rest(reader, 0),
-                                                     markdown_core_reader_length(reader), first)))) {
+/* THE MARKER (code by code): up to three spaces, `[^`, a label of no
+ * `]`, space or line end, `]:`, and the spaces after it. */
+static inline note_found *S_found(const markdown_core_tokenizer *tokenizer) {
+    return MARKDOWN_CORE_BLOCK_FOUND(markdown_core_block_turn_of(tokenizer)->start, note_found);
+}
+
+static inline bufsize_t S_offset(const markdown_core_tokenizer *tokenizer) {
+    return (bufsize_t)(tokenizer->position - tokenizer->base);
+}
+
+static markdown_core_state S_note_spaces(markdown_core_tokenizer *tokenizer, int code) {
+    if (markdown_core_code_space(code)) {
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_note_spaces);
+    }
+    note_found *found = S_found(tokenizer);
+    found->matched = S_offset(tokenizer) - found->marker;
+    return markdown_core_block_found(tokenizer, FOOTNOTE_OPEN);
+}
+
+static markdown_core_state S_note_colon(markdown_core_tokenizer *tokenizer, int code) {
+    if (code != ':') {
         return markdown_core_nok(tokenizer);
     }
-    start->kind = MARKDOWN_CORE_NODE_FOOTNOTE;
-    return markdown_core_block_found(tokenizer, FOOTNOTE_OPEN);
+    markdown_core_consume(tokenizer);
+    return markdown_core_state_of(S_note_spaces);
+}
+
+static markdown_core_state S_note_label(markdown_core_tokenizer *tokenizer, int code) {
+    note_found *found = S_found(tokenizer);
+    if (code == ']' && S_offset(tokenizer) > found->marker + 2) {
+        found->label = S_offset(tokenizer);
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_note_colon);
+    }
+    if (code == ']' || markdown_core_code_space(code) || markdown_core_code_ending(code)) {
+        return markdown_core_nok(tokenizer);
+    }
+    markdown_core_consume(tokenizer);
+    return markdown_core_state_of(S_note_label);
+}
+
+static markdown_core_state S_note_caret(markdown_core_tokenizer *tokenizer, int code) {
+    if (code != '^') {
+        return markdown_core_nok(tokenizer);
+    }
+    markdown_core_consume(tokenizer);
+    return markdown_core_state_of(S_note_label);
+}
+
+static markdown_core_state S_note_bracket(markdown_core_tokenizer *tokenizer, int code) {
+    if (code != '[') {
+        return markdown_core_nok(tokenizer);
+    }
+    *S_found(tokenizer) = (note_found){.marker = S_offset(tokenizer)};
+    markdown_core_consume(tokenizer);
+    return markdown_core_state_of(S_note_caret);
+}
+
+static markdown_core_state markdown_core_footnote_scan(markdown_core_tokenizer *tokenizer, int code) {
+    markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
+    if (turn->context->depth >= MAX_FOOTNOTE_DEPTH) {
+        return markdown_core_nok(tokenizer);
+    }
+    turn->start->kind = MARKDOWN_CORE_NODE_FOOTNOTE;
+    return markdown_core_spaces(tokenizer, markdown_core_state_of(S_note_bracket), MARKDOWN_CORE_TOKEN_SPACE, 3, code);
 }
 
 static const markdown_core_block_construct FOOTNOTE_STARTS[] = {
@@ -367,16 +413,10 @@ static const markdown_core_open_ops FOOTNOTE_OPENS = {
     .token_count = FOOTNOTE_BLOCKS,
 };
 
-/* THE CONTINUATION (element.h, markdown_core_line_ops `continuation`). */
+/* THE CONTINUATION (element.h, markdown_core_line_ops `continuation`): four
+ * columns of indentation, or a blank line. */
 static markdown_core_state S_continue(markdown_core_tokenizer *tokenizer, int code) {
-    (void)code;
-    markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
-    bool taken = false;
-    if (!continue_container(markdown_core_self(tokenizer), turn->parser, turn->node, turn->reader, turn->joining,
-                            &taken)) {
-        return markdown_core_nok(tokenizer);
-    }
-    return taken ? markdown_core_block_continued(tokenizer, MARKDOWN_CORE_TOKEN_TAKE) : markdown_core_ok(tokenizer);
+    return markdown_core_block_indented(tokenizer, 4, true, code);
 }
 
 static const markdown_core_line_ops FOOTNOTE_LINES = {
@@ -392,11 +432,6 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_FOOTNOTE = {
     .opens = &FOOTNOTE_OPENS,
     .lines = &FOOTNOTE_LINES,
 };
-
-bool markdown_core_footnote_continue(markdown_core_parser *parser, markdown_core_node *container,
-                                     markdown_core_reader *reader) {
-    return markdown_core_reader_indented(reader, 4, true);
-}
 
 /* A footnote definition's record (markdown_core_record_ops): the label it
  * declares, in the pool's storage, which a view copies. */

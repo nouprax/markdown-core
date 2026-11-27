@@ -7847,23 +7847,6 @@ void markdown_core_reader_advance(markdown_core_reader *reader, bufsize_t count,
     reader->far = reader->offset + 1 > reader->far ? reader->offset + 1 : reader->far;
 }
 
-bool markdown_core_reader_indented(markdown_core_reader *reader, int continuation, bool blank) {
-    bool res = false;
-
-    if (reader->indent >= continuation) {
-        markdown_core_reader_advance(reader, continuation, true);
-        res = true;
-    } else if (reader->blank && blank) {
-        // Blankness is relative to the cursor after ancestor prefixes. Lists
-        // require a first block; definition-list bodies first check whether
-        // the blank run leads to a carried line. Footnotes and specimens
-        // accept blank continuation directly, including during lookahead.
-        markdown_core_reader_skip(reader);
-        res = true;
-    }
-    return res;
-}
-
 size_t markdown_core_reader_seek(markdown_core_reader *reader, markdown_core_parser *parser, size_t place,
                                  unsigned char byte) {
     size_t size;
@@ -8345,6 +8328,33 @@ markdown_core_state markdown_core_block_continued(markdown_core_tokenizer *token
     markdown_core_cursor_move(tokenizer);
     markdown_core_exit(tokenizer, kind);
     return markdown_core_ok(tokenizer);
+}
+
+static markdown_core_state S_indented(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    markdown_core_exit(tokenizer, MARKDOWN_CORE_TOKEN_PREFIX);
+    return markdown_core_ok(tokenizer);
+}
+
+static markdown_core_state S_indent_none(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    return markdown_core_nok(tokenizer);
+}
+
+static markdown_core_state S_indent_rest(markdown_core_tokenizer *tokenizer, int code) {
+    return markdown_core_spaces(tokenizer, markdown_core_state_of(S_indented), 0, UINT32_MAX, code);
+}
+
+static markdown_core_state S_indent_blank(markdown_core_tokenizer *tokenizer, int code) {
+    return markdown_core_check(tokenizer, &markdown_core_blank_line, markdown_core_state_of(S_indent_rest),
+                               markdown_core_state_of(S_indent_none), code);
+}
+
+markdown_core_state markdown_core_block_indented(markdown_core_tokenizer *tokenizer, uint32_t columns, bool blank,
+                                                 int code) {
+    markdown_core_enter(tokenizer, MARKDOWN_CORE_TOKEN_PREFIX);
+    return markdown_core_indent(tokenizer, markdown_core_state_of(S_indented),
+                                markdown_core_state_of(blank ? S_indent_blank : S_indent_none), columns, code);
 }
 
 markdown_core_state markdown_core_block_verdict(markdown_core_tokenizer *tokenizer, int verdict) {

@@ -412,6 +412,12 @@ extern const markdown_core_construct markdown_core_blank_line;
 markdown_core_state markdown_core_spaces(markdown_core_tokenizer *tokenizer, markdown_core_state ok, uint16_t kind,
                                          uint32_t most, int code);
 
+/* THE INDENT (micromark's list item and footnote continuations): exactly
+ * `columns` columns of spaces and tab columns from the code handed, then
+ * `ok`, handed the code after them; fewer, `nok`, nothing read. */
+markdown_core_state markdown_core_indent(markdown_core_tokenizer *tokenizer, markdown_core_state ok,
+                                         markdown_core_state nok, uint32_t columns, int code);
+
 /* The element instance of the construct being tried: the context of the
  * innermost attempt's construct that has one. */
 const void *markdown_core_self(const markdown_core_tokenizer *tokenizer);

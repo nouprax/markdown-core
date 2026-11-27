@@ -861,6 +861,30 @@ markdown_core_state markdown_core_spaces(markdown_core_tokenizer *tokenizer, mar
     return S_space(tokenizer, code);
 }
 
+/* THE INDENT: the frame's words are the column it began at and the
+ * columns it wants. */
+enum { INDENT_FROM, INDENT_WANT };
+
+static markdown_core_state S_indent_end(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    const uint32_t *words = markdown_core_frame_local(tokenizer);
+    return markdown_core_column(tokenizer) - words[INDENT_FROM] >= words[INDENT_WANT] ? markdown_core_ok(tokenizer)
+                                                                                      : markdown_core_nok(tokenizer);
+}
+
+static const markdown_core_construct S_INDENT = {.start = S_indent_end};
+
+markdown_core_state markdown_core_indent(markdown_core_tokenizer *tokenizer, markdown_core_state ok,
+                                         markdown_core_state nok, uint32_t columns, int code) {
+    if (!S_push_frame(tokenizer, ok, nok, NULL, &S_INDENT, 1, false)) {
+        return markdown_core_state_of(S_end_step);
+    }
+    uint32_t *words = markdown_core_frame_local(tokenizer);
+    words[INDENT_FROM] = markdown_core_column(tokenizer);
+    words[INDENT_WANT] = columns;
+    return markdown_core_spaces(tokenizer, markdown_core_state_of(S_indent_end), 0, columns, code);
+}
+
 static markdown_core_state S_blank_after(markdown_core_tokenizer *tokenizer, int code) {
     return markdown_core_code_ending(code) ? markdown_core_ok(tokenizer) : markdown_core_nok(tokenizer);
 }

@@ -1,6 +1,5 @@
 #include "autolink_scanners.h"
 #include "comment_scanners.h"
-#include "footnote_scanners.h"
 #include "formula_scanners.h"
 #include "html_scanners.h"
 #include "link_scanners.h"
@@ -8036,7 +8035,6 @@ static void bounded_scanners(test_batch_runner *runner) {
                  {scan_link_title, "\"title\"", -1},
                  {scan_entity, "&amp;", -1},
                  {scan_dangerous_url, "javascript:", -1},
-                 {scan_footnote_definition, "[^note]: ", -1},
                  {scan_formula_dollar_inline_open, "$", -1},
                  {scan_formula_dollar_backtick_open, "$`", -1},
                  {scan_formula_dollar_display_open, "$$", -1},
