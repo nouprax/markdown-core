@@ -1,9 +1,9 @@
 //! Infer things from events.
 //!
-//! Used to share between `to_html` and `to_mdast`.
+//! Used by the compiler to the canonical AST.
 
+use crate::ast::Flow;
 use crate::event::{Event, Kind, Name};
-use crate::mdast::AlignKind;
 use alloc::{vec, vec::Vec};
 
 /// Figure out if a list is spread or not.
@@ -149,7 +149,7 @@ pub fn list_item_loose(events: &[Event], mut index: usize) -> bool {
 }
 
 /// Figure out the alignment of a GFM table.
-pub fn gfm_table_align(events: &[Event], mut index: usize) -> Vec<AlignKind> {
+pub fn gfm_table_align(events: &[Event], mut index: usize) -> Vec<Flow> {
     debug_assert!(
         matches!(events[index].name, Name::GfmTable),
         "expected table"
@@ -165,9 +165,9 @@ pub fn gfm_table_align(events: &[Event], mut index: usize) -> Vec<AlignKind> {
                 // Start of alignment value: set a new column.
                 if event.name == Name::GfmTableDelimiterCellValue {
                     align.push(if events[index + 1].name == Name::GfmTableDelimiterMarker {
-                        AlignKind::Left
+                        Flow::Left
                     } else {
-                        AlignKind::None
+                        Flow::None
                     });
                 }
             } else {
@@ -175,10 +175,10 @@ pub fn gfm_table_align(events: &[Event], mut index: usize) -> Vec<AlignKind> {
                 if event.name == Name::GfmTableDelimiterCellValue {
                     if events[index - 1].name == Name::GfmTableDelimiterMarker {
                         let align_index = align.len() - 1;
-                        align[align_index] = if align[align_index] == AlignKind::Left {
-                            AlignKind::Center
+                        align[align_index] = if align[align_index] == Flow::Left {
+                            Flow::Center
                         } else {
-                            AlignKind::Right
+                            Flow::Right
                         }
                     }
                 }

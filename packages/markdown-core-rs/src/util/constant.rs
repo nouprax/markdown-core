@@ -74,31 +74,6 @@ pub const CODE_FENCED_SEQUENCE_SIZE_MIN: usize = 3;
 /// [frontmatter]: crate::construct::frontmatter
 pub const FRONTMATTER_SEQUENCE_SIZE: usize = 3;
 
-/// The number of the longest tag name in [`GFM_HTML_TAGFILTER_NAMES`][].
-///
-/// This is currently the size of `plaintext`.
-pub const GFM_HTML_TAGFILTER_SIZE_MAX: usize = 9;
-
-/// List of HTML tag names that are escaped by GFMs tag filter.
-///
-/// Tag name matching must be performed insensitive to case, and thus this list
-/// includes lowercase tag names.
-///
-/// ## References
-///
-/// * [*§ 6.1 Disallowed Raw HTML (extension)* in GFM](https://github.github.com/gfm/#disallowed-raw-html-extension-)
-pub const GFM_HTML_TAGFILTER_NAMES: [&str; 9] = [
-    "iframe",
-    "noembed",
-    "noframes",
-    "plaintext",
-    "script",
-    "style",
-    "textarea",
-    "title",
-    "xmp",
-];
-
 /// The number of preceding spaces needed for a [hard break
 /// (trailing)][whitespace] to form.
 ///
@@ -205,7 +180,7 @@ pub const HTML_BLOCK_NAMES: [&str; 62] = [
 ///
 /// [html_flow]: crate::construct::html_flow
 /// [html_text]: crate::construct::html_text
-pub const HTML_CDATA_PREFIX: [u8; 6] = [b'C', b'D', b'A', b'T', b'A', b'['];
+pub const HTML_CDATA_PREFIX: [u8; 6] = *b"CDATA[";
 
 /// List of HTML tag names that form the **raw** production of
 /// [HTML (flow)][html_flow].
@@ -265,16 +240,6 @@ pub const MATH_FLOW_SEQUENCE_SIZE_MIN: usize = 2;
 /// In practice, this is quite low, and several places instead cap it at 32.
 /// See: <https://github.com/remarkjs/react-markdown/issues/658#issuecomment-984345577>.
 pub const RESOURCE_DESTINATION_BALANCE_MAX: usize = 32;
-
-/// List of protocols allowed, when operating safely, as `href` on `a`.
-///
-/// This list is based on what is allowed by GitHub.
-pub const SAFE_PROTOCOL_HREF: [&str; 6] = ["http", "https", "irc", "ircs", "mailto", "xmpp"];
-
-/// List of protocols allowed, when operating safely, as `src` on `img`.
-///
-/// This list is based on what is allowed by GitHub.
-pub const SAFE_PROTOCOL_SRC: [&str; 2] = ["http", "https"];
 
 /// The number of characters that form a tab stop.
 ///
@@ -2436,272 +2401,6 @@ pub static CHARACTER_REFERENCES: [(&str, &str); 2125] = [
 
 // Important: please touch the below lists as few times as possible to keep Git small.
 
-/// List of names and values that form named character reference in HTML 4.
-///
-/// This list is normally not used in markdown, but it is used in MDX, because
-/// in JSX attribute values, only the old HTML 4 character references are
-/// supported.
-///
-/// This list is sensitive to casing.
-///
-/// ## References
-///
-/// * [*§ 1.5.2 HTML Character References* in `JSX`](https://facebook.github.io/jsx/#sec-HTMLCharacterReference)
-pub const CHARACTER_REFERENCES_HTML_4: [(&str, &str); 252] = [
-    ("AElig", "Æ"),
-    ("Aacute", "Á"),
-    ("Acirc", "Â"),
-    ("Agrave", "À"),
-    ("Alpha", "Α"),
-    ("Aring", "Å"),
-    ("Atilde", "Ã"),
-    ("Auml", "Ä"),
-    ("Beta", "Β"),
-    ("Ccedil", "Ç"),
-    ("Chi", "Χ"),
-    ("Dagger", "‡"),
-    ("Delta", "Δ"),
-    ("ETH", "Ð"),
-    ("Eacute", "É"),
-    ("Ecirc", "Ê"),
-    ("Egrave", "È"),
-    ("Epsilon", "Ε"),
-    ("Eta", "Η"),
-    ("Euml", "Ë"),
-    ("Gamma", "Γ"),
-    ("Iacute", "Í"),
-    ("Icirc", "Î"),
-    ("Igrave", "Ì"),
-    ("Iota", "Ι"),
-    ("Iuml", "Ï"),
-    ("Kappa", "Κ"),
-    ("Lambda", "Λ"),
-    ("Mu", "Μ"),
-    ("Ntilde", "Ñ"),
-    ("Nu", "Ν"),
-    ("OElig", "Œ"),
-    ("Oacute", "Ó"),
-    ("Ocirc", "Ô"),
-    ("Ograve", "Ò"),
-    ("Omega", "Ω"),
-    ("Omicron", "Ο"),
-    ("Oslash", "Ø"),
-    ("Otilde", "Õ"),
-    ("Ouml", "Ö"),
-    ("Phi", "Φ"),
-    ("Pi", "Π"),
-    ("Prime", "″"),
-    ("Psi", "Ψ"),
-    ("Rho", "Ρ"),
-    ("Scaron", "Š"),
-    ("Sigma", "Σ"),
-    ("THORN", "Þ"),
-    ("Tau", "Τ"),
-    ("Theta", "Θ"),
-    ("Uacute", "Ú"),
-    ("Ucirc", "Û"),
-    ("Ugrave", "Ù"),
-    ("Upsilon", "Υ"),
-    ("Uuml", "Ü"),
-    ("Xi", "Ξ"),
-    ("Yacute", "Ý"),
-    ("Yuml", "Ÿ"),
-    ("Zeta", "Ζ"),
-    ("aacute", "á"),
-    ("acirc", "â"),
-    ("acute", "´"),
-    ("aelig", "æ"),
-    ("agrave", "à"),
-    ("alefsym", "ℵ"),
-    ("alpha", "α"),
-    ("amp", "&"),
-    ("and", "∧"),
-    ("ang", "∠"),
-    ("aring", "å"),
-    ("asymp", "≈"),
-    ("atilde", "ã"),
-    ("auml", "ä"),
-    ("bdquo", "„"),
-    ("beta", "β"),
-    ("brvbar", "¦"),
-    ("bull", "•"),
-    ("cap", "∩"),
-    ("ccedil", "ç"),
-    ("cedil", "¸"),
-    ("cent", "¢"),
-    ("chi", "χ"),
-    ("circ", "ˆ"),
-    ("clubs", "♣"),
-    ("cong", "≅"),
-    ("copy", "©"),
-    ("crarr", "↵"),
-    ("cup", "∪"),
-    ("curren", "¤"),
-    ("dArr", "⇓"),
-    ("dagger", "†"),
-    ("darr", "↓"),
-    ("deg", "°"),
-    ("delta", "δ"),
-    ("diams", "♦"),
-    ("divide", "÷"),
-    ("eacute", "é"),
-    ("ecirc", "ê"),
-    ("egrave", "è"),
-    ("empty", "∅"),
-    ("emsp", " "),
-    ("ensp", " "),
-    ("epsilon", "ε"),
-    ("equiv", "≡"),
-    ("eta", "η"),
-    ("eth", "ð"),
-    ("euml", "ë"),
-    ("euro", "€"),
-    ("exist", "∃"),
-    ("fnof", "ƒ"),
-    ("forall", "∀"),
-    ("frac12", "½"),
-    ("frac14", "¼"),
-    ("frac34", "¾"),
-    ("frasl", "⁄"),
-    ("gamma", "γ"),
-    ("ge", "≥"),
-    ("gt", ">"),
-    ("hArr", "⇔"),
-    ("harr", "↔"),
-    ("hearts", "♥"),
-    ("hellip", "…"),
-    ("iacute", "í"),
-    ("icirc", "î"),
-    ("iexcl", "¡"),
-    ("igrave", "ì"),
-    ("image", "ℑ"),
-    ("infin", "∞"),
-    ("int", "∫"),
-    ("iota", "ι"),
-    ("iquest", "¿"),
-    ("isin", "∈"),
-    ("iuml", "ï"),
-    ("kappa", "κ"),
-    ("lArr", "⇐"),
-    ("lambda", "λ"),
-    ("lang", "〈"),
-    ("laquo", "«"),
-    ("larr", "←"),
-    ("lceil", "⌈"),
-    ("ldquo", "“"),
-    ("le", "≤"),
-    ("lfloor", "⌊"),
-    ("lowast", "∗"),
-    ("loz", "◊"),
-    ("lrm", "‎"),
-    ("lsaquo", "‹"),
-    ("lsquo", "‘"),
-    ("lt", "<"),
-    ("macr", "¯"),
-    ("mdash", "—"),
-    ("micro", "µ"),
-    ("middot", "·"),
-    ("minus", "−"),
-    ("mu", "μ"),
-    ("nabla", "∇"),
-    ("nbsp", " "),
-    ("ndash", "–"),
-    ("ne", "≠"),
-    ("ni", "∋"),
-    ("not", "¬"),
-    ("notin", "∉"),
-    ("nsub", "⊄"),
-    ("ntilde", "ñ"),
-    ("nu", "ν"),
-    ("oacute", "ó"),
-    ("ocirc", "ô"),
-    ("oelig", "œ"),
-    ("ograve", "ò"),
-    ("oline", "‾"),
-    ("omega", "ω"),
-    ("omicron", "ο"),
-    ("oplus", "⊕"),
-    ("or", "∨"),
-    ("ordf", "ª"),
-    ("ordm", "º"),
-    ("oslash", "ø"),
-    ("otilde", "õ"),
-    ("otimes", "⊗"),
-    ("ouml", "ö"),
-    ("para", "¶"),
-    ("part", "∂"),
-    ("permil", "‰"),
-    ("perp", "⊥"),
-    ("phi", "φ"),
-    ("pi", "π"),
-    ("piv", "ϖ"),
-    ("plusmn", "±"),
-    ("pound", "£"),
-    ("prime", "′"),
-    ("prod", "∏"),
-    ("prop", "∝"),
-    ("psi", "ψ"),
-    ("quot", "\""),
-    ("rArr", "⇒"),
-    ("radic", "√"),
-    ("rang", "〉"),
-    ("raquo", "»"),
-    ("rarr", "→"),
-    ("rceil", "⌉"),
-    ("rdquo", "”"),
-    ("real", "ℜ"),
-    ("reg", "®"),
-    ("rfloor", "⌋"),
-    ("rho", "ρ"),
-    ("rlm", "‏"),
-    ("rsaquo", "›"),
-    ("rsquo", "’"),
-    ("sbquo", "‚"),
-    ("scaron", "š"),
-    ("sdot", "⋅"),
-    ("sect", "§"),
-    ("shy", "\u{AD}"),
-    ("sigma", "σ"),
-    ("sigmaf", "ς"),
-    ("sim", "∼"),
-    ("spades", "♠"),
-    ("sub", "⊂"),
-    ("sube", "⊆"),
-    ("sum", "∑"),
-    ("sup", "⊃"),
-    ("sup1", "¹"),
-    ("sup2", "²"),
-    ("sup3", "³"),
-    ("supe", "⊇"),
-    ("szlig", "ß"),
-    ("tau", "τ"),
-    ("there4", "∴"),
-    ("theta", "θ"),
-    ("thetasym", "ϑ"),
-    ("thinsp", " "),
-    ("thorn", "þ"),
-    ("tilde", "˜"),
-    ("times", "×"),
-    ("trade", "™"),
-    ("uArr", "⇑"),
-    ("uacute", "ú"),
-    ("uarr", "↑"),
-    ("ucirc", "û"),
-    ("ugrave", "ù"),
-    ("uml", "¨"),
-    ("upsih", "ϒ"),
-    ("upsilon", "υ"),
-    ("uuml", "ü"),
-    ("weierp", "℘"),
-    ("xi", "ξ"),
-    ("yacute", "ý"),
-    ("yen", "¥"),
-    ("yuml", "ÿ"),
-    ("zeta", "ζ"),
-    ("zwj", "‍"),
-    ("zwnj", "‌"),
-];
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2725,12 +2424,6 @@ mod tests {
             CHARACTER_REFERENCE_NAMED_SIZE_MAX,
             longest(&CHARACTER_REFERENCES.map(|d| d.0)).unwrap().len(),
             "`CHARACTER_REFERENCE_NAMED_SIZE_MAX`"
-        );
-
-        assert_eq!(
-            GFM_HTML_TAGFILTER_SIZE_MAX,
-            longest(&GFM_HTML_TAGFILTER_NAMES).unwrap().len(),
-            "`GFM_HTML_TAGFILTER_SIZE_MAX`"
         );
 
         assert_eq!(

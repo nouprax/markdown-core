@@ -1,7 +1,6 @@
 //! Resolve events.
 
 use crate::construct;
-use crate::message;
 use crate::subtokenize::Subresult;
 use crate::tokenizer::Tokenizer;
 
@@ -63,19 +62,17 @@ pub enum Name {
 }
 
 /// Call the corresponding resolver.
-pub fn call(tokenizer: &mut Tokenizer, name: Name) -> Result<Option<Subresult>, message::Message> {
-    let result = match name {
+pub fn call(tokenizer: &mut Tokenizer, name: Name) -> Option<Subresult> {
+    match name {
         Name::Label => construct::label_end::resolve(tokenizer),
         Name::Attention => construct::attention::resolve(tokenizer),
         Name::GfmTable => construct::gfm_table::resolve(tokenizer),
         Name::HeadingAtx => construct::heading_atx::resolve(tokenizer),
         Name::HeadingSetext => construct::heading_setext::resolve(tokenizer),
         Name::ListItem => construct::list_item::resolve(tokenizer),
-        Name::Content => construct::content::resolve(tokenizer)?,
+        Name::Content => Some(construct::content::resolve(tokenizer)),
         Name::Data => construct::partial_data::resolve(tokenizer),
         Name::String => construct::string::resolve(tokenizer),
         Name::Text => construct::text::resolve(tokenizer),
-    };
-
-    Ok(result)
+    }
 }

@@ -71,10 +71,7 @@ use crate::util::constant::TAB_SIZE;
 /// ```
 pub fn start(tokenizer: &mut Tokenizer) -> State {
     // Do not interrupt paragraphs.
-    if !tokenizer.interrupt
-        && tokenizer.parse_state.options.constructs.code_indented
-        && matches!(tokenizer.current, Some(b'\t' | b' '))
-    {
+    if !tokenizer.interrupt && matches!(tokenizer.current, Some(b'\t' | b' ')) {
         tokenizer.enter(Name::CodeIndented);
         tokenizer.attempt(State::Next(StateName::CodeIndentedAtBreak), State::Nok);
         State::Retry(space_or_tab_min_max(tokenizer, TAB_SIZE, TAB_SIZE))

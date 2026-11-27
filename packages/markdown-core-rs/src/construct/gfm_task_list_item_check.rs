@@ -56,10 +56,9 @@ use crate::tokenizer::Tokenizer;
 ///       ^
 /// ```
 pub fn start(tokenizer: &mut Tokenizer) -> State {
-    if tokenizer.parse_state.options.constructs.gfm_task_list_item
-        && tokenizer
-            .tokenize_state
-            .document_at_first_paragraph_of_list_item
+    if tokenizer
+        .tokenize_state
+        .document_at_first_paragraph_of_list_item
         && tokenizer.current == Some(b'[')
         && tokenizer.previous.is_none()
     {

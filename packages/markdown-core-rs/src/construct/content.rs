@@ -24,7 +24,6 @@
 //! [paragraph]: crate::construct::paragraph
 
 use crate::event::{Content, Kind, Link, Name};
-use crate::message;
 use crate::resolve::Name as ResolveName;
 use crate::state::{Name as StateName, State};
 use crate::subtokenize::{subtokenize, Subresult};
@@ -111,7 +110,7 @@ pub fn definition_after(tokenizer: &mut Tokenizer) -> State {
 
 /// Merge `Content` chunks, which currently span a single line, into actual
 /// `Content`s that span multiple lines.
-pub fn resolve(tokenizer: &mut Tokenizer) -> Result<Option<Subresult>, message::Message> {
+pub fn resolve(tokenizer: &mut Tokenizer) -> Subresult {
     let mut index = 0;
 
     while index < tokenizer.events.len() {
@@ -181,11 +180,9 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Result<Option<Subresult>, message::
 
     tokenizer.map.consume(&mut tokenizer.events);
 
-    let result = subtokenize(
+    subtokenize(
         &mut tokenizer.events,
         tokenizer.parse_state,
         Some(&Content::Content),
-    )?;
-
-    Ok(Some(result))
+    )
 }

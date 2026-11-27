@@ -21,10 +21,7 @@
 //!
 //! ## Extension
 //!
-//! > 👉 **Note**: frontmatter is not part of `CommonMark`, so frontmatter is
-//! > not enabled by default.
-//! > You need to enable it manually.
-//! > See [`Constructs`][constructs] for more info.
+//! > 👉 **Note**: frontmatter is not part of `CommonMark`.
 //!
 //! As there is no spec for frontmatter in markdown, this extension follows how
 //! YAML frontmatter works on `github.com`.
@@ -54,7 +51,6 @@
 //!
 //! * [`micromark-extension-frontmatter`](https://github.com/micromark/micromark-extension-frontmatter)
 //!
-//! [constructs]: crate::Constructs
 
 use crate::construct::partial_space_or_tab::space_or_tab;
 use crate::event::Name;
@@ -72,9 +68,7 @@ use crate::util::constant::FRONTMATTER_SEQUENCE_SIZE;
 /// ```
 pub fn start(tokenizer: &mut Tokenizer) -> State {
     // Indent not allowed.
-    if tokenizer.parse_state.options.constructs.frontmatter
-        && matches!(tokenizer.current, Some(b'+' | b'-'))
-    {
+    if matches!(tokenizer.current, Some(b'+' | b'-')) {
         tokenizer.tokenize_state.marker = tokenizer.current.unwrap();
         tokenizer.enter(Name::Frontmatter);
         tokenizer.enter(Name::FrontmatterFence);

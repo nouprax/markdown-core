@@ -86,9 +86,6 @@
 //! Notably, GitHub currently has a really weird crappy client-side regex-based
 //! thing.
 //! But on your own (math-heavy?) site it can be great!
-//! You can set [`parse_options.math_text_single_dollar: false`][parse_options]
-//! to improve this, as it prevents single dollars from being seen as math, and
-//! thus prevents normal dollars in text from being seen as math.
 //!
 //! ## Tokens
 //!
@@ -113,7 +110,6 @@
 //! [code_indented]: crate::construct::code_indented
 //! [raw_flow]: crate::construct::raw_flow
 //! [html_code]: https://html.spec.whatwg.org/multipage/text-level-semantics.html#the-code-element
-//! [parse_options]: crate::ParseOptions
 
 use crate::event::Name;
 use crate::state::{Name as StateName, State};
@@ -129,9 +125,9 @@ use crate::tokenizer::Tokenizer;
 /// ```
 pub fn start(tokenizer: &mut Tokenizer) -> State {
     // Code (text):
-    if ((tokenizer.parse_state.options.constructs.code_text && tokenizer.current == Some(b'`'))
+    if ((tokenizer.current == Some(b'`'))
         // Math (text):
-        || (tokenizer.parse_state.options.constructs.math_text && tokenizer.current == Some(b'$')))
+        || (tokenizer.current == Some(b'$')))
         // Not the same marker (except when escaped).
         && (tokenizer.previous != tokenizer.current
             || (!tokenizer.events.is_empty()
@@ -167,18 +163,6 @@ pub fn sequence_open(tokenizer: &mut Tokenizer) -> State {
         tokenizer.tokenize_state.size += 1;
         tokenizer.consume();
         State::Next(StateName::RawTextSequenceOpen)
-    }
-    // Not enough markers in the sequence.
-    else if tokenizer.tokenize_state.marker == b'$'
-        && tokenizer.tokenize_state.size == 1
-        && !tokenizer.parse_state.options.math_text_single_dollar
-    {
-        tokenizer.tokenize_state.marker = 0;
-        tokenizer.tokenize_state.size = 0;
-        tokenizer.tokenize_state.token_1 = Name::Data;
-        tokenizer.tokenize_state.token_2 = Name::Data;
-        tokenizer.tokenize_state.token_3 = Name::Data;
-        State::Nok
     } else {
         tokenizer.exit(tokenizer.tokenize_state.token_2.clone());
         State::Retry(StateName::RawTextBetween)

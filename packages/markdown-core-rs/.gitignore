@@ -2,8 +2,6 @@
 *.log
 coverage/
 target/
-commonmark-data.txt
-unicode-data.txt
 fuzz/target
 fuzz/corpus
 fuzz/artifacts

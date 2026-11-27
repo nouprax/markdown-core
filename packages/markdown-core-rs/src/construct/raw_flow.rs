@@ -156,28 +156,16 @@ use crate::util::{
 ///   | ~~~
 /// ```
 pub fn start(tokenizer: &mut Tokenizer) -> State {
-    if tokenizer.parse_state.options.constructs.code_fenced
-        || tokenizer.parse_state.options.constructs.math_flow
-    {
-        if matches!(tokenizer.current, Some(b'\t' | b' ')) {
-            tokenizer.attempt(
-                State::Next(StateName::RawFlowBeforeSequenceOpen),
-                State::Nok,
-            );
-            return State::Retry(space_or_tab_min_max(
-                tokenizer,
-                0,
-                if tokenizer.parse_state.options.constructs.code_indented {
-                    TAB_SIZE - 1
-                } else {
-                    usize::MAX
-                },
-            ));
-        }
+    if matches!(tokenizer.current, Some(b'\t' | b' ')) {
+        tokenizer.attempt(
+            State::Next(StateName::RawFlowBeforeSequenceOpen),
+            State::Nok,
+        );
+        return State::Retry(space_or_tab_min_max(tokenizer, 0, TAB_SIZE - 1));
+    }
 
-        if matches!(tokenizer.current, Some(b'$' | b'`' | b'~')) {
-            return State::Retry(StateName::RawFlowBeforeSequenceOpen);
-        }
+    if matches!(tokenizer.current, Some(b'$' | b'`' | b'~')) {
+        return State::Retry(StateName::RawFlowBeforeSequenceOpen);
     }
 
     State::Nok
@@ -206,10 +194,9 @@ pub fn before_sequence_open(tokenizer: &mut Tokenizer) -> State {
     }
 
     // Code (fenced).
-    if (tokenizer.parse_state.options.constructs.code_fenced
-        && matches!(tokenizer.current, Some(b'`' | b'~')))
+    if (matches!(tokenizer.current, Some(b'`' | b'~')))
         // Math (flow).
-        || (tokenizer.parse_state.options.constructs.math_flow && tokenizer.current == Some(b'$'))
+        || (tokenizer.current == Some(b'$'))
     {
         tokenizer.tokenize_state.marker = tokenizer.current.unwrap();
         tokenizer.tokenize_state.size_c = prefix;
@@ -471,15 +458,7 @@ pub fn close_start(tokenizer: &mut Tokenizer) -> State {
             State::Nok,
         );
 
-        State::Retry(space_or_tab_min_max(
-            tokenizer,
-            0,
-            if tokenizer.parse_state.options.constructs.code_indented {
-                TAB_SIZE - 1
-            } else {
-                usize::MAX
-            },
-        ))
+        State::Retry(space_or_tab_min_max(tokenizer, 0, TAB_SIZE - 1))
     } else {
         State::Retry(StateName::RawFlowBeforeSequenceClose)
     }

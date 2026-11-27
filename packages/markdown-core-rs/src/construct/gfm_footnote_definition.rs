@@ -185,33 +185,16 @@ use crate::util::{
 ///     ^
 /// ```
 pub fn start(tokenizer: &mut Tokenizer) -> State {
-    if tokenizer
-        .parse_state
-        .options
-        .constructs
-        .gfm_footnote_definition
-    {
-        tokenizer.enter(Name::GfmFootnoteDefinition);
+    tokenizer.enter(Name::GfmFootnoteDefinition);
 
-        if matches!(tokenizer.current, Some(b'\t' | b' ')) {
-            tokenizer.attempt(
-                State::Next(StateName::GfmFootnoteDefinitionLabelBefore),
-                State::Nok,
-            );
-            State::Retry(space_or_tab_min_max(
-                tokenizer,
-                1,
-                if tokenizer.parse_state.options.constructs.code_indented {
-                    TAB_SIZE - 1
-                } else {
-                    usize::MAX
-                },
-            ))
-        } else {
-            State::Retry(StateName::GfmFootnoteDefinitionLabelBefore)
-        }
+    if matches!(tokenizer.current, Some(b'\t' | b' ')) {
+        tokenizer.attempt(
+            State::Next(StateName::GfmFootnoteDefinitionLabelBefore),
+            State::Nok,
+        );
+        State::Retry(space_or_tab_min_max(tokenizer, 1, TAB_SIZE - 1))
     } else {
-        State::Nok
+        State::Retry(StateName::GfmFootnoteDefinitionLabelBefore)
     }
 }
 

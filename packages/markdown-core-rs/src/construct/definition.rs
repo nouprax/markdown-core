@@ -120,16 +120,15 @@ use crate::util::{
 /// ```
 pub fn start(tokenizer: &mut Tokenizer) -> State {
     // Do not interrupt paragraphs (but do follow definitions).
-    if tokenizer.parse_state.options.constructs.definition
-        && (!tokenizer.interrupt
-            || (!tokenizer.events.is_empty()
-                && tokenizer.events[skip::opt_back(
-                    &tokenizer.events,
-                    tokenizer.events.len() - 1,
-                    &[Name::LineEnding, Name::SpaceOrTab],
-                )]
-                .name
-                    == Name::Definition))
+    if !tokenizer.interrupt
+        || (!tokenizer.events.is_empty()
+            && tokenizer.events[skip::opt_back(
+                &tokenizer.events,
+                tokenizer.events.len() - 1,
+                &[Name::LineEnding, Name::SpaceOrTab],
+            )]
+            .name
+                == Name::Definition)
     {
         tokenizer.enter(Name::Definition);
 

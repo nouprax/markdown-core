@@ -38,15 +38,6 @@ impl<'a> Position<'a> {
 
         Position { start, end }
     }
-
-    /// Turn a position into indices.
-    ///
-    /// Indices are places in `bytes` where this position starts and ends.
-    ///
-    /// > 👉 **Note**: indices cannot represent virtual spaces.
-    pub fn to_indices(&self) -> (usize, usize) {
-        (self.start.index, self.end.index)
-    }
 }
 
 /// Bytes belonging to a range.

@@ -80,25 +80,13 @@ use alloc::{vec, vec::Vec};
 ///     ^
 /// ```
 pub fn start(tokenizer: &mut Tokenizer) -> State {
-    if tokenizer.parse_state.options.constructs.list_item {
-        tokenizer.enter(Name::ListItem);
+    tokenizer.enter(Name::ListItem);
 
-        if matches!(tokenizer.current, Some(b'\t' | b' ')) {
-            tokenizer.attempt(State::Next(StateName::ListItemBefore), State::Nok);
-            State::Retry(space_or_tab_min_max(
-                tokenizer,
-                0,
-                if tokenizer.parse_state.options.constructs.code_indented {
-                    TAB_SIZE - 1
-                } else {
-                    usize::MAX
-                },
-            ))
-        } else {
-            State::Retry(StateName::ListItemBefore)
-        }
+    if matches!(tokenizer.current, Some(b'\t' | b' ')) {
+        tokenizer.attempt(State::Next(StateName::ListItemBefore), State::Nok);
+        State::Retry(space_or_tab_min_max(tokenizer, 0, TAB_SIZE - 1))
     } else {
-        State::Nok
+        State::Retry(StateName::ListItemBefore)
     }
 }
 

@@ -118,10 +118,9 @@ struct Sequence {
 /// ```
 pub fn start(tokenizer: &mut Tokenizer) -> State {
     // Emphasis/strong:
-    if (tokenizer.parse_state.options.constructs.attention
-        && matches!(tokenizer.current, Some(b'*' | b'_')))
+    if (matches!(tokenizer.current, Some(b'*' | b'_')))
         // GFM strikethrough:
-        || (tokenizer.parse_state.options.constructs.gfm_strikethrough && tokenizer.current == Some(b'~'))
+        || (tokenizer.current == Some(b'~'))
     {
         tokenizer.tokenize_state.marker = tokenizer.current.unwrap();
         tokenizer.enter(Name::AttentionSequence);
@@ -192,10 +191,7 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
                     // * more than 2 markers don’t work
                     // * one marker is prohibited by the spec, but supported by GH
                     if sequence_close.marker == b'~'
-                        && (sequence_close.size != sequence_open.size
-                            || sequence_close.size > 2
-                            || sequence_close.size == 1
-                                && !tokenizer.parse_state.options.gfm_strikethrough_single_tilde)
+                        && (sequence_close.size != sequence_open.size || sequence_close.size > 2)
                     {
                         continue;
                     }
@@ -248,13 +244,11 @@ fn get_sequences(tokenizer: &mut Tokenizer) -> Vec<Sequence> {
                     // For regular attention markers (not strikethrough), the
                     // other attention markers can be used around them
                     || (marker != b'~' && matches!(after_char, Some('*' | '_')))
-                    || (marker != b'~' && tokenizer.parse_state.options.constructs.gfm_strikethrough && matches!(after_char, Some('~')));
+                    || (marker != b'~' && matches!(after_char, Some('~')));
                 let close = before == CharacterKind::Other
                     || (before == CharacterKind::Punctuation && after != CharacterKind::Other)
                     || (marker != b'~' && matches!(before_char, Some('*' | '_')))
-                    || (marker != b'~'
-                        && tokenizer.parse_state.options.constructs.gfm_strikethrough
-                        && matches!(before_char, Some('~')));
+                    || (marker != b'~' && matches!(before_char, Some('~')));
 
                 sequences.push(Sequence {
                     index,

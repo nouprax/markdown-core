@@ -69,25 +69,13 @@ use crate::util::constant::{TAB_SIZE, THEMATIC_BREAK_MARKER_COUNT_MIN};
 ///     ^
 /// ```
 pub fn start(tokenizer: &mut Tokenizer) -> State {
-    if tokenizer.parse_state.options.constructs.thematic_break {
-        tokenizer.enter(Name::ThematicBreak);
+    tokenizer.enter(Name::ThematicBreak);
 
-        if matches!(tokenizer.current, Some(b'\t' | b' ')) {
-            tokenizer.attempt(State::Next(StateName::ThematicBreakBefore), State::Nok);
-            State::Retry(space_or_tab_min_max(
-                tokenizer,
-                0,
-                if tokenizer.parse_state.options.constructs.code_indented {
-                    TAB_SIZE - 1
-                } else {
-                    usize::MAX
-                },
-            ))
-        } else {
-            State::Retry(StateName::ThematicBreakBefore)
-        }
+    if matches!(tokenizer.current, Some(b'\t' | b' ')) {
+        tokenizer.attempt(State::Next(StateName::ThematicBreakBefore), State::Nok);
+        State::Retry(space_or_tab_min_max(tokenizer, 0, TAB_SIZE - 1))
     } else {
-        State::Nok
+        State::Retry(StateName::ThematicBreakBefore)
     }
 }
 

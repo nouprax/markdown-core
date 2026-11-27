@@ -1146,8 +1146,10 @@ jobs:
                   persist-credentials: false
             - name: Check Rust formatting
               run: cargo fmt --all --check
+            - name: Lint the Rust core
+              run: cargo clippy --all-targets --locked -- -D warnings
             - name: Test the Rust core
-              run: cargo test --workspace --locked
+              run: cargo test --locked
 
     tests-ready:
         name: Tests - Ready

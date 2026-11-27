@@ -160,12 +160,7 @@ use alloc::vec::Vec;
 ///     ^
 /// ```
 pub fn protocol_start(tokenizer: &mut Tokenizer) -> State {
-    if tokenizer
-        .parse_state
-        .options
-        .constructs
-        .gfm_autolink_literal &&
-        matches!(tokenizer.current, Some(b'H' | b'h'))
+    if matches!(tokenizer.current, Some(b'H' | b'h'))
             // Source: <https://github.com/github/cmark-gfm/blob/ef1cfcb/extensions/autolink.c#L214>.
             && !matches!(tokenizer.previous, Some(b'A'..=b'Z' | b'a'..=b'z'))
     {
@@ -264,12 +259,7 @@ pub fn protocol_slashes_inside(tokenizer: &mut Tokenizer) -> State {
 ///     ^
 /// ```
 pub fn www_start(tokenizer: &mut Tokenizer) -> State {
-    if tokenizer
-        .parse_state
-        .options
-        .constructs
-        .gfm_autolink_literal &&
-        matches!(tokenizer.current, Some(b'W' | b'w'))
+    if matches!(tokenizer.current, Some(b'W' | b'w'))
             // Source: <https://github.com/github/cmark-gfm/blob/ef1cfcb/extensions/autolink.c#L156>.
             && matches!(tokenizer.previous, None | Some(b'\t' | b'\n' | b' ' | b'(' | b'*' | b'_' | b'[' | b']' | b'~'))
     {

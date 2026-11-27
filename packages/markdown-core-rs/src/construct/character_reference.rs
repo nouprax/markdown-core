@@ -87,9 +87,7 @@ use crate::util::{
 ///      ^
 /// ```
 pub fn start(tokenizer: &mut Tokenizer) -> State {
-    if tokenizer.parse_state.options.constructs.character_reference
-        && tokenizer.current == Some(b'&')
-    {
+    if tokenizer.current == Some(b'&') {
         tokenizer.enter(Name::CharacterReference);
         tokenizer.enter(Name::CharacterReferenceMarker);
         tokenizer.consume();
@@ -171,7 +169,7 @@ pub fn value(tokenizer: &mut Tokenizer) -> State {
                 tokenizer.point.index,
             );
 
-            if decode_named(slice.as_str(), true).is_none() {
+            if decode_named(slice.as_str()).is_none() {
                 tokenizer.tokenize_state.marker = 0;
                 tokenizer.tokenize_state.size = 0;
                 return State::Nok;

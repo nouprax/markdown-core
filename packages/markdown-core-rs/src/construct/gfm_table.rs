@@ -248,25 +248,21 @@ use alloc::vec;
 ///     ^
 /// ```
 pub fn start(tokenizer: &mut Tokenizer) -> State {
-    if tokenizer.parse_state.options.constructs.gfm_table {
-        if !tokenizer.pierce
-            && !tokenizer.events.is_empty()
-            && matches!(
-                tokenizer.events[skip_opt_back(
-                    &tokenizer.events,
-                    tokenizer.events.len() - 1,
-                    &[Name::LineEnding, Name::SpaceOrTab],
-                )]
-                .name,
-                Name::GfmTableHead | Name::GfmTableRow
-            )
-        {
-            State::Retry(StateName::GfmTableBodyRowStart)
-        } else {
-            State::Retry(StateName::GfmTableHeadRowBefore)
-        }
+    if !tokenizer.pierce
+        && !tokenizer.events.is_empty()
+        && matches!(
+            tokenizer.events[skip_opt_back(
+                &tokenizer.events,
+                tokenizer.events.len() - 1,
+                &[Name::LineEnding, Name::SpaceOrTab],
+            )]
+            .name,
+            Name::GfmTableHead | Name::GfmTableRow
+        )
+    {
+        State::Retry(StateName::GfmTableBodyRowStart)
     } else {
-        State::Nok
+        State::Retry(StateName::GfmTableHeadRowBefore)
     }
 }
 
@@ -283,15 +279,7 @@ pub fn head_row_before(tokenizer: &mut Tokenizer) -> State {
     tokenizer.enter(Name::GfmTableRow);
     if matches!(tokenizer.current, Some(b'\t' | b' ')) {
         tokenizer.attempt(State::Next(StateName::GfmTableHeadRowStart), State::Nok);
-        State::Retry(space_or_tab_min_max(
-            tokenizer,
-            0,
-            if tokenizer.parse_state.options.constructs.code_indented {
-                TAB_SIZE - 1
-            } else {
-                usize::MAX
-            },
-        ))
+        State::Retry(space_or_tab_min_max(tokenizer, 0, TAB_SIZE - 1))
     } else {
         State::Retry(StateName::GfmTableHeadRowStart)
     }
@@ -456,15 +444,7 @@ pub fn head_delimiter_start(tokenizer: &mut Tokenizer) -> State {
                     State::Next(StateName::GfmTableHeadDelimiterNok),
                 );
 
-                State::Retry(space_or_tab_min_max(
-                    tokenizer,
-                    0,
-                    if tokenizer.parse_state.options.constructs.code_indented {
-                        TAB_SIZE - 1
-                    } else {
-                        usize::MAX
-                    },
-                ))
+                State::Retry(space_or_tab_min_max(tokenizer, 0, TAB_SIZE - 1))
             }
             _ => State::Retry(StateName::GfmTableHeadDelimiterBefore),
         }

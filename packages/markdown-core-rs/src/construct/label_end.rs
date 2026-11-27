@@ -205,7 +205,7 @@ use alloc::{string::String, vec};
 /// > | [a] b
 /// ```
 pub fn start(tokenizer: &mut Tokenizer) -> State {
-    if Some(b']') == tokenizer.current && tokenizer.parse_state.options.constructs.label_end {
+    if Some(b']') == tokenizer.current {
         // If there is an okay opening:
         if !tokenizer.tokenize_state.label_starts.is_empty() {
             let label_start = tokenizer.tokenize_state.label_starts.last().unwrap();

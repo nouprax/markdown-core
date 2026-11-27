@@ -6,10 +6,9 @@
 //! less the prefixes of the containers around it.
 
 use crate::ast::{
-    Delimiter, Destination, Flavor, Flow, Kind, Node, Note, Placement, Referent, Span, Variant,
+    Delimiter, Destination, Flavor, Kind, Node, Note, Placement, Referent, Span, Variant,
 };
 use crate::event::{Event, Kind as EventKind, Name};
-use crate::mdast::AlignKind;
 use crate::util::{
     character_reference::decode as decode_character_reference,
     classes::{anchor, normalize_label},
@@ -86,11 +85,7 @@ fn prefix(name: &Name) -> bool {
 fn between(name: &Name) -> bool {
     matches!(
         name,
-        Name::LineEnding
-            | Name::BlankLineEnding
-            | Name::SpaceOrTab
-            | Name::LinePrefix
-            | Name::ByteOrderMark
+        Name::LineEnding | Name::BlankLineEnding | Name::SpaceOrTab | Name::ByteOrderMark
     ) || prefix(name)
 }
 
@@ -688,15 +683,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn table(&mut self, index: usize) -> Node {
-        let columns: Vec<Flow> = gfm_table_align(self.events, index)
-            .into_iter()
-            .map(|align| match align {
-                AlignKind::None => Flow::None,
-                AlignKind::Left => Flow::Left,
-                AlignKind::Center => Flow::Center,
-                AlignKind::Right => Flow::Right,
-            })
-            .collect();
+        let columns = gfm_table_align(self.events, index);
         let mut head = vec![];
         let mut content = vec![];
         for child in self.inside(index) {
@@ -804,7 +791,7 @@ impl<'a> Compiler<'a> {
                 _ => {}
             }
         }
-        decode_character_reference(value, marker, true).unwrap_or_else(|| self.text(index).into())
+        decode_character_reference(value, marker).unwrap_or_else(|| self.text(index).into())
     }
 
     // Inlines.
@@ -1185,8 +1172,9 @@ fn assign(node: &mut Node, taken: &mut BTreeSet<String>) {
 /// The anchor projection of an inline node, appended to `base`.
 fn project(node: &Node, base: &mut String) {
     match &node.kind {
-        Kind::Text { literal } | Kind::Code { literal } => base.push_str(&anchor(literal)),
-        Kind::Formula { literal, .. } => base.push_str(&anchor(literal)),
+        Kind::Text { literal } | Kind::Code { literal } | Kind::Formula { literal, .. } => {
+            base.push_str(&anchor(literal));
+        }
         Kind::Topic { name } => {
             base.push_str(&anchor("#"));
             base.push_str(&anchor(name));
@@ -1232,11 +1220,9 @@ fn project(node: &Node, base: &mut String) {
                 }
             }
         }
-        Kind::Directive { label, .. } => {
-            if let Some(label) = label {
-                project(label, base);
-            }
-        }
+        Kind::Directive {
+            label: Some(label), ..
+        } => project(label, base),
         Kind::Emphasis { content }
         | Kind::Strong { content }
         | Kind::Strikethrough { content }

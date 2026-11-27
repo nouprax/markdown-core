@@ -9,14 +9,10 @@
 //! [`attempt`]: Tokenizer::attempt
 
 use crate::event::{Content, Event, Kind, Link, Name, Point, VOID_EVENTS};
-use crate::message;
 use crate::parser::ParseState;
 use crate::resolve::{call as call_resolve, Name as ResolveName};
 use crate::state::{call, State};
 use crate::subtokenize::Subresult;
-
-#[cfg(feature = "log")]
-use crate::util::char::format_byte_opt;
 
 use crate::util::{constant::TAB_SIZE, edit_map::EditMap};
 use alloc::{boxed::Box, string::String, vec, vec::Vec};
@@ -232,9 +228,6 @@ pub struct TokenizeState<'a> {
     /// List of defined GFM footnote definition identifiers.
     pub gfm_footnote_definitions: Vec<String>,
 
-    // Last error message provided at an EOF of an expression.
-    pub mdx_last_parse_error: Option<(String, String, String)>,
-
     /// Whether to connect events.
     pub connect: bool,
     /// Marker.
@@ -351,7 +344,6 @@ impl<'a> Tokenizer<'a> {
                 document_at_first_paragraph_of_list_item: false,
                 definitions: vec![],
                 gfm_footnote_definitions: vec![],
-                mdx_last_parse_error: None,
                 end: 0,
                 label_starts: vec![],
                 label_starts_loose: vec![],
@@ -410,9 +402,6 @@ impl<'a> Tokenizer<'a> {
         move_point_back(self, &mut point);
 
         let info = (point.index, point.vs);
-
-        #[cfg(feature = "log")]
-        log::trace!("position: define skip: {:?} -> ({:?})", point.line, info);
 
         let at = point.line - self.first_line;
 
@@ -484,9 +473,6 @@ impl<'a> Tokenizer<'a> {
                     self.line_start = self.point.clone();
 
                     self.account_for_potential_skip();
-
-                    #[cfg(feature = "log")]
-                    log::trace!("position: after eol: `{:?}`", self.point);
                 } else {
                     self.point.column += 1;
                 }
@@ -542,9 +528,6 @@ impl<'a> Tokenizer<'a> {
         } else {
             move_point_back(self, &mut point);
         }
-
-        #[cfg(feature = "log")]
-        log::debug!("exit:    `{:?}`", name);
 
         let event = Event {
             kind: Kind::Exit,
@@ -626,11 +609,11 @@ impl<'a> Tokenizer<'a> {
     }
 
     /// Flush.
-    pub fn flush(&mut self, state: State, resolve: bool) -> Result<Subresult, message::Message> {
+    pub fn flush(&mut self, state: State, resolve: bool) -> Subresult {
         let to = (self.point.index, self.point.vs);
         let state = push_impl(self, to, to, state, true);
 
-        state.to_result()?;
+        debug_assert_eq!(state, State::Ok, "expected a final state");
 
         let mut value = Subresult {
             done: false,
@@ -644,7 +627,7 @@ impl<'a> Tokenizer<'a> {
             let defs = &mut value.definitions;
             let fn_defs = &mut value.gfm_footnote_definitions;
             while index < resolvers.len() {
-                if let Some(mut result) = call_resolve(self, resolvers[index])? {
+                if let Some(mut result) = call_resolve(self, resolvers[index]) {
                     fn_defs.append(&mut result.gfm_footnote_definitions);
                     defs.append(&mut result.definitions);
                 }
@@ -654,7 +637,7 @@ impl<'a> Tokenizer<'a> {
             self.map.consume(&mut self.events);
         }
 
-        Ok(value)
+        value
     }
 }
 
@@ -674,9 +657,6 @@ fn move_point_back(tokenizer: &mut Tokenizer, point: &mut Point) {
 fn enter_impl(tokenizer: &mut Tokenizer, name: Name, link: Option<Link>) {
     let mut point = tokenizer.point.clone();
     move_point_back(tokenizer, &mut point);
-
-    #[cfg(feature = "log")]
-    log::debug!("enter:   `{:?}`", name);
 
     tokenizer.stack.push(name.clone());
     tokenizer.events.push(Event {
@@ -705,7 +685,6 @@ fn push_impl(
 
     loop {
         match state {
-            State::Error(_) => break,
             State::Ok | State::Nok => {
                 if let Some(attempt) = tokenizer.attempts.pop() {
                     if attempt.kind == AttemptKind::Check || state == State::Nok {
@@ -721,9 +700,6 @@ fn push_impl(
                     } else {
                         attempt.nok
                     };
-
-                    #[cfg(feature = "log")]
-                    log::trace!("attempt: `{:?}` -> `{:?}`", state, next);
 
                     state = next;
                 } else {
@@ -751,17 +727,11 @@ fn push_impl(
                             None
                         };
 
-                    #[cfg(feature = "log")]
-                    log::trace!("feed:    {} to {:?}", format_byte_opt(byte), name);
-
                     tokenizer.expect(byte);
                     state = call(tokenizer, name);
                 }
             }
             State::Retry(name) => {
-                #[cfg(feature = "log")]
-                log::trace!("retry:   `{:?}`", name);
-
                 state = call(tokenizer, name);
             }
         }
@@ -770,12 +740,9 @@ fn push_impl(
     tokenizer.consumed = true;
 
     if flush {
-        debug_assert!(matches!(state, State::Ok | State::Error(_)), "must be ok");
+        debug_assert!(state == State::Ok, "must be ok");
     } else {
-        debug_assert!(
-            matches!(state, State::Next(_) | State::Error(_)),
-            "must have a next state"
-        );
+        debug_assert!(matches!(state, State::Next(_)), "must have a next state");
     }
 
     state

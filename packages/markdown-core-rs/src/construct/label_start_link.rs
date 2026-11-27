@@ -43,8 +43,7 @@ use crate::tokenizer::{LabelKind, LabelStart, Tokenizer};
 ///       ^
 /// ```
 pub fn start(tokenizer: &mut Tokenizer) -> State {
-    if tokenizer.parse_state.options.constructs.label_start_link && tokenizer.current == Some(b'[')
-    {
+    if tokenizer.current == Some(b'[') {
         let start = tokenizer.events.len();
         tokenizer.enter(Name::LabelLink);
         tokenizer.enter(Name::LabelMarker);

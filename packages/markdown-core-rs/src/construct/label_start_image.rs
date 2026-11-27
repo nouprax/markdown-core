@@ -44,8 +44,7 @@ use crate::tokenizer::{LabelKind, LabelStart, Tokenizer};
 ///       ^
 /// ```
 pub fn start(tokenizer: &mut Tokenizer) -> State {
-    if tokenizer.parse_state.options.constructs.label_start_image && tokenizer.current == Some(b'!')
-    {
+    if tokenizer.current == Some(b'!') {
         tokenizer.enter(Name::LabelImage);
         tokenizer.enter(Name::LabelImageMarker);
         tokenizer.consume();
@@ -99,13 +98,7 @@ pub fn open(tokenizer: &mut Tokenizer) -> State {
 /// <p>!<a href=\"c\">^a</a></p>
 /// ```
 pub fn after(tokenizer: &mut Tokenizer) -> State {
-    if tokenizer
-        .parse_state
-        .options
-        .constructs
-        .gfm_label_start_footnote
-        && tokenizer.current == Some(b'^')
-    {
+    if tokenizer.current == Some(b'^') {
         State::Nok
     } else {
         tokenizer.tokenize_state.label_starts.push(LabelStart {

@@ -10,11 +10,6 @@ use alloc::string::String;
 pub const WHITESPACE: u8 = 1 << 0;
 pub const PUNCTUATION: u8 = 1 << 1;
 pub const SYMBOL: u8 = 1 << 2;
-pub const LETTER: u8 = 1 << 3;
-pub const NUMBER: u8 = 1 << 4;
-pub const MARK: u8 = 1 << 5;
-pub const EMOJI: u8 = 1 << 6;
-pub const DECIMAL: u8 = 1 << 7;
 
 /// The classes of `char`.
 pub fn classes(char: char) -> u8 {
@@ -31,7 +26,8 @@ pub fn anchor_image(char: char) -> Option<char> {
     if class == 0 {
         None
     } else {
-        char::from_u32((scalar as i64 + i64::from(ANCHOR_DELTAS[class])) as u32)
+        let image = i64::try_from(scalar).ok()? + i64::from(ANCHOR_DELTAS[class]);
+        char::from_u32(u32::try_from(image).ok()?)
     }
 }
 

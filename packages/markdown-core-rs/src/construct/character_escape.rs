@@ -52,8 +52,7 @@ use crate::tokenizer::Tokenizer;
 ///      ^
 /// ```
 pub fn start(tokenizer: &mut Tokenizer) -> State {
-    if tokenizer.parse_state.options.constructs.character_escape && tokenizer.current == Some(b'\\')
-    {
+    if tokenizer.current == Some(b'\\') {
         tokenizer.enter(Name::CharacterEscape);
         tokenizer.enter(Name::CharacterEscapeMarker);
         tokenizer.consume();

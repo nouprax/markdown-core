@@ -87,8 +87,7 @@ use alloc::vec;
 ///     ^
 /// ```
 pub fn start(tokenizer: &mut Tokenizer) -> State {
-    if tokenizer.parse_state.options.constructs.heading_setext
-        && !tokenizer.lazy
+    if !tokenizer.lazy
         && !tokenizer.pierce
         // Require a paragraph before.
         && (!tokenizer.events.is_empty()
@@ -103,15 +102,7 @@ pub fn start(tokenizer: &mut Tokenizer) -> State {
 
         if matches!(tokenizer.current, Some(b'\t' | b' ')) {
             tokenizer.attempt(State::Next(StateName::HeadingSetextBefore), State::Nok);
-            State::Retry(space_or_tab_min_max(
-                tokenizer,
-                0,
-                if tokenizer.parse_state.options.constructs.code_indented {
-                    TAB_SIZE - 1
-                } else {
-                    usize::MAX
-                },
-            ))
+            State::Retry(space_or_tab_min_max(tokenizer, 0, TAB_SIZE - 1))
         } else {
             State::Retry(StateName::HeadingSetextBefore)
         }

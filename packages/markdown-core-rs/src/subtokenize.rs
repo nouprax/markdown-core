@@ -18,7 +18,6 @@
 //! any level that can include references can be parsed.
 
 use crate::event::{Content, Event, Kind, Name, VOID_EVENTS};
-use crate::message;
 use crate::parser::ParseState;
 use crate::state::{Name as StateName, State};
 use crate::tokenizer::Tokenizer;
@@ -79,7 +78,7 @@ pub fn subtokenize(
     events: &mut Vec<Event>,
     parse_state: &ParseState,
     filter: Option<&Content>,
-) -> Result<Subresult, message::Message> {
+) -> Subresult {
     let mut map = EditMap::new();
     let mut index = 0;
     let mut value = Subresult {
@@ -118,8 +117,7 @@ pub fn subtokenize(
                 // Check if this is the first paragraph, after zero or more
                 // definitions (or a blank line), in a list item.
                 // Used for GFM task list items.
-                if tokenizer.parse_state.options.constructs.gfm_task_list_item
-                    && index > 2
+                if index > 2
                     && events[index - 1].kind == Kind::Enter
                     && events[index - 1].name == Name::Paragraph
                 {
@@ -166,7 +164,7 @@ pub fn subtokenize(
                     link_index = link_curr.next;
                 }
 
-                let mut result = tokenizer.flush(state, true)?;
+                let mut result = tokenizer.flush(state, true);
                 value
                     .gfm_footnote_definitions
                     .append(&mut result.gfm_footnote_definitions);
@@ -182,7 +180,7 @@ pub fn subtokenize(
 
     map.consume(events);
 
-    Ok(value)
+    value
 }
 
 /// Divide `child_events` over links in `events`, the first of which is at
