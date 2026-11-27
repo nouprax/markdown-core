@@ -1298,6 +1298,42 @@ pub enum Name {
     ///      ^
     /// ```
     GfmStrikethroughText,
+    /// Whole insertion (`++a++`).
+    ///
+    /// Formed by the [`attention`][crate::construct::attention] resolver
+    /// from [`AttentionSequence`][Name::AttentionSequence]s.
+    Insertion,
+    /// Marker of a insertion.
+    InsertionSequence,
+    /// Content of a insertion.
+    InsertionText,
+    /// Whole mark (`==a==`).
+    ///
+    /// Formed by the [`attention`][crate::construct::attention] resolver
+    /// from [`AttentionSequence`][Name::AttentionSequence]s.
+    Mark,
+    /// Marker of a mark.
+    MarkSequence,
+    /// Content of a mark.
+    MarkText,
+    /// Whole subscript (`~a~`).
+    ///
+    /// Formed by the [`attention`][crate::construct::attention] resolver
+    /// from [`AttentionSequence`][Name::AttentionSequence]s.
+    Subscript,
+    /// Marker of a subscript.
+    SubscriptSequence,
+    /// Content of a subscript.
+    SubscriptText,
+    /// Whole superscript (`^a^`).
+    ///
+    /// Formed by the [`attention`][crate::construct::attention] resolver
+    /// from [`AttentionSequence`][Name::AttentionSequence]s.
+    Superscript,
+    /// Marker of a superscript.
+    SuperscriptSequence,
+    /// Content of a superscript.
+    SuperscriptText,
     /// GFM extension: Table.
     ///
     /// ## Info
@@ -2824,6 +2860,10 @@ pub enum Inline {
     Emphasis,
     Strong,
     Strikethrough,
+    Insertion,
+    Mark,
+    Subscript,
+    Superscript,
     CodeText,
     MathText,
     HtmlText,
@@ -2868,6 +2908,10 @@ impl Name {
             Name::Emphasis => Role::Inline(Inline::Emphasis),
             Name::Strong => Role::Inline(Inline::Strong),
             Name::GfmStrikethrough => Role::Inline(Inline::Strikethrough),
+            Name::Insertion => Role::Inline(Inline::Insertion),
+            Name::Mark => Role::Inline(Inline::Mark),
+            Name::Subscript => Role::Inline(Inline::Subscript),
+            Name::Superscript => Role::Inline(Inline::Superscript),
             Name::CodeText => Role::Inline(Inline::CodeText),
             Name::MathText => Role::Inline(Inline::MathText),
             Name::HtmlText => Role::Inline(Inline::HtmlText),
@@ -2930,6 +2974,14 @@ impl Name {
             | Name::GfmFootnoteDefinitionMarker
             | Name::GfmStrikethroughSequence
             | Name::GfmStrikethroughText
+            | Name::InsertionSequence
+            | Name::InsertionText
+            | Name::MarkSequence
+            | Name::MarkText
+            | Name::SubscriptSequence
+            | Name::SubscriptText
+            | Name::SuperscriptSequence
+            | Name::SuperscriptText
             | Name::GfmTableBody
             | Name::GfmTableCell
             | Name::GfmTableCellText
@@ -2992,7 +3044,7 @@ impl Name {
 }
 
 /// List of void events, used to make sure everything is working well.
-pub const VOID_EVENTS: [Name; 62] = [
+pub const VOID_EVENTS: [Name; 66] = [
     Name::AttentionSequence,
     Name::AutolinkEmail,
     Name::AutolinkMarker,
@@ -3025,6 +3077,10 @@ pub const VOID_EVENTS: [Name; 62] = [
     Name::GfmFootnoteDefinitionLabelMarker,
     Name::GfmFootnoteDefinitionMarker,
     Name::GfmStrikethroughSequence,
+    Name::InsertionSequence,
+    Name::MarkSequence,
+    Name::SubscriptSequence,
+    Name::SuperscriptSequence,
     Name::GfmTableCellDivider,
     Name::GfmTableDelimiterMarker,
     Name::GfmTableDelimiterFiller,

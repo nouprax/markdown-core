@@ -927,6 +927,18 @@ impl<'a> Compiler<'a> {
             Inline::Strikethrough => Kind::Strikethrough {
                 content: self.part(index, Name::GfmStrikethroughText),
             },
+            Inline::Insertion => Kind::Insertion {
+                content: self.part(index, Name::InsertionText),
+            },
+            Inline::Mark => Kind::Mark {
+                content: self.part(index, Name::MarkText),
+            },
+            Inline::Subscript => Kind::Subscript {
+                content: self.part(index, Name::SubscriptText),
+            },
+            Inline::Superscript => Kind::Superscript {
+                content: self.part(index, Name::SuperscriptText),
+            },
             Inline::CodeText => Kind::Code {
                 literal: self.code(index, Name::CodeTextData),
             },
