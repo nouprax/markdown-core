@@ -23,7 +23,7 @@
 //! ; Restriction: the code before must be `email_autolink_before`.
 //! ; Restriction: `ascii_digit` may not occur in the last label part of the label.
 //! email_autolink ::= 1*('+' | '-' | '.' | '_' | ascii_alphanumeric) '@' 1*(1*label_segment label_dot_cont) 1*label_segment
-//! email_autolink_before ::= byte - ascii_alpha - '/'
+//! email_autolink_before ::= byte - ascii_alpha
 //!
 //! ; Restriction: `_` may not occur in the last two domain parts.
 //! domain ::= 1*(url_ampt_cont | domain_punct_cont | '-' | byte - eof - ascii_control - unicode_whitespace - unicode_punctuation)
@@ -150,7 +150,8 @@ use crate::event::{Event, Kind, Name};
 use crate::state::{Name as StateName, State};
 use crate::tokenizer::Tokenizer;
 use crate::util::{
-    char::{kind_after_index, Kind as CharacterKind},
+    char::{after_index, kind_after_index, Kind as CharacterKind},
+    classes::{classes, PUNCTUATION},
     slice::{Position, Slice},
 };
 use alloc::vec::Vec;
@@ -372,13 +373,7 @@ fn domain_inside(tokenizer: &mut Tokenizer, mut domain: Domain) -> State {
         }
         _ => {
             // Source: <https://github.com/github/cmark-gfm/blob/ef1cfcb/extensions/autolink.c#L12>.
-            // A domain ends at whitespace, which is a space, a tab or a line
-            // ending, or at punctuation: any other character is in it.
-            let kind = kind_after_index(tokenizer.parse_state.bytes, tokenizer.point.index);
-            let other = kind == CharacterKind::Other
-                || (kind == CharacterKind::Whitespace
-                    && !matches!(tokenizer.current, None | Some(b'\t' | b'\n' | b'\r' | b' ')));
-            if other {
+            if host(tokenizer.parse_state.bytes, tokenizer.point.index) {
                 domain.seen = true;
                 tokenizer.consume();
                 State::Next(StateName::AutolinkLiteral(Step::DomainInside { domain }))
@@ -600,6 +595,17 @@ fn trail_char_ref_inside(tokenizer: &mut Tokenizer) -> State {
     }
 }
 
+/// Whether the character at `index` is in a domain: a domain ends at
+/// whitespace, which is a space, a tab or a line ending, or at punctuation;
+/// any other character, a symbol or a form feed included, is in it.
+fn host(bytes: &[u8], index: usize) -> bool {
+    match bytes.get(index) {
+        None | Some(b'\t' | b'\n' | b'\r' | b' ') => false,
+        Some(byte) if byte.is_ascii() => !byte.is_ascii_punctuation(),
+        Some(_) => after_index(bytes, index).map_or(false, |char| classes(char) & PUNCTUATION == 0),
+    }
+}
+
 /// Resolve: postprocess text to find email autolink literals.
 pub fn resolve(tokenizer: &mut Tokenizer) {
     tokenizer.map.consume(&mut tokenizer.events);
@@ -748,11 +754,8 @@ fn peek_bytes_atext(bytes: &[u8], min: usize, end: usize) -> Option<usize> {
         index -= 1;
     }
 
-    // Do not allow a slash “inside” atext.
-    // The reference code is a bit weird, but that’s what it results in.
-    // Source: <https://github.com/github/cmark-gfm/blob/ef1cfcb/extensions/autolink.c#L307>.
-    // Other than slash, every preceding character is allowed.
-    if index == end || (index > min && bytes[index - 1] == b'/') {
+    // Every preceding character is allowed, a slash included.
+    if index == end {
         None
     } else {
         Some(index)

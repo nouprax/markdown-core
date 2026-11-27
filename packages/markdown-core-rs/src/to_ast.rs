@@ -1053,9 +1053,9 @@ impl<'a> Compiler<'a> {
                 None => vec![],
             };
             self.cell = false;
-            // A cell lies between its dividers; one alone closes it unless
-            // its content follows it. An empty cell takes the divider that
-            // closes it.
+            // A cell lies between its dividers; one alone closes it after
+            // its content, and opens it otherwise. An empty cell takes the
+            // divider that closes it.
             let parts = self.inside(child);
             let dividers: Vec<usize> = parts
                 .iter()
@@ -1069,11 +1069,18 @@ impl<'a> Compiler<'a> {
                     start = self.end(open);
                     end = self.start(close);
                 }
-                [one] if parts.last() != Some(&one) => start = self.end(one),
-                [one] => end = self.start(one),
+                [one]
+                    if parts
+                        .iter()
+                        .take_while(|part| **part != one)
+                        .any(|part| self.name(*part) != Name::SpaceOrTab) =>
+                {
+                    end = self.start(one);
+                }
+                [one] => start = self.end(one),
                 [] => {}
             }
-            if start == end && end < self.end(child) {
+            if start == end && end < self.end(index) {
                 end += 1;
             }
             cells.push(Node::new(
