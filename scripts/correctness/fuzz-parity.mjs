@@ -83,7 +83,9 @@ const ORACLES = {
         // a colon before an alphanumeric opens a text directive
         // (`text-directive`), a pipe row completes a table, `~~` strikes,
         // `$` opens a formula, `[^` calls a footnote, `:::` opens a directive
-        // block, and `[ ]` after a bullet marks a task. Each is judged by the
+        // block, `[ ]` after a bullet marks a task, and `#` before a name
+        // character opens a topic (`topics`) once truncation cuts a link's
+        // `#fragment` free of its parentheses. Each is judged by the
         // oracle that owns it -- cmark-gfm or remark -- whose fuzz oracle keeps
         // the fragments; this one explores the base language cmark judges.
         gateArgs: ["--oracle", "commonmark"],
@@ -97,7 +99,8 @@ const ORACLES = {
             "[^",
             /(^|[^:]):[A-Za-z0-9]/,
             /^\s*:::/,
-            /^\s*[-*+]\s+\[[ xX]\]/
+            /^\s*[-*+]\s+\[[ xX]\]/,
+            /#[\p{L}\p{M}\p{N}_-]/u
         ]
     },
     gfm: {
