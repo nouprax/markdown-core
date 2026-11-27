@@ -2484,8 +2484,7 @@ markdown_core_status markdown_core_slot_spell(const markdown_core_context *conte
          * escape the container's closer. */
         held = size > 0 && value[size - 1] != '\\' && !opaque(value, size) &&
                plain(&out, value, size, " \t=}\"'{", row) &&
-               !(kind == MARKDOWN_CORE_SLOT_RECORD &&
-                 (value[0] == '#' || value[0] == '.' || (size == 1 && value[0] == '-')));
+               !(kind == MARKDOWN_CORE_SLOT_RECORD && (value[0] == '#' || value[0] == '.'));
         closer = unfinished(context, slot, tail, rest, '}') ? "}" : "";
         break;
     case MARKDOWN_CORE_SLOT_VALUE:

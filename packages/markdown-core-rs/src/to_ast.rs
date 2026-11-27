@@ -1542,12 +1542,9 @@ impl<'a> Compiler<'a> {
             match self.name(member) {
                 Name::AttributeId => node.anchor = Some(self.text(member)[1..].to_string()),
                 Name::AttributeClass => {
-                    let text = self.text(member);
-                    node.attributes.classes.push(if text == "-" {
-                        "unnumbered".to_string()
-                    } else {
-                        text[1..].to_string()
-                    });
+                    node.attributes
+                        .classes
+                        .push(self.text(member)[1..].to_string());
                 }
                 Name::AttributeRecord => {
                     let name = self

@@ -6711,7 +6711,7 @@ static void attribute_unclosed_quote_is_unquoted(test_batch_runner *runner) {
 
 /* A REFUSED ALLOCATION FAILS THE READ, WHEREVER IT FALLS. A container is
  * staged into the scratch before it is laid out, and every path that stages
- * -- the `-` member, `#` and `.` runs, a bare name's `true`, a record's name,
+ * -- a lone `-` name, `#` and `.` runs, a bare name's `true`, a record's name,
  * a decoded value, a split class run, the member list, the value's block --
  * can be refused. Each is refused in turn, with a fresh scratch so the first
  * refusal falls on an empty buffer: the read fails with its loss reported,

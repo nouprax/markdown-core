@@ -664,9 +664,9 @@ Document scope=1:1..1:10 anchor=null attributes={} children=1
 ````````````````````````````````
 
 A name may begin with a hyphen or an underscore, unlike a DIRECTIVE name, which
-may not; a hyphen is the `unnumbered` class only when it stands alone. The
-bytes that end a name are whitespace, `=`, `}`, a quote of either kind and
-`{`; every other byte continues it.
+may not, and a lone hyphen is a name too. The bytes that end a name are
+whitespace, `=`, `}`, a quote of either kind and `{`; every other byte
+continues it.
 
 ```````````````````````````````` example
 :n{-a=1 _b=2}

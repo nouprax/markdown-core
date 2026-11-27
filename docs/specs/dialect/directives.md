@@ -102,7 +102,7 @@ A compact section.
 These produce `DirectiveBlock` with `name=null`, `label=null`, and a class of
 `warning` or `compact`. This is also known as a fenced div. Optional trailing
 colons are allowed on the opening line. The unbraced word is one raw class;
-`::: -` gives class `-`, whereas `::: {-}` gives `unnumbered`.
+`::: -` gives class `-`, whereas `::: {-}` gives the record `-="true"`.
 
 A bare `:::` line opens no container. `::: {}` is a valid empty-attribute opener.
 Immediately following a fence with a name, as in `:::warning`, selects the

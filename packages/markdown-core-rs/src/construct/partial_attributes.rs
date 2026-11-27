@@ -11,8 +11,7 @@
 //! ; Restriction: whitespace holds at most one line ending.
 //! ; Restriction: a quoted value closes before the content ends.
 //! attributes ::= '{' *(whitespace | member) '}'
-//! member ::= '#' 1*name_byte | '.' 1*name_byte | '-' | record
-//! ; Restriction: `-` is followed by whitespace or `}`.
+//! member ::= '#' 1*name_byte | '.' 1*name_byte | record
 //! ; Restriction: a bare name is followed by whitespace or `}`.
 //! record ::= name ['=' value]
 //! name ::= name_byte *name_byte
@@ -21,13 +20,14 @@
 //! escape ::= '\\' ascii_punctuation
 //! ```
 //!
-//! A name is taken as written, as in an HTML start tag: `#`, `.`, and a lone
-//! `-` mean something else only as the first byte of a member.
+//! A name is taken as written, as in an HTML start tag: `#` and `.` mean
+//! something else only as the first byte of a member, and `{-}` is the
+//! record `-`.
 //! A quote that does not close before the content ends starts an unquoted
 //! value.
 //!
 //! The members are the node’s anchor (`#a`, or a record named `id`), its
-//! classes (`.a`, `-` as `unnumbered`, or the run of a record named
+//! classes (`.a`, or the run of a record named
 //! `class`), and its records (a bare name has the value `true`).
 //! A quoted value decodes escapes and character references and reads a line
 //! ending as a space; an unquoted one decodes escapes only.
@@ -235,13 +235,6 @@ fn between(tokenizer: &mut Tokenizer, eol: bool, line: bool) -> State {
             tokenizer.exit(Name::Attributes);
             State::Next(StateName::Attributes(Step::End))
         }
-        Some(b'-') => {
-            tokenizer.attempt(
-                State::Next(StateName::Attributes(Step::Between { eol: line, line })),
-                State::Next(StateName::Attributes(Step::NameStart { line })),
-            );
-            State::Redo(StateName::Attributes(Step::Dash))
-        }
         Some(marker @ (b'#' | b'.')) => {
             let name = if marker == b'#' {
                 Name::AttributeId
@@ -270,33 +263,6 @@ fn space(tokenizer: &mut Tokenizer, eol: bool, line: bool) -> State {
     } else {
         tokenizer.exit(Name::SpaceOrTab);
         State::Redo(StateName::Attributes(Step::Between { eol, line }))
-    }
-}
-
-/// At a `-`, which alone is a class.
-///
-/// ```markdown
-/// > | `a`{-}
-///         ^
-/// ```
-fn dash(tokenizer: &mut Tokenizer) -> State {
-    tokenizer.enter(Name::AttributeClass);
-    tokenizer.consume();
-    State::Next(StateName::Attributes(Step::DashAfter))
-}
-
-/// After a `-`.
-///
-/// ```markdown
-/// > | `a`{-}
-///          ^
-/// ```
-fn dash_after(tokenizer: &mut Tokenizer) -> State {
-    if member_end(tokenizer.current) {
-        tokenizer.exit(Name::AttributeClass);
-        State::Ok
-    } else {
-        State::Nok
     }
 }
 
@@ -551,8 +517,6 @@ pub enum Step {
         eol: bool,
         line: bool,
     },
-    Dash,
-    DashAfter,
     Marked {
         first: bool,
         line: bool,
@@ -610,8 +574,6 @@ pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
         Step::Start { line } => start(tokenizer, line),
         Step::Between { eol, line } => between(tokenizer, eol, line),
         Step::Space { eol, line } => space(tokenizer, eol, line),
-        Step::Dash => dash(tokenizer),
-        Step::DashAfter => dash_after(tokenizer),
         Step::Marked { first, line } => marked(tokenizer, first, line),
         Step::NameStart { line } => name_start(tokenizer, line),
         Step::NameInside { line } => name_inside(tokenizer, line),

@@ -49,11 +49,11 @@ static int escaped(const unsigned char *s, bufsize_t n, bufsize_t p) {
  * separator, the assignment sign, the closing brace, a quote or an opening
  * brace continues it. Nothing is classified by Unicode category -- a lead
  * byte, a continuation byte, a digit and an underscore are all name bytes --
- * so the run is found by one byte test per byte and no decode. `#`, `.` and
- * a lone `-` mean something else only as a member's FIRST byte; inside a name
- * they are name bytes like any other. */
+ * so the run is found by one byte test per byte and no decode. `#` and `.`
+ * mean something else only as a member's FIRST byte; inside a name they are
+ * name bytes like any other, and a lone `-` is a name. */
 static int name_terminator(unsigned char c) { return BYTE_CLASS[c] & BYTE_NAME_END; }
-/* A member boundary: what may follow a bare name or the `unnumbered` dash. */
+/* A member boundary: what may follow a bare name. */
 static int member_boundary(const unsigned char *s, bufsize_t n, bufsize_t p) {
     return p >= n || (BYTE_CLASS[s[p]] & BYTE_VALUE_END);
 }
@@ -244,12 +244,6 @@ static bufsize_t recognise(markdown_core_attribute_parser *p, bufsize_t b) {
         case '{':
             answer = INVALID;
             goto done;
-        case '-':
-            if (member_boundary(s, n, b + 1)) {
-                b++;
-                continue;
-            }
-            break;
         case '#':
         case '.':
             if (b + 1 < n && !name_terminator(s[b + 1])) {
@@ -610,14 +604,6 @@ static int read_container(markdown_core_attribute_parser *p, bufsize_t start, bu
             at++;
             continue;
         }
-        if (s[at] == '-' && member_boundary(s, finish, at + 1)) {
-            bufsize_t staged = stage(w, (const unsigned char *)"unnumbered", 10);
-            if (staged < 0 || !add_member(w, -1, 0, staged, 10)) {
-                return 0;
-            }
-            at++;
-            continue;
-        }
         if (s[at] == '#' || s[at] == '.') {
             unsigned char marker = s[at++];
             bufsize_t from = at;
@@ -824,10 +810,6 @@ bufsize_t markdown_core_attributes_parts(markdown_core_parts *parts, bufsize_t b
             at++;
             continue;
         }
-        if (s[at] == '-' && member_boundary(s, finish, at + 1)) {
-            at++;
-            continue;
-        }
         if (s[at] == '#' || s[at] == '.') {
             const markdown_core_slot_kind slot = s[at] == '#' ? MARKDOWN_CORE_SLOT_ID : MARKDOWN_CORE_SLOT_CLASS;
             const bufsize_t from = ++at;
@@ -936,10 +918,6 @@ static int member_step(markdown_core_member_memo *memo, const unsigned char *s, 
     const unsigned char c = s[b];
     if (c == '}' || c == '=' || c == '"' || c == '\'' || c == '{') {
         return MEMBER_FAIL;
-    }
-    if (c == '-' && b + 1 < n && member_boundary(s, n, b + 1)) {
-        *next = b + 1;
-        return MEMBER_NEXT;
     }
     if (c == '#' || c == '.') {
         const markdown_core_slot_kind slot = c == '#' ? MARKDOWN_CORE_SLOT_ID : MARKDOWN_CORE_SLOT_CLASS;

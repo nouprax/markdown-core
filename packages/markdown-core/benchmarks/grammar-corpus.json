@@ -737,7 +737,7 @@
             "certificate": "attribute-bare-grammar-v2",
             "scope": "paired-document-grammar",
             "feature": "attributes",
-            "facets": ["bare-names", "boolean-record", "unnumbered"],
+            "facets": ["bare-names", "boolean-record"],
             "identity": false,
             "outputDifference": null,
             "reference": "cmark",

@@ -315,6 +315,15 @@
             "inputDigest": "b00e33ae6c48342445b06dffd43f0baf2bbffa536eccf4d2a903a50b6aed325f",
             "oracleDigest": "6a652458a4afe93a2bb395ee31d2ecd193be87141ca07dbe48929c9714db06f7",
             "coreDigest": "232795ab502ca79c8b8f09733f735fc793b0715e81d8089a6924b582b9e22371"
+        },
+        {
+            "id": "pandoc-special-unnumbered",
+            "item": "P5",
+            "status": "projection",
+            "reason": "The dialect dropped Pandoc's `{-}` shorthand: a lone `-` is a name like any other, so Core reads `{-}` as the bare record `-=\"true\"`, while Pandoc reads it as the class `unnumbered`.",
+            "inputDigest": "bc6f5bcc0f136d4527e8b1ddc020f3c774dbad666e7c12c308f15241aa4b4f43",
+            "oracleDigest": "c30a9d1ba09db4f01e5d49d394882f926eaf51335130893675ac7ec701899bca",
+            "coreDigest": "27429491a2ebcead923b80b5de1d47e566860702cb623fa1787bdb6f07272132"
         }
     ]
 }

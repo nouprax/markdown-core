@@ -65,6 +65,7 @@ requires distinguishing reader configuration from failed-candidate fallback.
 | 36 | `p7-braced-key-whitespace`: whitespace in a braced citation key | A braced key excludes whitespace, which is a space, a tab or a line ending, so Core keys `@{a b}`, written with NBSP, as `a b`, and `[@{c　d}, p. 1]`, written with IDEOGRAPHIC SPACE, as `c　d`. Pandoc excludes every Unicode space and keeps both as text. Both reject the ASCII space in `@{a b}`. |
 | 37 | `definition-list-compact`: the `~` definition marker | The dialect keeps only `:` as a definition marker. Core reads each `~ Definition` line as text of the term's paragraph; Pandoc's `definition_lists` reader also accepts `~` and makes a DefinitionList. |
 | 38 | `p10-marker-only`: a lone `~` before an indented body | The same rule as item 37: the lone `~` and the indented `body` are lines of one paragraph in Core, and a definition with a code-indented body in Pandoc. |
+| 39 | `pandoc-special-unnumbered`: the `{-}` shorthand | The dialect dropped Pandoc's `-` member: Core reads `{-}` as the bare record `-="true"`; Pandoc reads it as the class `unnumbered`. |
 
 The clearest repeated relationships are:
 

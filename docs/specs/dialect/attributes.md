@@ -22,7 +22,6 @@ validate units, or choose a layout.
 | `class="one two"` | Split the value into classes. |
 | `key=value` | Append an ordered name/value record. |
 | `key` | A bare name: the record `key="true"`. |
-| `-` | Standing alone, append the class `unnumbered`. |
 | `{}` | An empty attribute container. |
 
 Names are taken as written, as in an HTML start tag. A name is one or more
@@ -30,11 +29,11 @@ bytes other than space, tab, a line ending, `=`, `}`, `"`, `'`, or `{`;
 nothing is classified by Unicode category, so `{中文=值}`, `{1a=b}`,
 `{_k=v}` and `{a#b=c}` are records named exactly as spelled. A member's first
 byte selects its shape: `#` and `.` begin the identifier and class shorthands,
-whose names follow the same rule and must be nonempty; a `-` followed by a
-separator or the closing brace is the `unnumbered` class; anything else begins
-a name. A name followed by `=` is an assignment, and a name followed by a
-separator or the closing brace is a bare attribute, recorded as
-`name="true"`. Names and values are case-sensitive. The exact lowercase `id`
+whose names follow the same rule and must be nonempty; anything else begins
+a name, a lone `-` too: Pandoc's `{-}` shorthand for `.unnumbered` is the
+record `-="true"` here. A name followed by `=` is an assignment, and a
+name followed by a separator or the closing brace is a bare attribute,
+recorded as `name="true"`. Names and values are case-sensitive. The exact lowercase `id`
 and `class` names are special, in a bare form too: `{id}` is the anchor `true`
 and `{class}` the class `true`; other assignments are records.
 

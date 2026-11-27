@@ -726,7 +726,7 @@ shared(
 pair(
     "attribute-bare",
     "attributes",
-    ["bare-names", "boolean-record", "unnumbered"],
+    ["bare-names", "boolean-record"],
     inline("[]{", k, " -}"),
     inline("[](/", k, ' "true unnumbered")')
 );
