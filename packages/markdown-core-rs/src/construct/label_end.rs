@@ -180,19 +180,21 @@
 
 use crate::choice::Starts;
 use crate::construct::partial_space_or_tab_eol::space_or_tab_eol;
-use crate::construct::{partial_attributes, partial_destination, partial_label, partial_title};
+use crate::construct::{
+    citation, partial_attributes, partial_destination, partial_label, partial_title,
+};
 use crate::event::{Event, Kind, Name};
 use crate::resolve::Name as ResolveName;
 use crate::state::{Name as StateName, State};
 use crate::subtokenize::Subresult;
-use crate::tokenizer::{Label, LabelKind, LabelStart, Tokenizer};
+use crate::tokenizer::{Fallback, Label, LabelKind, LabelStart, Tokenizer};
 use crate::util::{
     constant::RESOURCE_DESTINATION_BALANCE_MAX,
     normalize_identifier::normalize_identifier,
     skip,
     slice::{Position, Slice},
 };
-use alloc::{string::String, vec};
+use alloc::{string::String, vec, vec::Vec};
 
 /// Bytes this construct can start at.
 pub const STARTS: Starts = Starts::Bytes(b"]");
@@ -224,8 +226,9 @@ fn start(tokenizer: &mut Tokenizer) -> State {
             // ```
             //
             // We can’t have that, so it’s just balanced brackets.
-            // Only a bracketed span may wrap a link.
+            // Only a bracketed span or citations may wrap a link.
             if label_start.inactive
+                && label_start.kind != LabelKind::Link
                 && tokenizer.parse_state.bytes.get(tokenizer.point.index + 1) != Some(&b'{')
             {
                 return State::Redo(StateName::LabelEnd(Step::Nok));
@@ -271,7 +274,17 @@ fn after(tokenizer: &mut Tokenizer, end: usize) -> State {
             line: false,
         }));
     }
-    State::Redo(StateName::LabelEnd(Step::Reference { end }))
+    State::Redo(StateName::LabelEnd(
+        if tokenizer.labels.starts[start_index].inactive {
+            Step::Cite {
+                end,
+                tail: true,
+                defined: false,
+            }
+        } else {
+            Step::Reference { end }
+        },
+    ))
 }
 
 /// After a label start that attributes did not follow: it is what it was.
@@ -285,7 +298,11 @@ fn unspan(tokenizer: &mut Tokenizer, end: usize, kind: LabelKind) -> State {
     tokenizer.labels.starts[index].kind = kind;
     State::Redo(StateName::LabelEnd(
         if tokenizer.labels.starts[index].inactive {
-            Step::Nok
+            Step::Cite {
+                end,
+                tail: true,
+                defined: false,
+            }
         } else {
             Step::Reference { end }
         },
@@ -374,18 +391,80 @@ fn reference(tokenizer: &mut Tokenizer, end: usize) -> State {
                 State::Next(if defined {
                     StateName::LabelEnd(Step::ReferenceNotFull { end })
                 } else {
-                    StateName::LabelEnd(Step::Nok)
+                    StateName::LabelEnd(Step::Cite {
+                        end,
+                        tail: false,
+                        defined: false,
+                    })
                 }),
             );
             State::Redo(StateName::LabelEnd(Step::ReferenceFull))
         }
-        // Shortcut (`[asd]`) reference?
-        _ => State::Redo(if defined {
-            StateName::LabelEnd(Step::Ok { end })
-        } else {
-            StateName::LabelEnd(Step::Nok)
-        }),
+        // Shortcut (`[asd]`) reference, a citation group, or a tail?
+        _ => State::Redo(StateName::LabelEnd(Step::Cite {
+            end,
+            tail: true,
+            defined,
+        })),
     }
+}
+
+/// After `]`, where no resource or full reference matched: a citation
+/// tail, when a key is right before the start and nothing but a shortcut
+/// reference could follow (`tail`), then a citation group, then a defined
+/// shortcut reference.
+///
+/// ```markdown
+/// > | a @b [c] d
+///             ^
+/// > | a [@b; @c] d
+///               ^
+/// ```
+fn cite(tokenizer: &mut Tokenizer, end: usize, tail: bool, defined: bool) -> State {
+    let index = tokenizer.labels.starts.len() - 1;
+    let start = &tokenizer.labels.starts[index];
+    let link = if defined {
+        StateName::LabelEnd(Step::Ok { end })
+    } else {
+        StateName::LabelEnd(Step::Nok)
+    };
+    if start.kind != LabelKind::Link {
+        return State::Redo(link);
+    }
+    let bytes = tokenizer.parse_state.bytes;
+    let sections = citation::sections(
+        &tokenizer.events,
+        bytes,
+        &tokenizer.labels.pairs,
+        start.start.1,
+        end,
+    );
+    let group = citation::group(&sections);
+    let author = if tail && citation::tail(&sections) {
+        citation::author(&tokenizer.events, bytes, start.start.0)
+    } else {
+        None
+    };
+    let inactive = start.inactive;
+    if let Some(author) = author {
+        tokenizer.labels.starts[index].kind = LabelKind::Tail {
+            author,
+            fallback: if defined && !inactive {
+                Fallback::Link
+            } else if group {
+                Fallback::Group
+            } else {
+                Fallback::Data
+            },
+        };
+    } else if group {
+        tokenizer.labels.starts[index].kind = LabelKind::Group;
+    } else if inactive {
+        return State::Redo(StateName::LabelEnd(Step::Nok));
+    } else {
+        return State::Redo(link);
+    }
+    State::Redo(StateName::LabelEnd(Step::Done { end }))
 }
 
 /// After a defined footnote call that no resource follows.
@@ -466,9 +545,14 @@ fn done(tokenizer: &mut Tokenizer, end: usize) -> State {
     // An inline note holds its own links: they do not reach past it, and the
     // note is no link either.
     // A bracketed span is no link either.
+    // Nor are citations.
     if !matches!(
         label_start.kind,
-        LabelKind::Image | LabelKind::Note | LabelKind::Span
+        LabelKind::Image
+            | LabelKind::Note
+            | LabelKind::Span
+            | LabelKind::Group
+            | LabelKind::Tail { .. }
     ) {
         let mut index = tokenizer.labels.starts.len();
         while index > 0 {
@@ -765,8 +849,10 @@ fn reference_collapsed_open(tokenizer: &mut Tokenizer) -> State {
 /// footnotes, and turns unmatched label starts back into data.
 pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
     // Inject labels.
-    let labels = tokenizer.labels.pairs.split_off(0);
+    let mut labels = tokenizer.labels.pairs.split_off(0);
+    let dropped = settle(tokenizer, &mut labels);
     insert_labels(tokenizer, &labels);
+    mark_as_data(tokenizer, &dropped);
     // Handle loose starts.
     let starts = tokenizer.labels.starts.split_off(0);
     mark_as_data(tokenizer, &starts);
@@ -777,12 +863,71 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
     None
 }
 
+/// Settle citation tails, from the outside in: a tail whose key is the
+/// referent of a group around it is what it is without the key.
+/// Returns the starts and ends of tails that are then brackets as text,
+/// which are taken out of `labels`.
+fn settle(tokenizer: &Tokenizer, labels: &mut Vec<Label>) -> Vec<LabelStart> {
+    let mut referents = vec![];
+    let mut dropped = vec![];
+    let mut index = labels.len();
+    while index > 0 {
+        index -= 1;
+        if let LabelKind::Tail { author, fallback } = labels[index].kind {
+            if referents.contains(&author) {
+                labels[index].kind = match fallback {
+                    Fallback::Link => LabelKind::Link,
+                    Fallback::Group => LabelKind::Group,
+                    Fallback::Data => {
+                        let label = labels.remove(index);
+                        for range in [label.start, label.end] {
+                            dropped.push(LabelStart {
+                                kind: LabelKind::Link,
+                                start: range,
+                                inactive: false,
+                            });
+                        }
+                        continue;
+                    }
+                };
+            }
+        }
+        if matches!(
+            labels[index].kind,
+            LabelKind::Group | LabelKind::Tail { .. }
+        ) {
+            let sections = citation::sections(
+                &tokenizer.events,
+                tokenizer.parse_state.bytes,
+                &labels[..index],
+                labels[index].start.1,
+                labels[index].end.0,
+            );
+            referents.extend(sections.iter().filter_map(|section| section.key));
+        }
+    }
+    dropped
+}
+
 /// Inject links/images/footnotes.
 fn insert_labels(tokenizer: &mut Tokenizer, labels: &[Label]) {
     // Add grouping events.
     let mut index = 0;
     while index < labels.len() {
         let label = &labels[index];
+        match label.kind {
+            LabelKind::Group => {
+                citation::insert(tokenizer, label, None, &labels[..index]);
+                index += 1;
+                continue;
+            }
+            LabelKind::Tail { author, .. } => {
+                citation::insert(tokenizer, label, Some(author), &labels[..index]);
+                index += 1;
+                continue;
+            }
+            _ => {}
+        }
         let group_name = if label.kind == LabelKind::Footnote {
             Name::FootnoteCall
         } else if label.kind == LabelKind::Note {
@@ -974,7 +1119,9 @@ fn mark_as_data(tokenizer: &mut Tokenizer, events: &[LabelStart]) {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Step {
     Start,
-    After { end: usize },
+    After {
+        end: usize,
+    },
     ResourceStart,
     ResourceBefore,
     ResourceOpen,
@@ -982,15 +1129,33 @@ pub enum Step {
     ResourceBetween,
     ResourceTitleAfter,
     ResourceEnd,
-    Ok { end: usize },
-    Done { end: usize },
+    Ok {
+        end: usize,
+    },
+    Done {
+        end: usize,
+    },
     Nok,
     ReferenceFull,
     ReferenceFullAfter,
-    ReferenceNotFull { end: usize },
-    Call { end: usize },
-    Unspan { end: usize, kind: LabelKind },
-    Reference { end: usize },
+    ReferenceNotFull {
+        end: usize,
+    },
+    Call {
+        end: usize,
+    },
+    Unspan {
+        end: usize,
+        kind: LabelKind,
+    },
+    Cite {
+        end: usize,
+        tail: bool,
+        defined: bool,
+    },
+    Reference {
+        end: usize,
+    },
     ReferenceCollapsed,
     ReferenceCollapsedOpen,
 }
@@ -1021,6 +1186,7 @@ pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
         Step::ReferenceNotFull { end } => reference_not_full(tokenizer, end),
         Step::Call { end } => call(tokenizer, end),
         Step::Unspan { end, kind } => unspan(tokenizer, end, kind),
+        Step::Cite { end, tail, defined } => cite(tokenizer, end, tail, defined),
         Step::Reference { end } => reference(tokenizer, end),
         Step::ReferenceCollapsed => reference_collapsed(tokenizer),
         Step::ReferenceCollapsedOpen => reference_collapsed_open(tokenizer),

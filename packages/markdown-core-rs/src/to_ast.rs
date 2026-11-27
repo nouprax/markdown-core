@@ -6,8 +6,8 @@
 //! less the prefixes of the containers around it.
 
 use crate::ast::{
-    Delimiter, Destination, Dimensions, Flavor, Kind, Node, Note, Placement, Record, Referent,
-    Span, Variant,
+    Delimiter, Destination, Dimensions, Flavor, Kind, Mode, Node, Note, Placement, Record,
+    Referent, Span, Variant,
 };
 use crate::event::{Block, Event, Inline, Kind as EventKind, Name, Role, Space};
 use crate::util::{
@@ -1285,6 +1285,24 @@ impl<'a> Compiler<'a> {
                     None => vec![],
                 },
             },
+            Inline::CitationKey => Kind::Cite {
+                citations: vec![self.citation(index, Mode::AuthorInText)],
+            },
+            Inline::Cite => {
+                // A key with a tail: its citation starts the cite, at the key.
+                let mut mode = Mode::AuthorInText;
+                let mut citations = vec![];
+                for child in self.inside(index) {
+                    match self.name(child) {
+                        Name::Citation => {
+                            citations.push(self.citation(child, mode));
+                            mode = Mode::Normal;
+                        }
+                        _ => mode = Mode::Normal,
+                    }
+                }
+                Kind::Cite { citations }
+            }
             Inline::Topic => Kind::Topic {
                 name: self
                     .child(index, Name::TopicText)
@@ -1433,6 +1451,45 @@ impl<'a> Compiler<'a> {
     }
 
     /// The inline content of the part `name` of the token at `index`.
+    /// The citation at `index`: a citation token, or a bare key, which is
+    /// one of `mode` unless its marker suppresses the author.
+    fn citation(&mut self, index: usize, mode: Mode) -> Node {
+        let key = if self.name(index) == Name::CitationKey {
+            Some(index)
+        } else {
+            self.child(index, Name::CitationKey)
+        };
+        let mut name = String::new();
+        let mut mode = mode;
+        if let Some(key) = key {
+            for child in self.inside(key) {
+                match self.name(child) {
+                    Name::CitationMarker if self.text(child).starts_with('-') => {
+                        mode = Mode::SuppressAuthor;
+                    }
+                    Name::CitationKeyText => name = self.text(child).to_string(),
+                    _ => {}
+                }
+            }
+        }
+        let (prefix, suffix) = if key == Some(index) {
+            (vec![], vec![])
+        } else {
+            (
+                self.part_content(index, Name::CitationPrefix),
+                self.part_content(index, Name::CitationSuffix),
+            )
+        };
+        Node::new(
+            Kind::Citation {
+                referent: Referent::Bib { key: name, mode },
+                prefix,
+                suffix,
+            },
+            self.runs(self.start(index), self.end(index)),
+        )
+    }
+
     fn part_content(&mut self, index: usize, name: Name) -> Vec<Node> {
         match self.child(index, name) {
             Some(part) => self.label_content(part),

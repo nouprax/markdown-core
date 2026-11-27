@@ -122,6 +122,43 @@ pub enum LabelKind {
     ///
     /// Construct: [Label end][crate::construct::label_end].
     Span,
+    /// Label (link) start whose sections each hold a citation key, as a
+    /// citation group.
+    ///
+    /// ```markdown
+    /// > | a [see @b; @c] d
+    ///       ^
+    /// ```
+    ///
+    /// Construct: [Label end][crate::construct::label_end].
+    Group,
+    /// Label (link) start right after a citation key, as the key’s tail;
+    /// `fallback` is what it is when the key turns out to be the referent of
+    /// a group around it.
+    ///
+    /// ```markdown
+    /// > | a @b [p. 1] c
+    ///          ^
+    /// ```
+    ///
+    /// Construct: [Label end][crate::construct::label_end].
+    Tail {
+        /// Enter index of the key.
+        author: usize,
+        /// What the bracket is without the key.
+        fallback: Fallback,
+    },
+}
+
+/// What a citation tail is when its key is the referent of a group.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Fallback {
+    /// A shortcut reference.
+    Link,
+    /// A citation group.
+    Group,
+    /// Brackets, as text.
+    Data,
 }
 
 /// Label start, looking for an end.

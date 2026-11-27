@@ -31,8 +31,8 @@ use crate::choice::{self, Choice, Entry, List};
 use crate::construct::autolink_literal::resolve as resolve_autolink_literal;
 use crate::construct::partial_whitespace::resolve_whitespace;
 use crate::construct::{
-    attention, autolink, autolink_literal, character_escape, character_reference, comment,
-    cross_link, directive_text, formula, hard_break_escape, html_text, label_end,
+    attention, autolink, autolink_literal, character_escape, character_reference, citation,
+    comment, cross_link, directive_text, formula, hard_break_escape, html_text, label_end,
     label_start_footnote, label_start_image, label_start_link, label_start_note, partial_data,
     raw_text, task_list_item_check, topic,
 };
@@ -73,6 +73,10 @@ pub const CHOICE: Choice = Choice::new(
         Entry {
             starts: directive_text::STARTS,
             step: StateName::DirectiveText(directive_text::Step::Start),
+        },
+        Entry {
+            starts: citation::STARTS,
+            step: StateName::Citation(citation::Step::Start),
         },
         Entry {
             starts: topic::STARTS,

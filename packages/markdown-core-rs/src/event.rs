@@ -511,6 +511,160 @@ pub enum Name {
     ///          ^
     /// ```
     DirectiveLabelText,
+    /// Whole citation group, or a key with its bracketed tail.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [text content][crate::construct::text],
+    ///   [`CitationPrefix`][Name::CitationPrefix],
+    ///   [`CitationSuffix`][Name::CitationSuffix]
+    /// * **Content model**:
+    ///   [`Citation`][Name::Citation],
+    ///   [`LabelLink`][Name::LabelLink],
+    ///   [`LabelEnd`][Name::LabelEnd],
+    ///   [`Data`][Name::Data]
+    /// * **Construct**:
+    ///   [`label_end`][crate::construct::label_end]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | a [see @b, p. 1; @c] d
+    ///       ^^^^^^^^^^^^^^^^^^^^
+    /// ```
+    Cite,
+    /// One citation of a group: its prefix, its key, and its suffix.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`Cite`][Name::Cite]
+    /// * **Content model**:
+    ///   [`CitationPrefix`][Name::CitationPrefix],
+    ///   [`CitationKey`][Name::CitationKey],
+    ///   [`CitationSuffix`][Name::CitationSuffix]
+    /// * **Construct**:
+    ///   [`label_end`][crate::construct::label_end]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | a [see @b, p. 1] c
+    ///        ^^^^^^^^^^^^
+    /// ```
+    Citation,
+    /// Prefix of a citation.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`Citation`][Name::Citation]
+    /// * **Content model**:
+    ///   [text content][crate::construct::text]
+    /// * **Construct**:
+    ///   [`label_end`][crate::construct::label_end]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | a [see @b] c
+    ///        ^^^
+    /// ```
+    CitationPrefix,
+    /// Suffix of a citation.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`Citation`][Name::Citation]
+    /// * **Content model**:
+    ///   [text content][crate::construct::text]
+    /// * **Construct**:
+    ///   [`label_end`][crate::construct::label_end]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | a [@b, p. 1] c
+    ///          ^^^^^^
+    /// ```
+    CitationSuffix,
+    /// Citation key, with its marker.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [text content][crate::construct::text],
+    ///   [`Citation`][Name::Citation]
+    /// * **Content model**:
+    ///   [`CitationMarker`][Name::CitationMarker],
+    ///   [`CitationBrace`][Name::CitationBrace],
+    ///   [`CitationKeyText`][Name::CitationKeyText]
+    /// * **Construct**:
+    ///   [`citation`][crate::construct::citation]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | a -@b c
+    ///       ^^^
+    /// ```
+    CitationKey,
+    /// Citation key marker: `@`, or `-@`, which suppresses the author.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`CitationKey`][Name::CitationKey]
+    /// * **Content model**:
+    ///   void
+    /// * **Construct**:
+    ///   [`citation`][crate::construct::citation]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | a -@b c
+    ///       ^^
+    /// ```
+    CitationMarker,
+    /// Brace around a braced citation key.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`CitationKey`][Name::CitationKey]
+    /// * **Content model**:
+    ///   void
+    /// * **Construct**:
+    ///   [`citation`][crate::construct::citation]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | a @{b} c
+    ///        ^ ^
+    /// ```
+    CitationBrace,
+    /// Citation key text.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`CitationKey`][Name::CitationKey]
+    /// * **Content model**:
+    ///   void
+    /// * **Construct**:
+    ///   [`citation`][crate::construct::citation]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | a @b c
+    ///        ^
+    /// ```
+    CitationKeyText,
     /// Whole cross link or cross embed.
     ///
     /// ## Info
@@ -3750,6 +3904,8 @@ pub enum Inline {
     CrossLink,
     Directive,
     Span,
+    Cite,
+    CitationKey,
     Topic,
     Autolink,
     Literal,
@@ -3807,6 +3963,8 @@ impl Name {
             Name::CrossLink => Role::Inline(Inline::CrossLink),
             Name::DirectiveText => Role::Inline(Inline::Directive),
             Name::Span => Role::Inline(Inline::Span),
+            Name::Cite => Role::Inline(Inline::Cite),
+            Name::CitationKey => Role::Inline(Inline::CitationKey),
             Name::Topic => Role::Inline(Inline::Topic),
             Name::CommentFlow => Role::Block(Block::Comment),
             Name::Autolink => Role::Inline(Inline::Autolink),
@@ -3858,6 +4016,12 @@ impl Name {
             | Name::DirectiveLabel
             | Name::DirectiveLabelMarker
             | Name::DirectiveLabelText
+            | Name::Citation
+            | Name::CitationPrefix
+            | Name::CitationSuffix
+            | Name::CitationMarker
+            | Name::CitationBrace
+            | Name::CitationKeyText
             | Name::CrossLinkSeparator
             | Name::CrossLinkDest
             | Name::TopicMarker
@@ -3974,7 +4138,7 @@ impl Name {
 }
 
 /// List of void events, used to make sure everything is working well.
-pub const VOID_EVENTS: [Name; 93] = [
+pub const VOID_EVENTS: [Name; 96] = [
     Name::AttributesMarker,
     Name::AttributeId,
     Name::AttributeClass,
@@ -4054,6 +4218,9 @@ pub const VOID_EVENTS: [Name; 93] = [
     Name::DirectiveNameText,
     Name::DirectiveLabelMarker,
     Name::DirectiveLabelText,
+    Name::CitationMarker,
+    Name::CitationBrace,
+    Name::CitationKeyText,
     Name::CrossLinkSeparator,
     Name::CrossLinkDest,
     Name::TopicMarker,
