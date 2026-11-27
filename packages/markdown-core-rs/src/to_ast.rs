@@ -341,7 +341,7 @@ impl<'a> Compiler<'a> {
                     self.runs(self.lead(index), self.last(index).1),
                 )
             }
-            Block::BlockQuote => {
+            Block::Quote => {
                 let runs = Self::whole(self.lead(index), self.end(index));
                 let content = self.contained(index);
                 Node::new(
@@ -815,8 +815,8 @@ impl<'a> Compiler<'a> {
             let at_line_start = line_start;
             line_start = false;
             match name.role() {
-                Role::Space(Space::SpaceOrTab) if at_line_start => {}
-                Role::Inline(Inline::Data) | Role::Space(Space::SpaceOrTab) => {
+                Role::Space(Space::Whitespace) if at_line_start => {}
+                Role::Inline(Inline::Data) | Role::Space(Space::Whitespace) => {
                     let literal = self.value(index);
                     push_text(&mut pending, self.start(index), self.end(index), &literal);
                 }

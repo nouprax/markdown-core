@@ -2804,7 +2804,7 @@ pub enum Block {
     CodeIndented,
     CodeFenced,
     HtmlFlow,
-    BlockQuote,
+    Quote,
     List,
     Definition,
     Table,
@@ -2836,7 +2836,7 @@ pub enum Inline {
 /// Whitespace and line endings.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Space {
-    SpaceOrTab,
+    Whitespace,
     LineEnding,
     BlankLineEnding,
 }
@@ -2853,7 +2853,7 @@ impl Name {
             Name::CodeIndented => Role::Block(Block::CodeIndented),
             Name::CodeFenced => Role::Block(Block::CodeFenced),
             Name::HtmlFlow => Role::Block(Block::HtmlFlow),
-            Name::BlockQuote => Role::Block(Block::BlockQuote),
+            Name::BlockQuote => Role::Block(Block::Quote),
             Name::ListOrdered | Name::ListUnordered => Role::Block(Block::List),
             Name::Definition => Role::Block(Block::Definition),
             Name::GfmTable => Role::Block(Block::Table),
@@ -2879,7 +2879,7 @@ impl Name {
             | Name::GfmAutolinkLiteralXmpp => Role::Inline(Inline::Literal),
             Name::Link | Name::Image => Role::Inline(Inline::Media),
             Name::GfmFootnoteCall => Role::Inline(Inline::FootnoteCall),
-            Name::SpaceOrTab => Role::Space(Space::SpaceOrTab),
+            Name::SpaceOrTab => Role::Space(Space::Whitespace),
             Name::LineEnding => Role::Space(Space::LineEnding),
             Name::BlankLineEnding => Role::Space(Space::BlankLineEnding),
             Name::AttentionSequence
