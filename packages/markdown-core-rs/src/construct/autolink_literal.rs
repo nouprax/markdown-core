@@ -8,14 +8,15 @@
 //! ```bnf
 //! gfm_autolink_literal ::= gfm_protocol_autolink | gfm_www_autolink | gfm_email_autolink
 //!
-//! ; Restriction: the code before must be `www_autolink_before`.
+//! ; Restriction: the code before must be `www_autolink_before`, or the
+//! ; literal starts an inline note.
 //! ; Restriction: the code after `.` must not be eof.
 //! www_autolink ::= 3('w' | 'W') '.' [domain [path]]
-//! www_autolink_before ::= eof | eol | space_or_tab | '(' | '*' | '_' | '[' | ']' | '~'
+//! www_autolink_before ::= eof | eol | space_or_tab | '(' | '*' | '_' | '~'
 //!
 //! ; Restriction: the code before must be `http_autolink_before`.
 //! ; Restriction: the code after the protocol must be `http_autolink_protocol_after`.
-//! http_autolink ::= ('h' | 'H') 2('t' | 'T') ('p' | 'P') ['s' | 'S'] ':' 2'/' domain [path]
+//! http_autolink ::= (('h' | 'H') 2('t' | 'T') ('p' | 'P') ['s' | 'S'] | ('f' | 'F') ('t' | 'T') ('p' | 'P')) ':' 2'/' domain [path]
 //! http_autolink_before ::= byte - ascii_alpha
 //! http_autolink_protocol_after ::= byte - eof - eol - ascii_control - unicode_whitespace - unicode_punctuation
 //!
@@ -33,6 +34,7 @@
 //!
 //! ; Restriction: a counter `balance = 0` is increased for every `(`, and decreased for every `)`.
 //! ; Restriction: `)` must not be `paren_at_end`.
+//! ; Restriction: in an inline note, `]` ends the path, unless `\` is before it.
 //! path ::= 1*(url_ampt_cont | path_punctuation_cont | '(' | ')' | byte - eof - eol - space_or_tab)
 //! ; Restriction: must not be followed by `punct`.
 //! path_punctuation_cont ::= trailing_punctuation - '<'
@@ -154,7 +156,7 @@ use crate::util::{
 use alloc::vec::Vec;
 
 /// Bytes the protocol kind (`https://a.b`) can start at.
-pub const PROTOCOL: Starts = Starts::Bytes(b"Hh");
+pub const PROTOCOL: Starts = Starts::Bytes(b"FHfh");
 
 /// Bytes the `www.` kind (`www.a.b`) can start at.
 pub const WWW: Starts = Starts::Bytes(b"Ww");
@@ -166,11 +168,11 @@ pub const WWW: Starts = Starts::Bytes(b"Ww");
 ///     ^
 /// ```
 fn protocol_start(tokenizer: &mut Tokenizer) -> State {
-    if matches!(tokenizer.current, Some(b'H' | b'h'))
+    if matches!(tokenizer.current, Some(b'F' | b'H' | b'f' | b'h'))
             // Source: <https://github.com/github/cmark-gfm/blob/ef1cfcb/extensions/autolink.c#L214>.
             && !matches!(tokenizer.previous, Some(b'A'..=b'Z' | b'a'..=b'z'))
             // No literal inside an open label.
-            && tokenizer.labels.starts.is_empty()
+            && !tokenizer.in_label()
     {
         tokenizer.enter(Name::AutolinkLiteralProtocol);
         tokenizer.attempt(
@@ -225,7 +227,7 @@ fn protocol_prefix_inside(tokenizer: &mut Tokenizer, start: usize) -> State {
             );
             let name = slice.as_str().to_ascii_lowercase();
 
-            if name == "http" || name == "https" {
+            if name == "http" || name == "https" || name == "ftp" {
                 tokenizer.consume();
                 State::Next(StateName::AutolinkLiteral(Step::ProtocolSlashesInside {
                     size: 0,
@@ -268,9 +270,11 @@ fn protocol_slashes_inside(tokenizer: &mut Tokenizer, size: usize) -> State {
 fn www_start(tokenizer: &mut Tokenizer) -> State {
     if matches!(tokenizer.current, Some(b'W' | b'w'))
             // Source: <https://github.com/github/cmark-gfm/blob/ef1cfcb/extensions/autolink.c#L156>.
-            && matches!(tokenizer.previous, None | Some(b'\t' | b'\n' | b' ' | b'(' | b'*' | b'_' | b'~'))
+            && (matches!(tokenizer.previous, None | Some(b'\t' | b'\n' | b' ' | b'(' | b'*' | b'_' | b'~'))
+                // The start of an inline note is a start of text.
+                || tokenizer.at_note_start())
             // No literal inside an open label.
-            && tokenizer.labels.starts.is_empty()
+            && !tokenizer.in_label()
     {
         tokenizer.enter(Name::AutolinkLiteralWww);
         tokenizer.attempt(
@@ -439,6 +443,12 @@ fn path_inside(tokenizer: &mut Tokenizer, mut path: Path) -> State {
             tokenizer.consume();
             State::Next(StateName::AutolinkLiteral(Step::PathInside { path }))
         }
+        // In an inline note, `]` is the end, and `\]` is not.
+        Some(b']') if !tokenizer.labels.starts.is_empty() => State::Ok,
+        Some(b'\\') if !tokenizer.labels.starts.is_empty() => {
+            tokenizer.consume();
+            State::Next(StateName::AutolinkLiteral(Step::PathEscape { path }))
+        }
         // Count opening parens.
         Some(b'(') => {
             path.open += 1;
@@ -480,6 +490,23 @@ fn path_inside(tokenizer: &mut Tokenizer, mut path: Path) -> State {
     }
 }
 
+/// In path in an inline note, after a `\`.
+///
+/// ```markdown
+/// > | ^[https://example.com/a\]b]
+///                             ^
+/// ```
+fn path_escape(tokenizer: &mut Tokenizer, path: Path) -> State {
+    // The `]` or `\` it escapes is no end and no escape; other punctuation
+    // is still trailing punctuation.
+    if matches!(tokenizer.current, Some(b'\\' | b']')) {
+        tokenizer.consume();
+        State::Next(StateName::AutolinkLiteral(Step::PathInside { path }))
+    } else {
+        State::Redo(StateName::AutolinkLiteral(Step::PathInside { path }))
+    }
+}
+
 /// In path, at potential trailing punctuation, that was not trailing.
 ///
 /// ```markdown
@@ -518,8 +545,9 @@ fn trail(tokenizer: &mut Tokenizer) -> State {
             tokenizer.consume();
             State::Next(StateName::AutolinkLiteral(Step::TrailCharRefStart))
         }
-        // `<` is an end.
+        // `<` is an end, and so is `]` in an inline note.
         Some(b'<') => State::Ok,
+        Some(b']') if !tokenizer.labels.starts.is_empty() => State::Ok,
         _ => {
             // Whitespace is the end of the URL, anything else is continuation.
             if kind_after_index(tokenizer.parse_state.bytes, tokenizer.point.index)
@@ -839,6 +867,7 @@ pub enum Step {
     DomainAtPunctuation { domain: Domain },
     DomainAfter { domain: Domain },
     PathInside { path: Path },
+    PathEscape { path: Path },
     PathAtPunctuation { path: Path },
     Trail,
     TrailCharRefStart,
@@ -866,6 +895,7 @@ pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
         Step::DomainAtPunctuation { domain } => domain_at_punctuation(tokenizer, domain),
         Step::DomainAfter { domain } => domain_after(tokenizer, domain),
         Step::PathInside { path } => path_inside(tokenizer, path),
+        Step::PathEscape { path } => path_escape(tokenizer, path),
         Step::PathAtPunctuation { path } => path_at_punctuation(tokenizer, path),
         Step::Trail => trail(tokenizer),
         Step::TrailCharRefStart => trail_char_ref_start(tokenizer),

@@ -21,6 +21,7 @@
 //! * [HTML (text)][crate::construct::html_text]
 //! * [Label start (image)][crate::construct::label_start_image]
 //! * [Label start (link)][crate::construct::label_start_link]
+//! * [Label start (note)][crate::construct::label_start_note]
 //! * [Label end][crate::construct::label_end]
 //!
 //! > 👉 **Note**: for performance reasons, hard break (trailing) is formed by
@@ -32,7 +33,8 @@ use crate::construct::partial_whitespace::resolve_whitespace;
 use crate::construct::{
     attention, autolink, autolink_literal, character_escape, character_reference, comment,
     cross_link, formula, hard_break_escape, html_text, label_end, label_start_footnote,
-    label_start_image, label_start_link, partial_data, raw_text, task_list_item_check, topic,
+    label_start_image, label_start_link, label_start_note, partial_data, raw_text,
+    task_list_item_check, topic,
 };
 use crate::resolve::Name as ResolveName;
 use crate::state::{Name as StateName, State};
@@ -71,6 +73,10 @@ pub const CHOICE: Choice = Choice::new(
         Entry {
             starts: topic::STARTS,
             step: StateName::Topic(topic::Step::Start),
+        },
+        Entry {
+            starts: label_start_note::STARTS,
+            step: StateName::LabelStartNote(label_start_note::Step::Start),
         },
         Entry {
             starts: attention::STARTS,

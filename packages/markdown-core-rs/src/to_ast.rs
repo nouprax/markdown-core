@@ -16,6 +16,7 @@ use crate::util::{
     infer::{list_loose, table_align},
     slice::{Position, Slice},
 };
+use alloc::boxed::Box;
 use alloc::{
     collections::BTreeSet,
     format,
@@ -72,6 +73,8 @@ struct Draft {
     start: usize,
     end: usize,
     literal: String,
+    /// How many bytes at the end of `literal` are spaces and tabs as written.
+    tail: usize,
 }
 
 /// Whether `name` is a container prefix of a continuation line.
@@ -413,7 +416,7 @@ impl<'a> Compiler<'a> {
                 start = self.events[from].point.index;
             }
         }
-        let content = self.inline_range(from, self.exits[index]);
+        let content = self.inline_range(from, self.exits[index], true);
         Node::new(
             Kind::Paragraph { content },
             self.runs(self.skip(start, self.end(index)), self.end(index)),
@@ -841,11 +844,18 @@ impl<'a> Compiler<'a> {
     // Inlines.
 
     /// The inline content inside the token at `index`.
+    /// The inline content of the block content token at `index`.
     fn inlines(&mut self, index: usize) -> Vec<Node> {
-        self.inline_range(index + 1, self.exits[index])
+        self.inline_range(index + 1, self.exits[index], true)
     }
 
-    fn inline_range(&mut self, from: usize, to: usize) -> Vec<Node> {
+    /// The inline content of the inline token at `index`: a label or a
+    /// part, which keeps the whitespace at its end.
+    fn phrase(&mut self, index: usize) -> Vec<Node> {
+        self.inline_range(index + 1, self.exits[index], false)
+    }
+
+    fn inline_range(&mut self, from: usize, to: usize, trim: bool) -> Vec<Node> {
         let mut nodes = vec![];
         let mut draft: Option<Draft> = None;
         let mut hard = false;
@@ -859,18 +869,36 @@ impl<'a> Compiler<'a> {
                 Role::Space(Space::Whitespace) if at_line_start => {}
                 Role::Inline(Inline::Data) | Role::Space(Space::Whitespace) => {
                     let literal = self.value(index);
-                    push_text(&mut draft, self.start(index), self.end(index), &literal);
+                    push_text(
+                        &mut draft,
+                        self.start(index),
+                        self.end(index),
+                        &literal,
+                        true,
+                    );
                 }
                 Role::Inline(Inline::CharacterEscape) => {
                     let literal = self.text(index)[1..].to_string();
-                    push_text(&mut draft, self.start(index), self.end(index), &literal);
+                    push_text(
+                        &mut draft,
+                        self.start(index),
+                        self.end(index),
+                        &literal,
+                        false,
+                    );
                 }
                 Role::Inline(Inline::CharacterReference) => {
                     let literal = self.reference(index);
-                    push_text(&mut draft, self.start(index), self.end(index), &literal);
+                    push_text(
+                        &mut draft,
+                        self.start(index),
+                        self.end(index),
+                        &literal,
+                        false,
+                    );
                 }
                 Role::Inline(Inline::HardBreakTail) => {
-                    push_text(&mut draft, self.start(index), self.end(index), "");
+                    push_text(&mut draft, self.start(index), self.end(index), "", true);
                     hard = true;
                 }
                 Role::Space(Space::LineEnding) => {
@@ -880,7 +908,7 @@ impl<'a> Compiler<'a> {
                         continue;
                     }
                     if let Some(text) = &mut draft {
-                        let trimmed = text.literal.trim_end_matches([' ', '\t']).len();
+                        let trimmed = text.literal.len() - text.tail;
                         text.literal.truncate(trimmed);
                     }
                     self.flush(&mut nodes, &mut draft);
@@ -916,25 +944,15 @@ impl<'a> Compiler<'a> {
                 }
             }
         }
-        self.flush(&mut nodes, &mut draft);
-        // Whitespace at the end of the content is not content.
-        if let Some(Node {
-            kind: Kind::Text { literal },
-            runs,
-            ..
-        }) = nodes.last_mut()
-        {
-            let trimmed = literal.trim_end_matches([' ', '\t']).len();
-            let cut = literal.len() - trimmed;
-            if cut > 0 {
-                literal.truncate(trimmed);
-                let last = runs.len() - 1;
-                runs[last].end -= cut.min(runs[last].end - runs[last].start);
-            }
-            if literal.is_empty() {
-                nodes.pop();
+        // Whitespace at the end of block content is not content.
+        if trim {
+            if let Some(text) = &mut draft {
+                let cut = text.tail;
+                text.literal.truncate(text.literal.len() - cut);
+                text.end -= cut.min(text.end - text.start);
             }
         }
+        self.flush(&mut nodes, &mut draft);
         nodes
     }
 
@@ -1076,6 +1094,36 @@ impl<'a> Compiler<'a> {
                     citations: vec![citation],
                 }
             }
+            Inline::Note => {
+                let text = self
+                    .child(index, Name::Label)
+                    .and_then(|label| self.child(label, Name::LabelText));
+                let (content, inner) = match text {
+                    Some(text) => (
+                        self.phrase(text),
+                        self.runs(self.start(text), self.end(text)),
+                    ),
+                    None => (vec![], runs.clone()),
+                };
+                let note = Node::new(
+                    Kind::Footnote {
+                        label: None,
+                        content,
+                    },
+                    runs.clone(),
+                );
+                let citation = Node::new(
+                    Kind::Citation {
+                        referent: Referent::Footnote(Note::Inline(Box::new(note))),
+                        prefix: vec![],
+                        suffix: vec![],
+                    },
+                    inner,
+                );
+                Kind::Cite {
+                    citations: vec![citation],
+                }
+            }
             // Text, compiled by `inline_range`.
             Inline::Data
             | Inline::CharacterEscape
@@ -1101,7 +1149,7 @@ impl<'a> Compiler<'a> {
     /// The inline content of the part `name` of the token at `index`.
     fn part(&mut self, index: usize, name: Name) -> Vec<Node> {
         match self.child(index, name) {
-            Some(part) => self.inlines(part),
+            Some(part) => self.phrase(part),
             None => vec![],
         }
     }
@@ -1236,7 +1284,7 @@ impl<'a> Compiler<'a> {
         let label = self.child(index, Name::Label);
         let text = label.and_then(|label| self.child(label, Name::LabelText));
         let content = match text {
-            Some(text) => self.inlines(text),
+            Some(text) => self.phrase(text),
             None => vec![],
         };
         let mut dest = Destination::Url(String::new());
@@ -1350,20 +1398,23 @@ fn html_comment_block(html: &str) -> Option<&str> {
     Some(if close < 4 { "" } else { &html[4..close] })
 }
 
-fn push_text(draft: &mut Option<Draft>, start: usize, end: usize, literal: &str) {
-    match draft {
-        Some(text) => {
-            text.end = end;
-            text.literal.push_str(literal);
-        }
-        None => {
-            *draft = Some(Draft {
-                start,
-                end,
-                literal: literal.to_string(),
-            });
-        }
-    }
+fn push_text(draft: &mut Option<Draft>, start: usize, end: usize, literal: &str, written: bool) {
+    let blank = literal.len() - literal.trim_end_matches([' ', '\t']).len();
+    let text = draft.get_or_insert_with(|| Draft {
+        start,
+        end,
+        literal: String::new(),
+        tail: 0,
+    });
+    text.end = end;
+    text.literal.push_str(literal);
+    text.tail = if !written {
+        0
+    } else if blank == literal.len() {
+        text.tail + blank
+    } else {
+        blank
+    };
 }
 
 /// The end of the line ending at `index`, if one is there.

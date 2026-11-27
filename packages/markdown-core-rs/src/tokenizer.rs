@@ -100,6 +100,15 @@ pub enum LabelKind {
     ///
     /// Construct: [Label end][crate::construct::label_end].
     UndefinedFootnote,
+    /// Label (note) start.
+    ///
+    /// ```markdown
+    /// > | a ^[b] c
+    ///       ^^
+    /// ```
+    ///
+    /// Construct: [Label start (note)][crate::construct::label_start_note].
+    Note,
 }
 
 /// Label start, looking for an end.
@@ -332,6 +341,27 @@ impl<'a> Tokenizer<'a> {
         if !self.resolvers.contains(&name) {
             self.resolvers.push(name);
         }
+    }
+
+    /// Whether the text is right after the opener of an inline note.
+    pub fn at_note_start(&self) -> bool {
+        matches!(
+            self.labels.starts.last(),
+            Some(start) if start.kind == LabelKind::Note
+                && self.events[start.start.1].point.index == self.point.index
+        )
+    }
+
+    /// Whether the text is in the label of a link, image, or footnote call
+    /// that is still open: a label start after the innermost note start.
+    pub fn in_label(&self) -> bool {
+        self.labels
+            .starts
+            .iter()
+            .rev()
+            .take_while(|start| start.kind != LabelKind::Note)
+            .next()
+            .is_some()
     }
 
     /// Register a resolver, before others.

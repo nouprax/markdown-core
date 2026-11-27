@@ -266,9 +266,29 @@ fn after(tokenizer: &mut Tokenizer, end: usize) -> State {
         Slice::from_indices(tokenizer.parse_state.bytes, indices.0, indices.1).as_str(),
     );
 
+    // An inline note holds more than spaces and tabs, and takes nothing
+    // after it.
+    if start.kind == LabelKind::Note {
+        let body = &tokenizer.parse_state.bytes[indices.0..indices.1];
+        return State::Redo(if body.iter().all(|byte| matches!(byte, b'\t' | b' ')) {
+            StateName::LabelEnd(Step::Nok)
+        } else {
+            StateName::LabelEnd(Step::Ok { end })
+        });
+    }
+
     // See if this matches a footnote definition.
     if start.kind == LabelKind::Footnote {
         if tokenizer.parse_state.definitions.notes.contains(&id) {
+            // A resource makes it a link all the same.
+            if tokenizer.current == Some(b'(') {
+                tokenizer.labels.starts[start_index].kind = LabelKind::UndefinedFootnote;
+                tokenizer.attempt(
+                    State::Next(StateName::LabelEnd(Step::Ok { end })),
+                    State::Next(StateName::LabelEnd(Step::Call { end })),
+                );
+                return State::Redo(StateName::LabelEnd(Step::ResourceStart));
+            }
             return State::Redo(StateName::LabelEnd(Step::Ok { end }));
         }
 
@@ -316,6 +336,18 @@ fn after(tokenizer: &mut Tokenizer, end: usize) -> State {
     }
 }
 
+/// After a defined footnote call that no resource follows.
+///
+/// ```markdown
+/// > | [^a] b
+///         ^
+/// ```
+fn call(tokenizer: &mut Tokenizer, end: usize) -> State {
+    let index = tokenizer.labels.starts.len() - 1;
+    tokenizer.labels.starts[index].kind = LabelKind::Footnote;
+    State::Redo(StateName::LabelEnd(Step::Ok { end }))
+}
+
 /// After `]`, at `[`, but not at a full reference.
 ///
 /// > 👉 **Note**: we only get here if the label is defined.
@@ -354,14 +386,18 @@ fn ok(tokenizer: &mut Tokenizer, end: usize) -> State {
     // longer viable for use (as they would otherwise contain a link).
     // These link starts are still looking for balanced closing brackets, so
     // we can’t remove them, but we can mark them.
-    if label_start.kind != LabelKind::Image {
-        let mut index = 0;
-        while index < tokenizer.labels.starts.len() {
+    // An inline note holds its own links: they do not reach past it, and the
+    // note is no link either.
+    if !matches!(label_start.kind, LabelKind::Image | LabelKind::Note) {
+        let mut index = tokenizer.labels.starts.len();
+        while index > 0 {
+            index -= 1;
             let label_start = &mut tokenizer.labels.starts[index];
-            if label_start.kind != LabelKind::Image {
-                label_start.inactive = true;
+            match label_start.kind {
+                LabelKind::Note => break,
+                LabelKind::Image => {}
+                _ => label_start.inactive = true,
             }
-            index += 1;
         }
     }
 
@@ -661,6 +697,8 @@ fn insert_labels(tokenizer: &mut Tokenizer, labels: &[Label]) {
         let label = &labels[index];
         let group_name = if label.kind == LabelKind::Footnote {
             Name::FootnoteCall
+        } else if label.kind == LabelKind::Note {
+            Name::Note
         } else if label.kind == LabelKind::Image {
             Name::Image
         } else {
@@ -822,6 +860,7 @@ pub enum Step {
     ReferenceFull,
     ReferenceFullAfter,
     ReferenceNotFull { end: usize },
+    Call { end: usize },
     ReferenceCollapsed,
     ReferenceCollapsedOpen,
 }
@@ -849,6 +888,7 @@ pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
         Step::ReferenceFull => reference_full(tokenizer),
         Step::ReferenceFullAfter => reference_full_after(tokenizer),
         Step::ReferenceNotFull { end } => reference_not_full(tokenizer, end),
+        Step::Call { end } => call(tokenizer, end),
         Step::ReferenceCollapsed => reference_collapsed(tokenizer),
         Step::ReferenceCollapsedOpen => reference_collapsed_open(tokenizer),
     }

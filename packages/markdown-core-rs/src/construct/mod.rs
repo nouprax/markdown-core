@@ -169,6 +169,7 @@ pub mod label_end;
 pub mod label_start_footnote;
 pub mod label_start_image;
 pub mod label_start_link;
+pub mod label_start_note;
 pub mod list_item;
 pub mod paragraph;
 pub mod partial_bom;

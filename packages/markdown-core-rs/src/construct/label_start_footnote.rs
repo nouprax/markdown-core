@@ -6,7 +6,8 @@
 //! (<small>see [construct][crate::construct] for character groups</small>):
 //!
 //! ```bnf
-//! gfm_label_start_footnote ::= '[' '^'
+//! ; Restriction: not followed by `[`, which makes `^[` an inline note.
+//! label_start_footnote ::= '[' '^'
 //! ```
 //!
 //! ## HTML
@@ -76,16 +77,31 @@ fn open(tokenizer: &mut Tokenizer) -> State {
             tokenizer.enter(Name::FootnoteCallMarker);
             tokenizer.consume();
             tokenizer.exit(Name::FootnoteCallMarker);
-            tokenizer.exit(Name::FootnoteCallLabel);
-            tokenizer.labels.starts.push(LabelStart {
-                kind: LabelKind::Footnote,
-                start: (tokenizer.events.len() - 6, tokenizer.events.len() - 1),
-                inactive: false,
-            });
-            tokenizer.register_resolver_before(ResolveName::Label);
-            State::Ok
+            State::Next(StateName::LabelStartFootnote(Step::After))
         }
         _ => State::Nok,
+    }
+}
+
+/// After `[^`.
+///
+/// ```markdown
+/// > | a [^b] c
+///         ^
+/// ```
+fn after(tokenizer: &mut Tokenizer) -> State {
+    // `^[` opens an inline note instead.
+    if tokenizer.current == Some(b'[') {
+        State::Nok
+    } else {
+        tokenizer.exit(Name::FootnoteCallLabel);
+        tokenizer.labels.starts.push(LabelStart {
+            kind: LabelKind::Footnote,
+            start: (tokenizer.events.len() - 6, tokenizer.events.len() - 1),
+            inactive: false,
+        });
+        tokenizer.register_resolver_before(ResolveName::Label);
+        State::Ok
     }
 }
 
@@ -94,6 +110,7 @@ fn open(tokenizer: &mut Tokenizer) -> State {
 pub enum Step {
     Start,
     Open,
+    After,
 }
 
 impl From<Step> for StateName {
@@ -107,5 +124,6 @@ pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
     match step {
         Step::Start => start(tokenizer),
         Step::Open => open(tokenizer),
+        Step::After => after(tokenizer),
     }
 }

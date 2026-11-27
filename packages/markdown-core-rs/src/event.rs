@@ -2390,6 +2390,61 @@ pub enum Name {
     ///       ^
     /// ```
     LabelImageMarker,
+    /// Label start (note).
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`Label`][Name::Label]
+    /// * **Content model**:
+    ///   [`LabelNoteMarker`][Name::LabelNoteMarker],
+    ///   [`LabelMarker`][Name::LabelMarker]
+    /// * **Construct**:
+    ///   [`label_start_note`][crate::construct::label_start_note]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | a ^[b] c
+    ///       ^^
+    /// ```
+    LabelNote,
+    /// Label start (note) marker.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`LabelNote`][Name::LabelNote]
+    /// * **Content model**:
+    ///   void
+    /// * **Construct**:
+    ///   [`label_start_note`][crate::construct::label_start_note]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | a ^[b] c
+    ///       ^
+    /// ```
+    LabelNoteMarker,
+    /// Inline note.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [text content][crate::construct::text]
+    /// * **Content model**:
+    ///   [`Label`][Name::Label]
+    /// * **Construct**:
+    ///   [`label_end`][crate::construct::label_end]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | a ^[b] c
+    ///       ^^^^
+    /// ```
+    Note,
     /// Label start (link).
     ///
     /// ## Info
@@ -3199,6 +3254,7 @@ pub enum Inline {
     Literal,
     Media,
     FootnoteCall,
+    Note,
 }
 
 /// Whitespace and line endings.
@@ -3254,6 +3310,7 @@ impl Name {
             | Name::AutolinkLiteralMailto
             | Name::AutolinkLiteralXmpp => Role::Inline(Inline::Literal),
             Name::Link | Name::Image => Role::Inline(Inline::Media),
+            Name::Note => Role::Inline(Inline::Note),
             Name::FootnoteCall => Role::Inline(Inline::FootnoteCall),
             Name::SpaceOrTab => Role::Space(Space::Whitespace),
             Name::LineEnding => Role::Space(Space::LineEnding),
@@ -3355,6 +3412,8 @@ impl Name {
             | Name::LabelEnd
             | Name::LabelImage
             | Name::LabelImageMarker
+            | Name::LabelNote
+            | Name::LabelNoteMarker
             | Name::LabelLink
             | Name::LabelMarker
             | Name::LabelText
@@ -3389,7 +3448,7 @@ impl Name {
 }
 
 /// List of void events, used to make sure everything is working well.
-pub const VOID_EVENTS: [Name; 77] = [
+pub const VOID_EVENTS: [Name; 78] = [
     Name::AttentionSequence,
     Name::AutolinkEmail,
     Name::AutolinkMarker,
@@ -3440,6 +3499,7 @@ pub const VOID_EVENTS: [Name; 77] = [
     Name::HtmlFlowData,
     Name::HtmlTextData,
     Name::LabelImageMarker,
+    Name::LabelNoteMarker,
     Name::LabelMarker,
     Name::LineEnding,
     Name::ListItemMarker,
