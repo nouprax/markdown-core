@@ -1,0 +1,9 @@
+# rustfmt configuration for the Rust core (packages/markdown-core-rs).
+# rustfmt reads the nearest rustfmt.toml above each file, as clang-format
+# reads .clang-format; the toolchain that runs it is pinned by
+# packages/markdown-core-rs/rust-toolchain.toml.
+edition = "2021"
+max_width = 100
+hard_tabs = false
+tab_spaces = 4
+newline_style = "Unix"

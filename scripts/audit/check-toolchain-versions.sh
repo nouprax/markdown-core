@@ -75,6 +75,7 @@ pnpm_version=$(shell_value PNPM_VERSION)
 java_version=$(shell_value JAVA_VERSION)
 xcode_version=$(shell_value XCODE_VERSION)
 swift_version=$(shell_value SWIFT_VERSION)
+rust_version=$(shell_value RUST_VERSION)
 emscripten_version=$(shell_value EMSCRIPTEN_VERSION)
 swiftlint_version=$(shell_value SWIFTLINT_VERSION)
 clang_format_version=$(shell_value CLANG_FORMAT_VERSION)
@@ -186,5 +187,8 @@ expect_equal "clang-format installer" "$clang_format_version" \
     "$(sed -n 's/^VERSION="\([^"]*\)"/\1/p' scripts/tools/install-clang-format.sh)"
 expect_equal "clang-format runner" "$clang_format_version" \
     "$(sed -n 's/^EXPECTED_VERSION="\([^"]*\)"/\1/p' scripts/tools/format-c.sh)"
+
+expect_equal "Rust toolchain" "$rust_version" \
+    "$(sed -n 's/^channel = "\([^"]*\)"/\1/p' packages/markdown-core-rs/rust-toolchain.toml)"
 
 printf 'Toolchain declarations are consistent (Swift %s, iOS/macOS 26).\n' "$swift_version"

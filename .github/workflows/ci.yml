@@ -221,6 +221,24 @@ jobs:
             - name: Lint Swift
               run: scripts/tools/lint-swift.sh
 
+    health-check-rust:
+        needs: changes
+        if: ${{ needs.changes.outputs.required == 'true' }}
+        name: Health Check - Rust
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  persist-credentials: false
+            - name: Install the pinned Rust toolchain
+              run: scripts/tools/setup-environment.sh --install rust
+            - name: Check prepared Rust environment
+              run: scripts/tools/setup-environment.sh --check rust
+            - name: Check Rust formatting
+              run: scripts/tools/format-rust.sh --check
+            - name: Lint Rust
+              run: scripts/tools/lint-rust.sh
+
     health-checks-ready:
         name: Health Checks - Ready
         needs:
@@ -229,6 +247,7 @@ jobs:
             - health-check-es
             - health-check-kotlin
             - health-check-swift
+            - health-check-rust
         runs-on: ubuntu-latest
         steps:
             - name: Release checked source to build producers
@@ -1144,10 +1163,9 @@ jobs:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
               with:
                   persist-credentials: false
-            - name: Check Rust formatting
-              run: cargo fmt --all --check
-            - name: Lint the Rust core
-              run: cargo clippy --all-targets --locked -- -D warnings
+            - name: Install the pinned Rust toolchain
+              working-directory: .
+              run: scripts/tools/setup-environment.sh --install rust
             - name: Test the Rust core
               run: cargo test --locked
 

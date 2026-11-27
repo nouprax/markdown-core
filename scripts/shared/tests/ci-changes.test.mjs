@@ -412,6 +412,7 @@ const gates = [
             "health-check-es",
             "health-check-kotlin",
             "health-check-swift",
+            "health-check-rust",
             "benchmark"
         ]
     ],

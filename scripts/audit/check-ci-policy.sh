@@ -464,6 +464,7 @@ for job in \
     health-check-es \
     health-check-kotlin \
     health-check-swift \
+    health-check-rust \
     health-checks-ready \
     c-product-build \
     c-product-build-windows \

@@ -9,6 +9,7 @@ PNPM_VERSION=11.28.7
 JAVA_VERSION=26
 XCODE_VERSION=26.6
 SWIFT_VERSION=6.3.3
+RUST_VERSION=1.97.0
 EMSCRIPTEN_VERSION=6.0.9
 # The emsdk repository commit of the 6.0.9 release tag; keep the pair in
 # lockstep when bumping the version.
@@ -46,7 +47,7 @@ usage() {
 Usage: scripts/tools/setup-environment.sh --check [component ...]
        scripts/tools/setup-environment.sh --install [component ...]
 
-Components: core node java wrappers android android-emulator swift emscripten
+Components: core node java wrappers android android-emulator swift rust emscripten
             oracle-cmark oracle-cmark-gfm oracle-lexbor oracle-pandoc callgrind dependencies
             tools
 
@@ -72,7 +73,7 @@ case "$mode" in
 esac
 
 if [ "$#" -eq 0 ]; then
-    set -- core node java wrappers android android-emulator emscripten dependencies tools
+    set -- core node java wrappers android android-emulator rust emscripten dependencies tools
     if [ "$(uname -s)" = Darwin ]; then
         set -- "$@" swift
     fi
@@ -80,7 +81,7 @@ fi
 
 for component do
     case "$component" in
-        core | node | java | wrappers | android | android-emulator | swift | emscripten | oracle-cmark | oracle-cmark-gfm | oracle-lexbor | oracle-pandoc | callgrind | dependencies | tools) ;;
+        core | node | java | wrappers | android | android-emulator | swift | rust | emscripten | oracle-cmark | oracle-cmark-gfm | oracle-lexbor | oracle-pandoc | callgrind | dependencies | tools) ;;
         *)
             echo "Unknown environment component: $component" >&2
             usage >&2
@@ -331,6 +332,28 @@ check_swift() {
     [ "$swift_version" = "$SWIFT_VERSION" ] || fail "Swift $SWIFT_VERSION is required; found ${swift_version:-unknown}"
     [ "$xcode" != "$XCODE_VERSION" ] || [ "$swift_version" != "$SWIFT_VERSION" ] || ok "Xcode and Swift"
     return 0
+}
+
+check_rust() {
+    before=$failures
+    require_command rustup || return 0
+    # The toolchain packages/markdown-core-rs/rust-toolchain.toml pins.
+    version=$(rustup run "$RUST_VERSION" rustc --version 2>/dev/null) || version=
+    case "$version" in
+        "rustc $RUST_VERSION "*) ;;
+        *) fail "Rust $RUST_VERSION is required; found ${version:-none}" ;;
+    esac
+    for tool in rustfmt cargo-clippy; do
+        rustup run "$RUST_VERSION" "$tool" --version >/dev/null 2>&1 \
+            || fail "Rust $RUST_VERSION has no $tool"
+    done
+    [ "$failures" -ne "$before" ] || ok "Rust $RUST_VERSION (rustc, rustfmt, clippy)"
+    return 0
+}
+
+install_rust() {
+    require_command rustup || return
+    rustup toolchain install "$RUST_VERSION" --profile minimal --component clippy,rustfmt
 }
 
 check_emscripten() {
@@ -655,6 +678,7 @@ if [ "$mode" = --install ]; then
     has_component android "$@" && install_android
     has_component android-emulator "$@" && install_android_emulator
     has_component swift "$@" && check_swift
+    has_component rust "$@" && install_rust
     has_component emscripten "$@" && install_emscripten
     has_component oracle-pandoc "$@" && node scripts/tools/install-pandoc-oracle.mjs --install
     has_component oracle-cmark "$@" && install_oracle_cmark
@@ -674,6 +698,7 @@ has_component wrappers "$@" && check_wrappers
 has_component android "$@" && check_android
 has_component android-emulator "$@" && check_android_emulator
 has_component swift "$@" && check_swift
+has_component rust "$@" && check_rust
 has_component emscripten "$@" && check_emscripten
 has_component oracle-pandoc "$@" && { node scripts/tools/install-pandoc-oracle.mjs --check || fail "Pandoc oracle check failed"; }
 has_component oracle-cmark "$@" && check_oracle_cmark
