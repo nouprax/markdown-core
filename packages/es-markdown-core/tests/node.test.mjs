@@ -1755,9 +1755,7 @@ test("ast: dimensions belong to occurrences and universal attributes survive rel
 test("ast: cross links retain raw values after native release", () => {
     const bytes = nativeMessage("[[Note]] [[Note|]] ![[#^id|raw *label*]]\n");
     const document = decoder(bytes).decode();
-    const links = document.content[0].content.filter(
-        (node) => node.kind === "crossLink" || node.kind === "crossEmbed"
-    );
+    const links = document.content[0].content.filter((node) => node.kind === "crossLink" || node.kind === "crossEmbed");
     assert.deepEqual(
         links.map((node) => [node.kind, node.dest, node.label]),
         [

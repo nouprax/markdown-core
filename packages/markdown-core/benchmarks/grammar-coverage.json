@@ -1023,7 +1023,7 @@
         {
             "feature": "cross-links",
             "specification": "docs/specs/dialect/cross-links.md",
-            "sha256": "aa23f3ea9de2f3dc9d703c37e1b3b784ce5232b57d3bcadc2ce885762eb1ece3",
+            "sha256": "616f12025aec442faba42d5c99cab24878f24e214bd1cc8690d71380880addfe",
             "sections": [
                 {
                     "title": "Cross links and embeds",
@@ -1049,7 +1049,7 @@
                     "title": "Embeds",
                     "line": 50,
                     "level": 2,
-                    "sha256": "2bb0193bb76bb5d9b572412d11650294bcaebc6bfb929b762e09bbafd335e40a",
+                    "sha256": "ec2da10e3145beb0a08d4b829053eff92c86c416171d7ad1c1fc6b81e4ef0740",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["cross-embed", "cross-embed-absent", "cross-embed-empty"]
@@ -1547,7 +1547,7 @@
         {
             "feature": "formulas",
             "specification": "docs/specs/dialect/formulas.md",
-            "sha256": "3d80242c16fab71f6b9740b9c7e2b75eb015e1b2e67ad396fab52de067319a54",
+            "sha256": "060310a740d584fd3a30e370c6336c1fe42a2423576172666516c367f8509a8b",
             "sections": [
                 {
                     "title": "Formulas",
@@ -1563,7 +1563,7 @@
                     "title": "Inline forms",
                     "line": 15,
                     "level": 2,
-                    "sha256": "eb617154f769fdff7411bc3c6fffda5833d357fff2f73f913ce1b0cab7d0a033",
+                    "sha256": "1a288547a15995816c5be1ea1dd36b37dbe895344f62935b72cbe6e0d84b4842",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["opaque-formula", "formula-backtick", "formula-parenthesis", "formula-bracket"]
@@ -1962,7 +1962,7 @@
         {
             "feature": "links-and-images",
             "specification": "docs/specs/dialect/links-and-images.md",
-            "sha256": "7ca98eeb97e29134a7b2f06ed0a35689aa60dee76dd6a1523c565cc67c63afdd",
+            "sha256": "782ac542988d9e46678797df3ce3156e6566a1d88dcb72801a6525d009747756",
             "sections": [
                 {
                     "title": "Links and images",
@@ -2004,7 +2004,7 @@
                     "title": "Images",
                     "line": 69,
                     "level": 2,
-                    "sha256": "f9623a4e7f25415d66a333eaefb375b84f6aaac17a43c65824d0b4b5979d7479",
+                    "sha256": "2f3457dee70974e4ff2fd6f0871e79876197d34db4074f58eca0773a6b23fb13",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["common-image"]

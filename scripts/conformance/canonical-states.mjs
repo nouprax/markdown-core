@@ -149,8 +149,7 @@ const stateValidators = {
     // A reference occurrence is a `Link` or `Embed` naming its definition's
     // normalized label, and the definition is a `Reference` where it was
     // written, holding the url destination it states.
-    "destination.reference.label": (tree) =>
-        /(?:Link|Embed) scope=.* dest=reference\("(?:\\.|[^"\\])+"\) /.test(tree),
+    "destination.reference.label": (tree) => /(?:Link|Embed) scope=.* dest=reference\("(?:\\.|[^"\\])+"\) /.test(tree),
     "reference.definition.url": (tree) =>
         /Reference scope=.* label="(?:\\.|[^"\\])+" dest=url\("(?:\\.|[^"\\])*"\) title=/.test(tree),
     "link.title.null": (tree) => /^.*Link scope=.* title=null /m.test(tree),

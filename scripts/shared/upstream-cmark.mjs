@@ -652,8 +652,7 @@ export function resolveReferences(root, source, fired) {
     };
     survey(root);
     const rewrite = (node) => {
-        const destination =
-            node.kind === "Link" || node.kind === "Embed" ? parseDestination(node.fields.dest) : null;
+        const destination = node.kind === "Link" || node.kind === "Embed" ? parseDestination(node.fields.dest) : null;
         if (destination?.kind === "reference") {
             const definition = definitions.get(destination.label);
             const heading = definition ? undefined : headings.get(fold(destination.label));
