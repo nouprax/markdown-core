@@ -14,7 +14,7 @@ rm -rf "$project_build/ci-test-artifact"
 
 case "$target" in
     linuxX64)
-        "$root/scripts/tooling/run-gradle.sh" --console=plain --stacktrace \
+        "$root/scripts/tools/run-gradle.sh" --console=plain --stacktrace \
             :packages:kotlin-markdown-core:stageJvmTestArtifact \
             :packages:kotlin-markdown-core:stageAndroidHostTestArtifact \
             :packages:kotlin-markdown-core:linkDebugTestLinuxX64
@@ -24,7 +24,7 @@ case "$target" in
             "$root/scripts/shared/KotlinJvmTestLauncher.java"
         ;;
     macosArm64)
-        "$root/scripts/tooling/run-gradle.sh" --console=plain --stacktrace \
+        "$root/scripts/tools/run-gradle.sh" --console=plain --stacktrace \
             :packages:kotlin-markdown-core:linkDebugTestMacosArm64
         ;;
     *)

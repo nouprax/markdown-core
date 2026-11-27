@@ -13,7 +13,7 @@ fi
 
 python3 -m venv "$INSTALL_DIR/venv"
 "$INSTALL_DIR/venv/bin/python" -m pip install --disable-pip-version-check --quiet \
-    --require-hashes --requirement "$root/scripts/tooling/requirements/clang-format.txt"
+    --require-hashes --requirement "$root/scripts/tools/requirements/clang-format.txt"
 
 actual=$($executable --version | sed -E 's/.*version ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
 [ "$actual" = "$VERSION" ] || {

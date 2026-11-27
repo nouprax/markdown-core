@@ -4,7 +4,7 @@ set -eu
 VERSION="0.65.1"
 INSTALL_DIR="${SWIFTLINT_INSTALL_DIR:-$PWD/.tools/swiftlint/$VERSION}"
 
-SWIFTLINT_INSTALL_DIR="$INSTALL_DIR" scripts/tooling/install-swiftlint.sh
+SWIFTLINT_INSTALL_DIR="$INSTALL_DIR" scripts/tools/install-swiftlint.sh
 
 actual_version=$($INSTALL_DIR/swiftlint version)
 if [ "$actual_version" != "$VERSION" ]; then

@@ -372,7 +372,7 @@ while IFS= read -r archive; do
     fi
 done <"$temp_dir/c-static-archives.txt"
 
-scripts/tooling/run-gradle.sh \
+scripts/tools/run-gradle.sh \
     :packages:kotlin-markdown-core:verifyKotlinJniPackaging \
     :packages:kotlin-markdown-core:jvmSourcesJar >/dev/null
 kotlin_jni_library=$(find packages/kotlin-markdown-core/build/generated/jvmResources -type f \

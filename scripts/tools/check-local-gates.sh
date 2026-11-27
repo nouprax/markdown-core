@@ -10,12 +10,12 @@
 #   cmake --preset asan    && cmake --build --preset asan    --parallel
 #   cmake --preset ubsan   && cmake --build --preset ubsan   --parallel
 #   cmake --preset tsan    && cmake --build --preset tsan    --parallel
-#   sh scripts/tooling/check-local-gates.sh
+#   sh scripts/tools/check-local-gates.sh
 #
 # The binding suites are not here either -- they need their own toolchains:
 #   pnpm run test:es-node && pnpm run conformance:es-node
 #   pnpm run test:swift-macos && pnpm run conformance:swift-macos
-#   scripts/tooling/run-gradle.sh :packages:kotlin-markdown-core:jvmTest
+#   scripts/tools/run-gradle.sh :packages:kotlin-markdown-core:jvmTest
 #   pnpm -w run lint
 set -u
 echo "correctness       : $(ctest --preset correctness -j 8 2>&1 | grep -oE '[0-9]+% tests passed out of [0-9]+')"
@@ -58,6 +58,6 @@ echo "repository        : $(bash scripts/audit/check-repository.sh 2>&1 | tail -
 # its dump is the Kotlin API and every leaked name is absent from it by
 # construction. Needs a JDK and the compiled JVM classes.
 echo "kotlin-jvm-surface: $(bash scripts/audit/check-kotlin-jvm-surface.sh 2>&1 | tail -1)"
-sh scripts/tooling/format-c.sh --check >/dev/null 2>&1; echo "format-c          : exit $?"
-sh scripts/tooling/format-cmake.sh --check >/dev/null 2>&1; echo "format-cmake      : exit $?"
-printf "lint-c            : "; scripts/tooling/lint-c.sh >/dev/null 2>&1 && echo "exit 0" || echo "FAILED"
+sh scripts/tools/format-c.sh --check >/dev/null 2>&1; echo "format-c          : exit $?"
+sh scripts/tools/format-cmake.sh --check >/dev/null 2>&1; echo "format-cmake      : exit $?"
+printf "lint-c            : "; scripts/tools/lint-c.sh >/dev/null 2>&1 && echo "exit 0" || echo "FAILED"

@@ -1259,7 +1259,7 @@ export function grammarSourceIdentity(root = fileURLToPath(new URL("../../", imp
         "scripts/benchmark/report.mjs",
         "scripts/shared/element-inventory.mjs",
         "scripts/benchmark/run.mjs",
-        "scripts/tooling/setup-environment.sh",
+        "scripts/tools/setup-environment.sh",
         "docs/architecture/benchmark-grammar-corpus.md",
         "docs/architecture/benchmark-grammar-coverage.md",
         "packages/markdown-core/benchmarks/grammar-corpus.json",

@@ -50,7 +50,7 @@ jobs:
             - name: Install JavaScript dependencies
               run: pnpm install --frozen-lockfile
             - name: Check prepared repository environment
-              run: scripts/tooling/setup-environment.sh --check node java wrappers dependencies
+              run: scripts/tools/setup-environment.sh --check node java wrappers dependencies
             - name: Check cross-platform contracts
               run: pnpm check:contracts
             - name: Audit test layout and public surface
@@ -88,7 +88,7 @@ jobs:
                   version: 11.28.7
             - name: Install C health-check dependencies
               run: |
-                  scripts/tooling/install-clang-format.sh
+                  scripts/tools/install-clang-format.sh
                   sudo apt-get update
                   sudo apt-get install --no-install-recommends --yes valgrind
                   pnpm install --frozen-lockfile
@@ -193,7 +193,7 @@ jobs:
                   sdkmanager "platforms;android-36" "cmake;3.22.1" "ndk;28.2.13676358"
                   pnpm install --frozen-lockfile
             - name: Check prepared package-audit environment
-              run: scripts/tooling/setup-environment.sh --check core node java wrappers android emscripten dependencies
+              run: scripts/tools/setup-environment.sh --check core node java wrappers android emscripten dependencies
             - name: Audit installed and published package contents
               run: pnpm audit:packages
 
@@ -215,11 +215,11 @@ jobs:
                   run_install: false
                   version: 11.28.7
             - name: Check prepared Swift environment
-              run: scripts/tooling/setup-environment.sh --check node wrappers swift
+              run: scripts/tools/setup-environment.sh --check node wrappers swift
             - name: Check Swift formatting
-              run: scripts/tooling/format-swift.sh --check
+              run: scripts/tools/format-swift.sh --check
             - name: Lint Swift
-              run: scripts/tooling/lint-swift.sh
+              run: scripts/tools/lint-swift.sh
 
     health-checks-ready:
         name: Health Checks - Ready
@@ -1219,7 +1219,7 @@ jobs:
             - name: Build this parser
               run: pnpm build:c
             - name: Build the pinned parser oracles
-              run: scripts/tooling/setup-environment.sh --install oracle-cmark oracle-cmark-gfm oracle-pandoc
+              run: scripts/tools/setup-environment.sh --install oracle-cmark oracle-cmark-gfm oracle-pandoc
             - name: Compare CommonMark against current cmark
               run: pnpm check:commonmark-parity
             - name: Compare GFM extensions against cmark-gfm

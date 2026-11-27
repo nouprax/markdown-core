@@ -43,8 +43,8 @@ MAVEN_VERSION=3.9.16
 
 usage() {
     cat <<'EOF'
-Usage: scripts/tooling/setup-environment.sh --check [component ...]
-       scripts/tooling/setup-environment.sh --install [component ...]
+Usage: scripts/tools/setup-environment.sh --check [component ...]
+       scripts/tools/setup-environment.sh --install [component ...]
 
 Components: core node java wrappers android android-emulator swift emscripten
             oracle-cmark oracle-cmark-gfm oracle-lexbor oracle-pandoc callgrind dependencies
@@ -640,10 +640,10 @@ install_oracle_lexbor() {
 install_tools() {
     require_command python3 || return
     CLANG_FORMAT_INSTALL_DIR="$root/.tools/clang-format/$CLANG_FORMAT_VERSION" \
-        scripts/tooling/install-clang-format.sh
+        scripts/tools/install-clang-format.sh
     CMAKE_FORMAT_TOOL_DIR="$root/.tools/cmakelang/$CMAKE_FORMAT_VERSION" \
-        scripts/tooling/format-cmake.sh --check
-    scripts/tooling/install-swiftlint.sh
+        scripts/tools/format-cmake.sh --check
+    scripts/tools/install-swiftlint.sh
 }
 
 components="$*"
@@ -656,7 +656,7 @@ if [ "$mode" = --install ]; then
     has_component android-emulator "$@" && install_android_emulator
     has_component swift "$@" && check_swift
     has_component emscripten "$@" && install_emscripten
-    has_component oracle-pandoc "$@" && node scripts/tooling/install-pandoc-oracle.mjs --install
+    has_component oracle-pandoc "$@" && node scripts/tools/install-pandoc-oracle.mjs --install
     has_component oracle-cmark "$@" && install_oracle_cmark
     has_component oracle-cmark-gfm "$@" && install_oracle_cmark_gfm
     has_component oracle-lexbor "$@" && install_oracle_lexbor
@@ -675,7 +675,7 @@ has_component android "$@" && check_android
 has_component android-emulator "$@" && check_android_emulator
 has_component swift "$@" && check_swift
 has_component emscripten "$@" && check_emscripten
-has_component oracle-pandoc "$@" && { node scripts/tooling/install-pandoc-oracle.mjs --check || fail "Pandoc oracle check failed"; }
+has_component oracle-pandoc "$@" && { node scripts/tools/install-pandoc-oracle.mjs --check || fail "Pandoc oracle check failed"; }
 has_component oracle-cmark "$@" && check_oracle_cmark
 has_component oracle-cmark-gfm "$@" && check_oracle_cmark_gfm
 has_component oracle-lexbor "$@" && check_oracle_lexbor

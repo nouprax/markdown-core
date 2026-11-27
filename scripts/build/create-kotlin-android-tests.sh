@@ -10,7 +10,7 @@ apk_name=kotlin-markdown-core-androidTest.apk
 rm -rf "$output"
 mkdir -p "$output"
 
-"$root/scripts/tooling/run-gradle.sh" \
+"$root/scripts/tools/run-gradle.sh" \
     --console=plain \
     --stacktrace \
     :packages:kotlin-markdown-core:packageAndroidDeviceTest \

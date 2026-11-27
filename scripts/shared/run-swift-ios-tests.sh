@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Local iOS Simulator test entry point. The destination is discovered (or a
-# temporary simulator is created) by scripts/tooling/prepare-swift-ios-simulator.sh;
+# temporary simulator is created) by scripts/tools/prepare-swift-ios-simulator.sh;
 # hard-coding a device model or a moving runtime alias is banned by
 # docs/architecture/testing.md and scripts/audit/check-ci-policy.sh.
 set -euo pipefail
@@ -18,7 +18,7 @@ esac
 
 cd "$root"
 status=0
-destination=$(scripts/tooling/prepare-swift-ios-simulator.sh)
+destination=$(scripts/tools/prepare-swift-ios-simulator.sh)
 udid=${destination##*=}
 CLANG_MODULE_CACHE_PATH="$root/build/swift-module-cache" \
     xcodebuild test \

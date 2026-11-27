@@ -20,8 +20,8 @@
  * are generated, one per table and each named for it, and the rest stays
  * hand-written.
  *
- *   node scripts/tooling/generate-node-kinds.mjs          rewrite the outputs
- *   node scripts/tooling/generate-node-kinds.mjs --check  fail if any is stale
+ *   node scripts/tools/generate-node-kinds.mjs          rewrite the outputs
+ *   node scripts/tools/generate-node-kinds.mjs --check  fail if any is stale
  */
 
 import fs from "node:fs";
@@ -31,7 +31,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const CONTRACT = "docs/specs/canonical-ast.json";
 const NATIVE = "packages/markdown-core/node-types.json";
-const GENERATOR = "scripts/tooling/generate-node-kinds.mjs";
+const GENERATOR = "scripts/tools/generate-node-kinds.mjs";
 
 const read = (relative) => fs.readFileSync(path.join(root, relative), "utf8");
 

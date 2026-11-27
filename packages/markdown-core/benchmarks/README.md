@@ -24,7 +24,7 @@ AST-pair census, ownership model or legacy measurement mode.
 pnpm benchmark --corpus-only
 
 # Linux with Callgrind and the pinned references.
-scripts/tooling/setup-environment.sh --install oracle-cmark oracle-cmark-gfm
+scripts/tools/setup-environment.sh --install oracle-cmark oracle-cmark-gfm
 pnpm benchmark
 
 # Measure a whole family, including the selected input's counterpart/hosts.
@@ -206,7 +206,7 @@ edit, a fresh parse of that edit's text, and the edits before it in the window
 only replace the text. Edits are reported without a gate or a base.
 
 ```sh
-scripts/tooling/setup-environment.sh --install oracle-cmark oracle-cmark-gfm
+scripts/tools/setup-environment.sh --install oracle-cmark oracle-cmark-gfm
 pnpm benchmark:streams
 pnpm benchmark:streams --workload prose-ascii-16k.tokens
 pnpm benchmark:streams --workload prose-ascii-16k.edits

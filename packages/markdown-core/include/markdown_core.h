@@ -246,7 +246,7 @@ MARKDOWN_CORE_API markdown_core_status markdown_core_metadata_value_item_at(cons
  * content. Its parent edge records which; the node stores no placement.
  * `markdown_core_node_literal` answers with the bytes between the delimiters. */
 typedef enum markdown_core_node_kind {
-    /* BEGIN GENERATED node kinds by scripts/tooling/generate-node-kinds.mjs; edit the node-kind schemas instead. */
+    /* BEGIN GENERATED node kinds by scripts/tools/generate-node-kinds.mjs; edit the node-kind schemas instead. */
     MARKDOWN_CORE_KIND_NONE = 0,
     MARKDOWN_CORE_KIND_DOCUMENT = 1,
     MARKDOWN_CORE_KIND_CALLOUT = 2,
@@ -300,7 +300,7 @@ typedef enum markdown_core_node_kind {
  * them. The value is the slot kind's `ordinal` there, and a new slot kind
  * takes the next one. */
 typedef enum markdown_core_slot_kind {
-    /* BEGIN GENERATED slot kinds by scripts/tooling/generate-node-kinds.mjs; edit the node-kind schemas instead. */
+    /* BEGIN GENERATED slot kinds by scripts/tools/generate-node-kinds.mjs; edit the node-kind schemas instead. */
     MARKDOWN_CORE_SLOT_NONE = 0,
     MARKDOWN_CORE_SLOT_DEST = 1,
     MARKDOWN_CORE_SLOT_ANCHOR = 2,

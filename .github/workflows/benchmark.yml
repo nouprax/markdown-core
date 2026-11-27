@@ -47,7 +47,7 @@ jobs:
                   sudo apt-get update
                   sudo apt-get install --no-install-recommends --yes valgrind
             - name: Build the pinned reference checkouts
-              run: scripts/tooling/setup-environment.sh --install oracle-cmark oracle-cmark-gfm
+              run: scripts/tools/setup-environment.sh --install oracle-cmark oracle-cmark-gfm
             - name: Measure every engine and compare source-stage regressions
               env:
                   BASE_REVISION: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
@@ -103,7 +103,7 @@ jobs:
                   sudo apt-get update
                   sudo apt-get install --no-install-recommends --yes valgrind
             - name: Build the pinned lexbor baseline
-              run: scripts/tooling/setup-environment.sh --install oracle-lexbor
+              run: scripts/tools/setup-environment.sh --install oracle-lexbor
             # A separate job from the stage measurement, for the same reason it
             # is a separate driver: the two baselines cannot be given the same
             # bytes, so this compares one grammar against one grammar rather
@@ -161,7 +161,7 @@ jobs:
             # references included, so its binaries are the ones that report
             # describes.
             - name: Build the pinned reference checkouts
-              run: scripts/tooling/setup-environment.sh --install oracle-cmark oracle-cmark-gfm
+              run: scripts/tools/setup-environment.sh --install oracle-cmark oracle-cmark-gfm
             - name: Measure this part of the streams against the base revision
               env:
                   BASE_REVISION: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
@@ -248,7 +248,7 @@ jobs:
             # The runner is built by the stage benchmark's own build, references
             # included, so its identity is recorded as theirs is.
             - name: Build the pinned reference checkouts
-              run: scripts/tooling/setup-environment.sh --install oracle-cmark oracle-cmark-gfm
+              run: scripts/tools/setup-environment.sh --install oracle-cmark oracle-cmark-gfm
             - name: Measure completion requests
               run: node scripts/benchmark/completion.mjs --quiet
             - name: Upload structured results for the PR comment

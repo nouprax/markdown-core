@@ -124,7 +124,7 @@ for the complete API and ownership rules.
 ## Development
 
 Start with the [toolchain and environment guide](docs/toolchains.md), validate
-your setup with `scripts/tooling/setup-environment.sh --check`, then install dependencies:
+your setup with `scripts/tools/setup-environment.sh --check`, then install dependencies:
 
 ```sh
 pnpm install --frozen-lockfile
@@ -135,7 +135,7 @@ Build the package you are working on:
 ```sh
 pnpm build:c
 pnpm build:swift
-scripts/tooling/run-gradle.sh :packages:kotlin-markdown-core:jvmJar
+scripts/tools/run-gradle.sh :packages:kotlin-markdown-core:jvmJar
 pnpm --dir packages/es-markdown-core build
 ```
 

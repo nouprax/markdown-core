@@ -3809,7 +3809,7 @@ const markdown_core_node *markdown_core_document_root(const markdown_core_docume
 /* The facade's view of the native types: the public kind each reports, and
  * each public kind's name. Generated from packages/markdown-core/node-types.json
  * and docs/specs/canonical-ast.json. */
-/* BEGIN GENERATED node kinds by scripts/tooling/generate-node-kinds.mjs; edit the node-kind schemas instead. */
+/* BEGIN GENERATED node kinds by scripts/tools/generate-node-kinds.mjs; edit the node-kind schemas instead. */
 /* The public kind each native type reports; a private type reads as NONE. */
 static const markdown_core_node_kind S_block_kind[MARKDOWN_CORE_NODE_KIND_COUNT] = {
     [MARKDOWN_CORE_NODE_DOCUMENT & MARKDOWN_CORE_NODE_VALUE_MASK] = MARKDOWN_CORE_KIND_DOCUMENT,
@@ -3933,7 +3933,7 @@ markdown_core_status markdown_core_node_kind_name(markdown_core_node_kind kind, 
     return MARKDOWN_CORE_OK;
 }
 
-/* BEGIN GENERATED slot kinds by scripts/tooling/generate-node-kinds.mjs; edit the node-kind schemas instead. */
+/* BEGIN GENERATED slot kinds by scripts/tools/generate-node-kinds.mjs; edit the node-kind schemas instead. */
 /* clang-format off */
 static const char *const S_slot_name[] = {
     "none",

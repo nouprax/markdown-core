@@ -11,7 +11,7 @@ fail() {
 
 shell_value() {
     awk -F= -v key="$1" '$1 == key { print substr($0, length(key) + 2); exit }' \
-        scripts/tooling/setup-environment.sh
+        scripts/tools/setup-environment.sh
 }
 
 toml_value() {
@@ -179,12 +179,12 @@ grep -Fq 'platform: macOS' .github/workflows/ci.yml || fail "CI does not validat
     fail "CI must validate exactly the iOS 26.0 and macOS 26.0 deployment floors"
 
 expect_equal "SwiftLint installer" "$swiftlint_version" \
-    "$(sed -n 's/^VERSION="\([^"]*\)"/\1/p' scripts/tooling/install-swiftlint.sh)"
+    "$(sed -n 's/^VERSION="\([^"]*\)"/\1/p' scripts/tools/install-swiftlint.sh)"
 expect_equal "SwiftLint runner" "$swiftlint_version" \
-    "$(sed -n 's/^VERSION="\([^"]*\)"/\1/p' scripts/tooling/lint-swift.sh)"
+    "$(sed -n 's/^VERSION="\([^"]*\)"/\1/p' scripts/tools/lint-swift.sh)"
 expect_equal "clang-format installer" "$clang_format_version" \
-    "$(sed -n 's/^VERSION="\([^"]*\)"/\1/p' scripts/tooling/install-clang-format.sh)"
+    "$(sed -n 's/^VERSION="\([^"]*\)"/\1/p' scripts/tools/install-clang-format.sh)"
 expect_equal "clang-format runner" "$clang_format_version" \
-    "$(sed -n 's/^EXPECTED_VERSION="\([^"]*\)"/\1/p' scripts/tooling/format-c.sh)"
+    "$(sed -n 's/^EXPECTED_VERSION="\([^"]*\)"/\1/p' scripts/tools/format-c.sh)"
 
 printf 'Toolchain declarations are consistent (Swift %s, iOS/macOS 26).\n' "$swift_version"

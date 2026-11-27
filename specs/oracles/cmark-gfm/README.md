@@ -65,7 +65,7 @@ reproducing, so a fix upstream cannot pass unnoticed).
 ## Running it
 
 ```sh
-scripts/tooling/setup-environment.sh --install oracle-cmark-gfm # build the pinned oracle
+scripts/tools/setup-environment.sh --install oracle-cmark-gfm # build the pinned oracle
 pnpm build:c
 pnpm check:gfm-parity                                  # add -- --verbose for every diff
 ```

@@ -127,7 +127,7 @@ test -x scripts/benchmark/run.mjs
 grep -Fq 'name: Benchmark' "$benchmark"
 grep -Fq 'node scripts/benchmark/run.mjs' "$benchmark"
 grep -Fq 'install --no-install-recommends --yes valgrind' "$benchmark"
-grep -Fq 'scripts/tooling/setup-environment.sh --install oracle-cmark' "$benchmark"
+grep -Fq 'scripts/tools/setup-environment.sh --install oracle-cmark' "$benchmark"
 # Measurement executes PR code with read-only permissions; only the independent
 # default-branch publisher can write comments. Behavioral tests cover that split.
 if grep -Eq '^[[:space:]]+(pull-requests|issues|contents):[[:space:]]+write$' "$benchmark"; then
@@ -382,23 +382,23 @@ fi
 # to the immutable commit of its release tag, and the Python tool venvs to
 # hash-locked requirements so an index-side replacement cannot change the
 # bytes the tools run.
-grep -q 'EMSCRIPTEN_COMMIT=[0-9a-f]\{40\}' scripts/tooling/setup-environment.sh || {
+grep -q 'EMSCRIPTEN_COMMIT=[0-9a-f]\{40\}' scripts/tools/setup-environment.sh || {
     echo "setup-environment.sh must pin the emsdk commit" >&2
     exit 1
 }
-grep -Fq 'scripts/tooling/install-clang-format.sh' scripts/tooling/setup-environment.sh || {
+grep -Fq 'scripts/tools/install-clang-format.sh' scripts/tools/setup-environment.sh || {
     echo "setup-environment.sh must use the repository clang-format installer" >&2
     exit 1
 }
-grep -q -- '--require-hashes' scripts/tooling/install-clang-format.sh || {
+grep -q -- '--require-hashes' scripts/tools/install-clang-format.sh || {
     echo "install-clang-format.sh must install from hash-locked requirements" >&2
     exit 1
 }
-grep -Fq 'scripts/tooling/install-clang-format.sh' "$ci" || {
+grep -Fq 'scripts/tools/install-clang-format.sh' "$ci" || {
     echo "CI must use the repository clang-format installer" >&2
     exit 1
 }
-grep -q -- '--require-hashes' scripts/tooling/format-cmake.sh || {
+grep -q -- '--require-hashes' scripts/tools/format-cmake.sh || {
     echo "format-cmake.sh must install Python tools with --require-hashes" >&2
     exit 1
 }
@@ -413,7 +413,7 @@ for adapter in \
 done
 test -x scripts/build/create-kotlin-android-tests.sh
 test -x scripts/shared/run-kotlin-android-test-artifact.sh
-test -x scripts/tooling/prepare-swift-ios-simulator.sh
+test -x scripts/tools/prepare-swift-ios-simulator.sh
 for platform in c es kotlin swift; do
     test -x "scripts/build/create-${platform}-product.sh"
 done
@@ -447,7 +447,7 @@ grep -Fq 'publishes a test framework dependency' scripts/audit/check-maven-publi
 # below is the one that would have caught it.
 grep -Fq ':packages:kotlin-markdown-core:checkKotlinAbi' scripts/release/stage-maven-publications.sh
 grep -Fq '"${abi_tasks[@]}"' scripts/release/stage-maven-publications.sh
-scripts/tooling/run-gradle.sh --quiet :packages:kotlin-markdown-core:tasks --all |
+scripts/tools/run-gradle.sh --quiet :packages:kotlin-markdown-core:tasks --all |
     grep -Fq checkKotlinAbi ||
     {
         echo "stage-maven-publications.sh names checkKotlinAbi and the build defines no such task" >&2
@@ -616,7 +616,7 @@ if search '^        name:.*matrix\.(os|suite|compiler|shared|sanitizer|platform|
 fi
 
 oracle_job=$(job_body upstream-parity "$ci")
-grep -Fq 'scripts/tooling/setup-environment.sh --install oracle-cmark oracle-cmark-gfm' <<<"$oracle_job"
+grep -Fq 'scripts/tools/setup-environment.sh --install oracle-cmark oracle-cmark-gfm' <<<"$oracle_job"
 grep -Fq 'pnpm check:commonmark-parity' <<<"$oracle_job"
 grep -Fq 'pnpm check:gfm-parity' <<<"$oracle_job"
 grep -Fq 'pnpm check:mdast-parity' <<<"$oracle_job"

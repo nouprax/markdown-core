@@ -254,7 +254,7 @@ test("artifact identity binds proof text and source dependencies; corpus is dete
             "scripts/benchmark",
             "scripts/shared",
             "scripts/benchmark/run.mjs",
-            "scripts/tooling/setup-environment.sh",
+            "scripts/tools/setup-environment.sh",
             "packages/markdown-core/benchmarks/grammar-corpus.json",
             "packages/markdown-core/benchmarks/grammar-coverage.json",
             "docs/specs/dialect",

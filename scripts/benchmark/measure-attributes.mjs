@@ -257,12 +257,12 @@ function run(command, args, options = {}) {
 /* The pinned lexbor checkout, read from the same script that installs it so
  * this cannot measure a different one than the environment check passed on. */
 function pinnedLexbor() {
-    const script = fs.readFileSync(path.join(root, "scripts/tooling/setup-environment.sh"), "utf8");
+    const script = fs.readFileSync(path.join(root, "scripts/tools/setup-environment.sh"), "utf8");
     const version = /^LEXBOR_VERSION=(\S+)$/mu.exec(script)?.[1];
     const commit = /^LEXBOR_COMMIT=([0-9a-f]{40})$/mu.exec(script)?.[1];
-    if (!version || !commit) fail("scripts/tooling/setup-environment.sh does not pin lexbor");
+    if (!version || !commit) fail("scripts/tools/setup-environment.sh does not pin lexbor");
     const checkout = path.join(root, ".tools/lexbor", version);
-    const install = "scripts/tooling/setup-environment.sh --install oracle-lexbor";
+    const install = "scripts/tools/setup-environment.sh --install oracle-lexbor";
     if (!fs.existsSync(path.join(checkout, "source/lexbor/html/tokenizer.h"))) {
         fail(`the pinned lexbor baseline is not installed; run: ${install}`);
     }
@@ -285,7 +285,7 @@ function pinnedLexbor() {
  * lexbor is COMPILED HERE, from the pinned source, with the benchmark preset's
  * compiler and options.
  *
- * Linking an archive built by `scripts/tooling/setup-environment.sh` would have been
+ * Linking an archive built by `scripts/tools/setup-environment.sh` would have been
  * enough to produce a number, and the number would have been wrong in a way
  * nothing here could see: that build takes the host's default compiler and
  * `-DCMAKE_BUILD_TYPE=Release` and none of the profile's options, so the ratio
@@ -752,7 +752,7 @@ function markdownReport(report) {
 function main() {
     const options = parseArguments(process.argv.slice(2));
     if (spawnSync("valgrind", ["--version"], { encoding: "utf8" }).status !== 0) {
-        fail("valgrind is not available; run: scripts/tooling/setup-environment.sh --install callgrind");
+        fail("valgrind is not available; run: scripts/tools/setup-environment.sh --install callgrind");
     }
     const lexbor = pinnedLexbor();
     fs.mkdirSync(options.out, { recursive: true });

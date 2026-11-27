@@ -45,7 +45,7 @@ static const char OTHER[] = "vkwv";
 enum { SENTINEL_LENGTH = sizeof(SENTINEL) - 1 };
 
 /* The PROPERTIES a slot completes, by the kind of node that holds them
- * (the slot model of scripts/tooling/generate-node-kinds.mjs): any node's
+ * (the slot model of scripts/tools/generate-node-kinds.mjs): any node's
  * anchor and attributes, and the fields of the owners the model names. */
 static const char *const FIELDS[][2] = {
     {"", "anchor"},        {"", "attributes"},      {"Link", "dest"},          {"Embedded", "dest"},

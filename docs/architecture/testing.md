@@ -36,7 +36,7 @@ explicitly. There is no cross-host aggregate and no public stress task.
 | --- | --- | --- |
 | C | One CMake/CTest graph with presets and labels | `ctest --test-dir build/cmake -N`; `ctest --preset correctness -L spec`; `ctest --preset correctness -R pathological_backticks` |
 | Swift | SwiftPM correctness and conformance test targets; xcodebuild on iOS | `swift test list`; `swift test --filter`; xcodebuild `-only-testing` |
-| Kotlin | Gradle/KMP named platform tasks; instrumentation class selection on Android | `scripts/tooling/run-gradle.sh :packages:kotlin-markdown-core:tasks --group verification`; native `--tests` or runner arguments |
+| Kotlin | Gradle/KMP named platform tasks; instrumentation class selection on Android | `scripts/tools/run-gradle.sh :packages:kotlin-markdown-core:tasks --group verification`; native `--tests` or runner arguments |
 | ECMAScript | Package-native Node/browser correctness runner and separate conformance runner | `node packages/es-markdown-core/scripts/run-tests.mjs --list`; `--target` and `--suite`; Node `--test-name-pattern` |
 
 Root `pnpm` tasks map task families to execution platforms in one step. Do not

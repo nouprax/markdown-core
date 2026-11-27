@@ -123,7 +123,7 @@ enum {
 };
 
 /* The staged class table unicode_categories.inc defines, generated from
- * Unicode 17 by scripts/tooling/generate-unicode-categories.mjs: `pages` holds
+ * Unicode 17 by scripts/tools/generate-unicode-categories.mjs: `pages` holds
  * the offset in `blocks` of each run of 256 scalars' classes. Hidden: every
  * lookup is inline in the library's own code, which addresses the table
  * PC-relative instead of through the global offset table. */

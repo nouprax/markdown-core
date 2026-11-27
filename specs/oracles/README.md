@@ -18,7 +18,7 @@ policy that defines each comparison:
   and per-platform artifact digests for the explicitly selected Pandoc
   extension layer, including the shared attribute grammar and consumer model.
 
-lexbor is pinned in `scripts/tooling/setup-environment.sh` beside these and is NOT one
+lexbor is pinned in `scripts/tools/setup-environment.sh` beside these and is NOT one
 of them. It is a performance baseline for the attribute grammar — the reference
 half of `scripts/benchmark/measure-attributes.mjs` — so it registers no deltas, gates
 nothing, and no behaviour is judged against it. See

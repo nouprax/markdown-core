@@ -4,7 +4,7 @@
  *
  * The context query (docs/plans/2026-10-23-lsp-completion-engine.md, 3.1)
  * reports a slot as a slot kind and an owner kind, and the contract says
- * which owners each slot kind has (scripts/tooling/generate-node-kinds.mjs,
+ * which owners each slot kind has (scripts/tools/generate-node-kinds.mjs,
  * the slot model). Each owner's slot is read by its own scanner, so a pair
  * no example reaches is a scanner no test has seen report.
  *
@@ -22,7 +22,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { buildModel } from "../tooling/generate-node-kinds.mjs";
+import { buildModel } from "../tools/generate-node-kinds.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const read = (relative) => fs.readFileSync(path.join(root, relative), "utf8");

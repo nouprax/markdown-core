@@ -4,7 +4,7 @@ set -euo pipefail
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 . "$root/scripts/shared/discover-toolchain.sh"
 repository="$root/build/kotlin-consumer-repository"
-gradle="$root/scripts/tooling/run-gradle.sh"
+gradle="$root/scripts/tools/run-gradle.sh"
 property="-Dmaven.repo.local=$repository"
 maven_repository_arg=
 publish=true

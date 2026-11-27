@@ -28,7 +28,7 @@ classes="packages/kotlin-markdown-core/build/classes/kotlin/jvm/main"
 dump="packages/kotlin-markdown-core/api/jvm/kotlin-markdown-core.api"
 pinned="specs/kotlin/jvm-visible-surface.txt"
 
-"$root/scripts/tooling/run-gradle.sh" --quiet :packages:kotlin-markdown-core:jvmMainClasses >/dev/null
+"$root/scripts/tools/run-gradle.sh" --quiet :packages:kotlin-markdown-core:jvmMainClasses >/dev/null
 [ -d "$classes" ] || { echo "audit-kotlin-jvm-surface: no compiled JVM classes at $classes" >&2; exit 1; }
 [ -f "$dump" ] || { echo "audit-kotlin-jvm-surface: no ABI dump at $dump; run updateKotlinAbi" >&2; exit 1; }
 

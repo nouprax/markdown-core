@@ -90,4 +90,4 @@ distclean: clean
 # Maintenance-only source generation; the generated files are tracked, so
 # these never run during normal build or test.
 $(ELEMENTSDIR)/%_scanners.c: $(ELEMENTSDIR)/%_scanners.re $(ELEMENTSDIR)/scanner_common.re
-	scripts/tooling/check-generated-scanners.sh --write $<
+	scripts/tools/check-generated-scanners.sh --write $<

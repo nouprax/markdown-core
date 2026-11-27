@@ -23,7 +23,7 @@
  *
  * KIND LISTS ARE NOT CHECKED HERE. Every table that enumerates the kinds -- the
  * C enums, dispatch and name tables, the Kotlin and ES wire kinds -- is generated
- * from the contract by scripts/tooling/generate-node-kinds.mjs, whose --check
+ * from the contract by scripts/tools/generate-node-kinds.mjs, whose --check
  * gates staleness. The consumers written by hand over those generated lists
  * (the Kotlin wire decoder's `when`, the ES decoder's switch, the ES walker and
  * visitor mapped types, both dumpers' visitor conformance) are exhaustive by
@@ -42,7 +42,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { buildModel } from "../tooling/generate-node-kinds.mjs";
+import { buildModel } from "../tools/generate-node-kinds.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const read = (relative) => fs.readFileSync(path.join(root, relative), "utf8");

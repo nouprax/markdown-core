@@ -58,7 +58,7 @@ case "$mode" in
 esac
 
 cd "$root"
-scripts/tooling/run-gradle.sh "${common[@]}" "${abi_tasks[@]}" "${tasks[@]}"
+scripts/tools/run-gradle.sh "${common[@]}" "${abi_tasks[@]}" "${tasks[@]}"
 
 if [ "$mode" = macos-native ]; then
     jvm_jar=$(find packages/kotlin-markdown-core/build/libs -maxdepth 1 -type f \

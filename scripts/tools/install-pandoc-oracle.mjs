@@ -45,6 +45,6 @@ if (mode === "--install" && !fs.existsSync(binary)) {
 }
 if (!fs.existsSync(binary) || !version().startsWith(pin.versionPrefix))
     throw new Error(
-        `exact Pandoc ${pin.version} runner required; run scripts/tooling/setup-environment.sh --install oracle-pandoc`
+        `exact Pandoc ${pin.version} runner required; run scripts/tools/setup-environment.sh --install oracle-pandoc`
     );
 process.stdout.write(`ok: Pandoc ${pin.version}\n`);

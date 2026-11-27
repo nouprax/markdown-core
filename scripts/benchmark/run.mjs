@@ -610,12 +610,12 @@ function profileBuild() {
  * is refused instead, the way `setup-environment.sh --check` refuses it.
  */
 function pinnedCmark() {
-    const script = fs.readFileSync(path.join(root, "scripts/tooling/setup-environment.sh"), "utf8");
+    const script = fs.readFileSync(path.join(root, "scripts/tools/setup-environment.sh"), "utf8");
     const version = /^CMARK_VERSION=(.+)$/mu.exec(script)?.[1];
     const commit = /^CMARK_COMMIT=([0-9a-f]{40})$/mu.exec(script)?.[1];
-    if (!version || !commit) fail("scripts/tooling/setup-environment.sh does not pin cmark");
+    if (!version || !commit) fail("scripts/tools/setup-environment.sh does not pin cmark");
     const checkout = path.join(root, ".tools/cmark", version);
-    const install = "scripts/tooling/setup-environment.sh --install oracle-cmark";
+    const install = "scripts/tools/setup-environment.sh --install oracle-cmark";
     if (!fs.existsSync(path.join(checkout, "src/cmark.h"))) {
         fail(`the pinned cmark oracle is not installed; run: ${install}`);
     }
@@ -638,12 +638,12 @@ function pinnedCmark() {
 /* The pinned GFM oracle, located exactly as cmark is: the pin lives in
  * setup-environment.sh and this reads it rather than keeping a second copy. */
 function pinnedCmarkGfm() {
-    const script = fs.readFileSync(path.join(root, "scripts/tooling/setup-environment.sh"), "utf8");
+    const script = fs.readFileSync(path.join(root, "scripts/tools/setup-environment.sh"), "utf8");
     const version = /^CMARK_GFM_VERSION=(.+)$/mu.exec(script)?.[1];
     const commit = /^CMARK_GFM_COMMIT=([0-9a-f]{40})$/mu.exec(script)?.[1];
-    if (!version || !commit) fail("scripts/tooling/setup-environment.sh does not pin cmark-gfm");
+    if (!version || !commit) fail("scripts/tools/setup-environment.sh does not pin cmark-gfm");
     const checkout = path.join(root, ".tools/cmark-gfm", version);
-    const install = "scripts/tooling/setup-environment.sh --install oracle-cmark-gfm";
+    const install = "scripts/tools/setup-environment.sh --install oracle-cmark-gfm";
     if (!fs.existsSync(path.join(checkout, "src/cmark-gfm.h"))) {
         fail(`the pinned cmark-gfm oracle is not installed; run: ${install}`);
     }

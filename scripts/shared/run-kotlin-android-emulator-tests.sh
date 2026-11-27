@@ -2,7 +2,7 @@
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-gradle="$root/scripts/tooling/run-gradle.sh"
+gradle="$root/scripts/tools/run-gradle.sh"
 
 mode=${1:-}
 device=${2:-all}

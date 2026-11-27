@@ -21,7 +21,7 @@ test("each class is numbered densely from 1 in schema order", () => {
 
 test("every committed output is what the schemas generate", () => {
     for (const [relative, text] of outputs(buildModel(contract(), native()), read)) {
-        assert.equal(read(relative), text, `${relative} is stale; run scripts/tooling/generate-node-kinds.mjs`);
+        assert.equal(read(relative), text, `${relative} is stale; run scripts/tools/generate-node-kinds.mjs`);
     }
 });
 

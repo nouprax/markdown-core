@@ -10,7 +10,7 @@ and traversal. The node table below is checked against that inventory by
 Each kind's `ordinal` in the contract is its wire number: the value of
 `markdown_core_node_kind` and of the JNI and ECMAScript wire kinds. A new kind
 takes the next ordinal, because renumbering one renumbers every binding.
-`scripts/tooling/generate-node-kinds.mjs` generates every table that
+`scripts/tools/generate-node-kinds.mjs` generates every table that
 enumerates kinds from the contract and from
 `packages/markdown-core/node-types.json`, the native types that report them.
 
@@ -454,7 +454,7 @@ the slot kinds, each with its `ordinal`, which is its value in
 next ordinal. A field's `slots` names the kinds of the slots its source
 writes, in source order: a URL destination writes its path, then its
 fragment, and a properties member its name, then its value.
-`scripts/tooling/generate-node-kinds.mjs` generates every table that
+`scripts/tools/generate-node-kinds.mjs` generates every table that
 enumerates slot kinds from the contract, and C answers a kind's name through
 `markdown_core_slot_kind_name`.
 

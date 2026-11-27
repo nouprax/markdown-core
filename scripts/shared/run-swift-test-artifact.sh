@@ -18,7 +18,7 @@ run_ios_suite() {
     local destination
     local udid
     local status=0
-    destination=$(scripts/tooling/prepare-swift-ios-simulator.sh)
+    destination=$(scripts/tools/prepare-swift-ios-simulator.sh)
     udid=${destination##*=}
     xcodebuild test-without-building \
         -scheme swift-markdown-core-Package \

@@ -12,7 +12,7 @@ entry points; CI, CMake and Gradle invoke the same implementations directly.
 | `correctness/` | External parser parity, composition checks and differential fuzzing. |
 | `release/` | Validate, stage, sign and publish release artifacts. |
 | `shared/` | Modules and artifact runners used by multiple responsibilities. |
-| `tooling/` | Toolchain setup, generators, formatting, linting and local gate orchestration. |
+| `tools/` | Toolchain setup, generators, formatting, linting and local gate orchestration. |
 
 Executable names use an action followed by its object in lowercase kebab-case:
 `audit/check-ci-policy.sh`, `build/create-c-product.sh`,
