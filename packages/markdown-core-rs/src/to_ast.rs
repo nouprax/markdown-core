@@ -29,7 +29,7 @@ use core::str;
 /// Build the document of `bytes` from its `events`.
 pub fn compile(events: &[Event], bytes: &[u8]) -> Node {
     let mut compiler = Compiler::new(events, bytes);
-    let content = compiler.blocks(0, events.len());
+    let content = compiler.block_range(0, events.len());
     let mut document = Node::new(
         Kind::Document {
             metadata: None,
@@ -37,7 +37,7 @@ pub fn compile(events: &[Event], bytes: &[u8]) -> Node {
         },
         vec![Span::new(0, line_start_before_end(bytes))],
     );
-    name_headings(&mut document);
+    anchor_headings(&mut document);
     document
 }
 
@@ -66,10 +66,10 @@ struct Compiler<'a> {
     /// Whether a table cell's content is being compiled, where `\|` in
     /// code is a pipe.
     cell: bool,
-    /// The paragraph whose block identifier names the list item around it.
-    lend: Option<usize>,
-    /// The identifier that paragraph lent.
-    lent: Option<String>,
+    /// The paragraph whose block identifier is the anchor of the list item around it.
+    item_paragraph: Option<usize>,
+    /// The anchor that paragraph gives the list item.
+    item_anchor: Option<String>,
 }
 
 /// Text read in an inline content list and not yet a node.
@@ -126,8 +126,8 @@ impl<'a> Compiler<'a> {
             exits,
             holes,
             cell: false,
-            lend: None,
-            lent: None,
+            item_paragraph: None,
+            item_anchor: None,
         }
     }
 
@@ -284,11 +284,11 @@ impl<'a> Compiler<'a> {
 
     // Blocks.
 
-    fn blocks(&mut self, from: usize, to: usize) -> Vec<Node> {
+    fn block_range(&mut self, from: usize, to: usize) -> Vec<Node> {
         let mut nodes = vec![];
         for index in self.children(from, to) {
             if self.name(index) == Name::BlockIdentifierLine {
-                if let Some(node) = self.identifier_line(index, nodes.last_mut()) {
+                if let Some(node) = self.anchor_line(index, nodes.last_mut()) {
                     nodes.push(node);
                 }
                 continue;
@@ -301,8 +301,8 @@ impl<'a> Compiler<'a> {
     }
 
     /// The blocks inside the container at `index`.
-    fn contained(&mut self, index: usize) -> Vec<Node> {
-        self.blocks(index + 1, self.exits[index])
+    fn block_content(&mut self, index: usize) -> Vec<Node> {
+        self.block_range(index + 1, self.exits[index])
     }
 
     fn block(&mut self, index: usize) -> Option<Node> {
@@ -317,7 +317,7 @@ impl<'a> Compiler<'a> {
                     .child(index, Name::HeadingAtxSequence)
                     .map_or(1, |sequence| self.text(sequence).len());
                 let content = match self.child(index, Name::HeadingAtxText) {
-                    Some(text) => self.inlines(text),
+                    Some(text) => self.content(text),
                     None => vec![],
                 };
                 Node::new(
@@ -334,7 +334,7 @@ impl<'a> Compiler<'a> {
                     _ => 1,
                 };
                 let content = match self.child(index, Name::HeadingSetextText) {
-                    Some(text) => self.inlines(text),
+                    Some(text) => self.content(text),
                     None => vec![],
                 };
                 Node::new(
@@ -348,8 +348,8 @@ impl<'a> Compiler<'a> {
                     .unwrap_or_else(|| self.end(index));
                 Node::new(Kind::ThematicBreak, self.runs(self.lead(index), end))
             }
-            Block::CodeIndented => self.code_indented(index),
-            Block::CodeFenced => self.code_fenced(index),
+            Block::CodeIndented => self.code_block_indented(index),
+            Block::CodeFenced => self.code_block_fenced(index),
             Block::Comment => Node::new(
                 Kind::Comment {
                     literal: self.fenced_literal(index, Name::CommentFence, Name::CommentChunk),
@@ -357,8 +357,8 @@ impl<'a> Compiler<'a> {
                 self.runs(self.lead(index), self.last(index).1),
             ),
             Block::HtmlFlow => {
-                let literal = self.lines(index, Name::HtmlFlowData);
-                let kind = match html_comment_block(&literal) {
+                let literal = self.literal_lines(index, Name::HtmlFlowData);
+                let kind = match comment_block_literal(&literal) {
                     Some(inner) => Kind::Comment {
                         literal: inner.to_string(),
                     },
@@ -368,7 +368,7 @@ impl<'a> Compiler<'a> {
             }
             Block::Quote => {
                 let runs = Self::whole(self.lead(index), self.end(index));
-                let content = self.contained(index);
+                let content = self.block_content(index);
                 let (variant, collapsed, title) = match self.child(index, Name::Callout) {
                     Some(header) => self.callout(header),
                     None => (None, None, None),
@@ -384,7 +384,7 @@ impl<'a> Compiler<'a> {
                 )
             }
             Block::List => self.list(index),
-            Block::Definition => self.definition(index),
+            Block::Definition => self.reference(index),
             Block::Table => self.table(index),
             Block::Footnote => {
                 let label = self
@@ -395,7 +395,7 @@ impl<'a> Compiler<'a> {
                 let (last, content_end) = self.last(index);
                 let end = self.blank_tail(last).unwrap_or(content_end);
                 let runs = Self::whole(self.lead(index), end);
-                let content = self.contained(index);
+                let content = self.block_content(index);
                 Node::new(Kind::Footnote { label, content }, runs)
             }
             Block::Formula => {
@@ -409,7 +409,7 @@ impl<'a> Compiler<'a> {
             }
             // Frontmatter compiles with the dialect’s properties, which are
             // not ported yet; an identifier line with the block before it,
-            // by `blocks`.
+            // by `block_range`.
             Block::Frontmatter | Block::Identifier => return None,
         };
         Some(node)
@@ -418,24 +418,24 @@ impl<'a> Compiler<'a> {
     /// The identifier line at `index`: it names `owner`, a list, callout
     /// or table without a name and after a blank line, and its source then
     /// ends with the line; otherwise it is a paragraph of its text.
-    fn identifier_line(&mut self, index: usize, owner: Option<&mut Node>) -> Option<Node> {
+    fn anchor_line(&mut self, index: usize, owner: Option<&mut Node>) -> Option<Node> {
         let identifier = self.child(index, Name::BlockIdentifier)?;
         let text = self.text(identifier);
         let (start, end) = (self.start(identifier), self.end(identifier));
         let runs = self.runs(start, end);
         // The line the item starts on names the item: it is an empty
         // paragraph.
-        if self.lend == Some(index) {
-            self.lend = None;
-            self.lent = Some(text[1..text.len() - 1].to_string());
+        if self.item_paragraph == Some(index) {
+            self.item_paragraph = None;
+            self.item_anchor = Some(text[1..text.len() - 1].to_string());
             return Some(Node::new(Kind::Paragraph { content: vec![] }, runs));
         }
         if let Some(owner) = owner {
-            let kind = matches!(
+            let trailed = matches!(
                 owner.kind,
                 Kind::List { .. } | Kind::Callout { .. } | Kind::Table { .. }
             );
-            if kind && owner.anchor.is_none() && self.blank_before(start) {
+            if trailed && owner.anchor.is_none() && self.blank_before(start) {
                 owner.anchor = Some(text[1..text.len() - 1].to_string());
                 // The last run goes on to the end of the identifier: less
                 // the prefixes of the containers on the way for a table,
@@ -498,14 +498,14 @@ impl<'a> Compiler<'a> {
                 start = self.events[from].point.index;
             }
         }
-        let mut content = self.inline_range(from, self.exits[index], true);
+        let mut content = self.content_range(from, self.exits[index], true);
         let mut anchor = None;
         if let Some(identifier) = self.child(index, Name::BlockIdentifier) {
             let text = self.text(identifier);
-            let name = text[1..text.len() - 1].to_string();
-            if self.lend == Some(index) {
-                self.lend = None;
-                self.lent = Some(name);
+            let id = text[1..text.len() - 1].to_string();
+            if self.item_paragraph == Some(index) {
+                self.item_paragraph = None;
+                self.item_anchor = Some(id);
             } else if self.children(from, self.exits[index]).iter().all(|child| {
                 matches!(
                     self.name(*child),
@@ -520,7 +520,7 @@ impl<'a> Compiler<'a> {
                     self.runs(self.start(identifier), self.end(identifier)),
                 ));
             } else {
-                anchor = Some(name);
+                anchor = Some(id);
             }
         }
         let mut node = Node::new(
@@ -541,12 +541,12 @@ impl<'a> Compiler<'a> {
             .map(|part| self.text(part) == "-");
         let title = self
             .child(index, Name::CalloutTitle)
-            .map(|part| self.inlines(part))
+            .map(|part| self.content(part))
             .filter(|nodes| !nodes.is_empty());
         (variant, collapsed, title)
     }
 
-    fn lines(&self, index: usize, data: Name) -> String {
+    fn literal_lines(&self, index: usize, data: Name) -> String {
         let mut literal = String::new();
         let mut line = String::new();
         let mut open = false;
@@ -569,8 +569,8 @@ impl<'a> Compiler<'a> {
         literal
     }
 
-    fn code_indented(&self, index: usize) -> Node {
-        let mut literal = self.lines(index, Name::CodeFlowChunk);
+    fn code_block_indented(&self, index: usize) -> Node {
+        let mut literal = self.literal_lines(index, Name::CodeFlowChunk);
         // Blank lines at the end are not the code's.
         while literal.ends_with('\n') {
             let body = &literal[..literal.len() - 1];
@@ -608,7 +608,7 @@ impl<'a> Compiler<'a> {
         )
     }
 
-    fn code_fenced(&self, index: usize) -> Node {
+    fn code_block_fenced(&self, index: usize) -> Node {
         let mut info = None;
         if let Some(open) = self.child(index, Name::CodeFencedFence) {
             let parts: Vec<usize> = self
@@ -714,7 +714,7 @@ impl<'a> Compiler<'a> {
                     }
                 }
             }
-            items.push(self.item(child));
+            items.push(self.list_item(child));
         }
         let start = items.first().map_or(self.start(index), Node::start);
         let end = items.last().map_or(self.end(index), Node::end).max(
@@ -748,7 +748,7 @@ impl<'a> Compiler<'a> {
         )
     }
 
-    fn item(&mut self, index: usize) -> Node {
+    fn list_item(&mut self, index: usize) -> Node {
         let (last, content_end) = self.last(index);
         // An item with no content is closed by the blank line after it.
         let end = if self.name(last) == Name::ListItemPrefix {
@@ -757,7 +757,7 @@ impl<'a> Compiler<'a> {
             self.blank_tail(last).unwrap_or(content_end)
         };
         let runs = Self::whole(self.lead(index), end);
-        let marker = self.task(index);
+        let marker = self.marker(index);
         // The block identifier on the first line of its first paragraph names
         // the item.
         let first = self
@@ -775,18 +775,18 @@ impl<'a> Compiler<'a> {
                     self.events[identifier].point.line == line
                 });
             if named {
-                self.lend = Some(first);
+                self.item_paragraph = Some(first);
             }
         }
-        let content = self.contained(index);
+        let content = self.block_content(index);
         let mut node = Node::new(Kind::ListItem { marker, content }, runs);
-        node.anchor = self.lent.take();
+        node.anchor = self.item_anchor.take();
         node
     }
 
     /// The task marker of the list item at `index`: the check its first
     /// paragraph starts with.
-    fn task(&self, index: usize) -> Option<String> {
+    fn marker(&self, index: usize) -> Option<String> {
         let paragraph = self.inside(index).into_iter().find(|child| {
             !between(self.name(*child)) && self.name(*child) != Name::ListItemPrefix
         })?;
@@ -808,7 +808,7 @@ impl<'a> Compiler<'a> {
             .map(|value| self.text(value).to_string())
     }
 
-    fn definition(&self, index: usize) -> Node {
+    fn reference(&self, index: usize) -> Node {
         let label = self
             .child(index, Name::DefinitionLabel)
             .and_then(|label| self.child(label, Name::DefinitionLabelText))
@@ -816,7 +816,7 @@ impl<'a> Compiler<'a> {
             .unwrap_or_default();
         let dest = self
             .child(index, Name::DefinitionDestination)
-            .map(|dest| self.destination(dest))
+            .map(|dest| self.dest(dest))
             .unwrap_or_default();
         let title = self.child(index, Name::DefinitionTitle).map(|title| {
             self.child(title, Name::DefinitionTitleText)
@@ -834,7 +834,7 @@ impl<'a> Compiler<'a> {
     }
 
     /// The decoded string of a definition or resource destination.
-    fn destination(&self, index: usize) -> String {
+    fn dest(&self, index: usize) -> String {
         if matches!(
             self.name(index),
             Name::DefinitionDestinationText | Name::ResourceDestinationText
@@ -851,7 +851,7 @@ impl<'a> Compiler<'a> {
                     | Name::ResourceDestinationRaw
                     | Name::ResourceDestinationText
             ) {
-                return self.destination(child);
+                return self.dest(child);
             }
         }
         String::new()
@@ -869,7 +869,7 @@ impl<'a> Compiler<'a> {
             };
             for row in self.inside(child) {
                 if self.name(row) == Name::TableRow {
-                    into.push(self.row(row, columns.len()));
+                    into.push(self.table_row(row, columns.len()));
                 }
             }
         }
@@ -883,7 +883,7 @@ impl<'a> Compiler<'a> {
         )
     }
 
-    fn row(&mut self, index: usize, width: usize) -> Node {
+    fn table_row(&mut self, index: usize, columns: usize) -> Node {
         let mut cells = vec![];
         for child in self.inside(index) {
             if self.name(child) != Name::TableCell {
@@ -891,7 +891,7 @@ impl<'a> Compiler<'a> {
             }
             self.cell = true;
             let content = match self.child(child, Name::TableCellText) {
-                Some(text) => self.inlines(text),
+                Some(text) => self.content(text),
                 None => vec![],
             };
             self.cell = false;
@@ -915,13 +915,13 @@ impl<'a> Compiler<'a> {
         // A missing cell takes the last byte of its row.
         let end = self.end(index);
         let start = end.saturating_sub(1).max(self.start(index));
-        while cells.len() < width {
+        while cells.len() < columns {
             cells.push(Node::new(
                 Kind::TableCell { content: vec![] },
                 vec![Span::new(start, end)],
             ));
         }
-        cells.truncate(width);
+        cells.truncate(columns);
         Node::new(Kind::TableRow { cells }, self.runs(self.lead(index), end))
     }
 
@@ -943,7 +943,7 @@ impl<'a> Compiler<'a> {
                         index = self.exits[index];
                     }
                     Name::CharacterReference => {
-                        value.push_str(&self.reference(index));
+                        value.push_str(&self.character_reference(index));
                         index = self.exits[index];
                     }
                     _ => {}
@@ -955,7 +955,7 @@ impl<'a> Compiler<'a> {
     }
 
     /// The decoded value of a character reference.
-    fn reference(&self, index: usize) -> String {
+    fn character_reference(&self, index: usize) -> String {
         let mut marker = b'&';
         let mut value = "";
         for child in self.inside(index) {
@@ -971,19 +971,18 @@ impl<'a> Compiler<'a> {
 
     // Inlines.
 
-    /// The inline content inside the token at `index`.
     /// The inline content of the block content token at `index`.
-    fn inlines(&mut self, index: usize) -> Vec<Node> {
-        self.inline_range(index + 1, self.exits[index], true)
+    fn content(&mut self, index: usize) -> Vec<Node> {
+        self.content_range(index + 1, self.exits[index], true)
     }
 
     /// The inline content of the inline token at `index`: a label or a
     /// part, which keeps the whitespace at its end.
-    fn phrase(&mut self, index: usize) -> Vec<Node> {
-        self.inline_range(index + 1, self.exits[index], false)
+    fn label_content(&mut self, index: usize) -> Vec<Node> {
+        self.content_range(index + 1, self.exits[index], false)
     }
 
-    fn inline_range(&mut self, from: usize, to: usize, trim: bool) -> Vec<Node> {
+    fn content_range(&mut self, from: usize, to: usize, trim: bool) -> Vec<Node> {
         let mut nodes = vec![];
         let mut draft: Option<Draft> = None;
         let mut hard = false;
@@ -1016,7 +1015,7 @@ impl<'a> Compiler<'a> {
                     );
                 }
                 Role::Inline(Inline::CharacterReference) => {
-                    let literal = self.reference(index);
+                    let literal = self.character_reference(index);
                     push_text(
                         &mut draft,
                         self.start(index),
@@ -1106,33 +1105,33 @@ impl<'a> Compiler<'a> {
         };
         let kind = match inline {
             Inline::Emphasis => Kind::Emphasis {
-                content: self.part(index, Name::EmphasisText),
+                content: self.part_content(index, Name::EmphasisText),
             },
             Inline::Strong => Kind::Strong {
-                content: self.part(index, Name::StrongText),
+                content: self.part_content(index, Name::StrongText),
             },
             Inline::Strikethrough => Kind::Strikethrough {
-                content: self.part(index, Name::StrikethroughText),
+                content: self.part_content(index, Name::StrikethroughText),
             },
             Inline::Insertion => Kind::Insertion {
-                content: self.part(index, Name::InsertionText),
+                content: self.part_content(index, Name::InsertionText),
             },
             Inline::Mark => Kind::Mark {
-                content: self.part(index, Name::MarkText),
+                content: self.part_content(index, Name::MarkText),
             },
             Inline::Subscript => Kind::Subscript {
-                content: self.part(index, Name::SubscriptText),
+                content: self.part_content(index, Name::SubscriptText),
             },
             Inline::Superscript => Kind::Superscript {
-                content: self.part(index, Name::SuperscriptText),
+                content: self.part_content(index, Name::SuperscriptText),
             },
             Inline::CodeText => Kind::Code {
                 literal: self.code(index, Name::CodeTextData),
             },
             Inline::Formula => self.formula(index),
             Inline::HtmlText => {
-                let literal = self.merged(index, Name::HtmlTextData);
-                match html_comment(&literal) {
+                let literal = self.merged_literal(index, Name::HtmlTextData);
+                match comment_literal(&literal) {
                     Some(inner) => Kind::Comment {
                         literal: inner.to_string(),
                     },
@@ -1140,7 +1139,7 @@ impl<'a> Compiler<'a> {
                 }
             }
             Inline::Comment => {
-                let literal = self.merged(index, Name::CommentText);
+                let literal = self.merged_literal(index, Name::CommentText);
                 Kind::Comment {
                     // In a table cell, an escaped pipe is the cell's.
                     literal: if self.cell {
@@ -1196,7 +1195,7 @@ impl<'a> Compiler<'a> {
                     content: vec![Node::new(Kind::Text { literal }, runs.clone())],
                 }
             }
-            Inline::Media => self.media(index),
+            Inline::Media => self.link(index),
             Inline::CrossLink => self.cross_link(index),
             Inline::Topic => Kind::Topic {
                 name: self
@@ -1228,7 +1227,7 @@ impl<'a> Compiler<'a> {
                     .and_then(|label| self.child(label, Name::LabelText));
                 let (content, inner) = match text {
                     Some(text) => (
-                        self.phrase(text),
+                        self.label_content(text),
                         self.runs(self.start(text), self.end(text)),
                     ),
                     None => (vec![], runs.clone()),
@@ -1252,7 +1251,7 @@ impl<'a> Compiler<'a> {
                     citations: vec![citation],
                 }
             }
-            // Text, compiled by `inline_range`.
+            // Text, compiled by `content_range`.
             Inline::Data
             | Inline::CharacterEscape
             | Inline::CharacterReference
@@ -1263,7 +1262,7 @@ impl<'a> Compiler<'a> {
     }
 
     /// The `data` and line endings inside the token at `index`, in order.
-    fn merged(&self, index: usize, data: Name) -> String {
+    fn merged_literal(&self, index: usize, data: Name) -> String {
         let mut literal = String::new();
         for child in self.inside(index) {
             let name = self.name(child);
@@ -1275,9 +1274,9 @@ impl<'a> Compiler<'a> {
     }
 
     /// The inline content of the part `name` of the token at `index`.
-    fn part(&mut self, index: usize, name: Name) -> Vec<Node> {
+    fn part_content(&mut self, index: usize, name: Name) -> Vec<Node> {
         match self.child(index, name) {
-            Some(part) => self.phrase(part),
+            Some(part) => self.label_content(part),
             None => vec![],
         }
     }
@@ -1353,13 +1352,13 @@ impl<'a> Compiler<'a> {
 
     /// A cross link or a cross embed.
     fn cross_link(&self, index: usize) -> Kind {
-        let mut embed = false;
-        let mut whole = String::new();
+        let mut embedded = false;
+        let mut written = String::new();
         let mut label: Option<String> = None;
         for child in self.inside(index) {
             match self.name(child) {
-                Name::CrossLinkMarker if self.text(child).starts_with('!') => embed = true,
-                Name::CrossLinkDest => whole.push_str(self.text(child)),
+                Name::CrossLinkMarker if self.text(child).starts_with('!') => embedded = true,
+                Name::CrossLinkDest => written.push_str(self.text(child)),
                 Name::CrossLinkSeparator => label = Some(String::new()),
                 Name::CrossLinkLabel => {
                     label
@@ -1369,9 +1368,9 @@ impl<'a> Compiler<'a> {
                 _ => {}
             }
         }
-        let dest = match whole.find('#') {
+        let dest = match written.find('#') {
             Some(hash) => {
-                let anchor = &whole[hash + 1..];
+                let anchor = &written[hash + 1..];
                 // A block identifier: `^` and one part of letters, digits,
                 // and dashes.
                 let id = anchor.strip_prefix('^').filter(|id| {
@@ -1381,16 +1380,16 @@ impl<'a> Compiler<'a> {
                             .all(|code| code.is_ascii_alphanumeric() || code == b'-')
                 });
                 Destination::Cross {
-                    path: whole[..hash].to_string(),
+                    path: written[..hash].to_string(),
                     anchor: Some(id.unwrap_or(anchor).to_string()),
                 }
             }
             None => Destination::Cross {
-                path: whole,
+                path: written,
                 anchor: None,
             },
         };
-        if !embed {
+        if !embedded {
             return Kind::CrossLink { dest, label };
         }
         let mut dimensions = None;
@@ -1408,18 +1407,18 @@ impl<'a> Compiler<'a> {
     }
 
     /// A link or an image.
-    fn media(&mut self, index: usize) -> Kind {
+    fn link(&mut self, index: usize) -> Kind {
         let label = self.child(index, Name::Label);
         let text = label.and_then(|label| self.child(label, Name::LabelText));
         let content = match text {
-            Some(text) => self.phrase(text),
+            Some(text) => self.label_content(text),
             None => vec![],
         };
         let mut dest = Destination::Url(String::new());
         let mut title = None;
         if let Some(resource) = self.child(index, Name::Resource) {
             if let Some(found) = self.child(resource, Name::ResourceDestination) {
-                dest = Destination::Url(self.destination(found));
+                dest = Destination::Url(self.dest(found));
             }
             if let Some(found) = self.child(resource, Name::ResourceTitle) {
                 title = Some(
@@ -1456,7 +1455,6 @@ impl<'a> Compiler<'a> {
     }
 }
 
-/// Add text to the pending text.
 /// The dimensions at the end of the embed label `label`, after its last
 /// separator (`|` or `\|`) or as all of it, and the label before them.
 fn label_dimensions(label: &str) -> Option<(&str, Dimensions)> {
@@ -1500,7 +1498,7 @@ fn dimension(text: &str) -> Option<u32> {
 
 /// The body of the HTML comment `html`, if it is one: the bytes between
 /// `<!--` and `-->`, where `<!-->` and `<!--->` are empty.
-fn html_comment(html: &str) -> Option<&str> {
+fn comment_literal(html: &str) -> Option<&str> {
     let rest = html.strip_prefix("<!--")?;
     if rest == ">" || rest == "->" {
         Some("")
@@ -1511,7 +1509,7 @@ fn html_comment(html: &str) -> Option<&str> {
 
 /// The body of the HTML block `html`, if it holds one comment that its own
 /// `-->` closes, with only whitespace after that closer.
-fn html_comment_block(html: &str) -> Option<&str> {
+fn comment_block_literal(html: &str) -> Option<&str> {
     let html = html.trim_start_matches([' ', '\t']);
     if !html.starts_with("<!--") {
         return None;
@@ -1526,6 +1524,7 @@ fn html_comment_block(html: &str) -> Option<&str> {
     Some(if close < 4 { "" } else { &html[4..close] })
 }
 
+/// Add text to the pending text.
 fn push_text(draft: &mut Option<Draft>, start: usize, end: usize, literal: &str, written: bool) {
     let blank = literal.len() - literal.trim_end_matches([' ', '\t']).len();
     let text = draft.get_or_insert_with(|| Draft {
@@ -1566,27 +1565,27 @@ fn line_end(bytes: &[u8], index: usize) -> usize {
 
 /// Give every heading without an explicit anchor its automatic one, in
 /// source order, after every explicit anchor of the document is reserved.
-fn name_headings(document: &mut Node) {
+fn anchor_headings(document: &mut Node) {
     let mut taken = BTreeSet::new();
-    reserve(document, &mut taken);
-    assign(document, &mut taken);
+    reserve_anchors(document, &mut taken);
+    assign_anchors(document, &mut taken);
 }
 
-fn reserve(node: &Node, taken: &mut BTreeSet<String>) {
+fn reserve_anchors(node: &Node, taken: &mut BTreeSet<String>) {
     if let Some(anchor) = &node.anchor {
         taken.insert(anchor.clone());
     }
     for child in node.owned() {
-        reserve(child, taken);
+        reserve_anchors(child, taken);
     }
 }
 
-fn assign(node: &mut Node, taken: &mut BTreeSet<String>) {
+fn assign_anchors(node: &mut Node, taken: &mut BTreeSet<String>) {
     if node.anchor.is_none() {
         if let Kind::Heading { content, .. } = &node.kind {
             let mut base = String::new();
             for child in content {
-                flatten(child, &mut base);
+                anchor_text(child, &mut base);
             }
             if base.is_empty() {
                 base.push_str("section");
@@ -1602,7 +1601,7 @@ fn assign(node: &mut Node, taken: &mut BTreeSet<String>) {
         }
     }
     for child in node.owned_mut() {
-        assign(child, taken);
+        assign_anchors(child, taken);
     }
 }
 
@@ -1610,7 +1609,7 @@ fn assign(node: &mut Node, taken: &mut BTreeSet<String>) {
 const WHITESPACE: &[char] = &[' ', '\t', '\n', '\r'];
 
 /// The anchor projection of an inline node, appended to `base`.
-fn flatten(node: &Node, base: &mut String) {
+fn anchor_text(node: &Node, base: &mut String) {
     match &node.kind {
         Kind::Text { literal } | Kind::Code { literal } | Kind::Formula { literal, .. } => {
             base.push_str(&anchor(literal));
@@ -1643,12 +1642,12 @@ fn flatten(node: &Node, base: &mut String) {
                     match referent {
                         Referent::Bib { key, .. } => {
                             for child in prefix {
-                                flatten(child, base);
+                                anchor_text(child, base);
                             }
                             base.push_str(&anchor("@"));
                             base.push_str(&anchor(key));
                             for child in suffix {
-                                flatten(child, base);
+                                anchor_text(child, base);
                             }
                         }
                         Referent::Specimen { label } => {
@@ -1662,7 +1661,7 @@ fn flatten(node: &Node, base: &mut String) {
         }
         Kind::Directive {
             label: Some(label), ..
-        } => flatten(label, base),
+        } => anchor_text(label, base),
         Kind::Emphasis { content }
         | Kind::Strong { content }
         | Kind::Strikethrough { content }
@@ -1675,7 +1674,7 @@ fn flatten(node: &Node, base: &mut String) {
         | Kind::Embedded { content, .. }
         | Kind::DirectiveLabel { content } => {
             for child in content {
-                flatten(child, base);
+                anchor_text(child, base);
             }
         }
         _ => {}
