@@ -98,7 +98,7 @@ extension APISuite {
         let paragraph = try #require(document.content[1] as? Paragraph)
         let code = try #require(paragraph.content[0] as? Code)
         let link = try #require(paragraph.content[2] as? Link)
-        let image = try #require(paragraph.content[4] as? Embedded)
+        let image = try #require(paragraph.content[4] as? Embed)
         let reference = try #require(document.content[2] as? Reference)
         #expect(code.literal == "x" && code.attributes.classes == ["code"])
         #expect(try scope(of: code, in: document, source: source).end.column == 10)
@@ -150,11 +150,11 @@ extension APISuite {
         let document = try Document.parse(source)
         let inline = try #require(document.content[0] as? Paragraph)
         let links = inline.content.compactMap { $0 as? Link }
-        let embedded = try #require(inline.content.compactMap { $0 as? Embedded }.first)
+        let embed = try #require(inline.content.compactMap { $0 as? Embed }.first)
         let named = Destination.reference(label: "ref")
         #expect(links.map(\.dest) == [named, named, named, .url("/d")])
         #expect(links.map(\.title) == [nil, nil, nil, "t"])
-        #expect(embedded.dest == named && embedded.title == nil)
+        #expect(embed.dest == named && embed.title == nil)
         #expect(try document.dump(links[0], in: source).contains(" dest=reference(\"ref\") title=null "))
         // An unresolved reference stays literal text.
         let literal = try #require(try Document.parse("[missing]\n").content.first as? Paragraph)

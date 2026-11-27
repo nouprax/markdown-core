@@ -39,7 +39,7 @@
 #include "comment.h"
 #include "cross_link.h"
 #include "definition_list.h"
-#include "embedded.h"
+#include "embed.h"
 #include "footnote.h"
 #include "heading_state.h"
 #include "heading.h"
@@ -785,11 +785,11 @@ static const markdown_core_node_type node_types[] = {
     MARKDOWN_CORE_NODE_THEMATIC_BREAK, MARKDOWN_CORE_NODE_TEXT,       MARKDOWN_CORE_NODE_SOFT_BREAK,
     MARKDOWN_CORE_NODE_LINE_BREAK,     MARKDOWN_CORE_NODE_CODE,       MARKDOWN_CORE_NODE_HTML,
     MARKDOWN_CORE_NODE_COMMENT,        MARKDOWN_CORE_NODE_EMPHASIS,   MARKDOWN_CORE_NODE_STRONG,
-    MARKDOWN_CORE_NODE_LINK,           MARKDOWN_CORE_NODE_EMBEDDED};
+    MARKDOWN_CORE_NODE_LINK,           MARKDOWN_CORE_NODE_EMBED};
 static const char *const node_type_names[] = {
     "document",  "callout", "list",           "list_item", "code_block", "html_block", "comment_block",
     "paragraph", "heading", "thematic_break", "text",      "soft_break", "line_break", "code",
-    "html",      "comment", "emphasis",       "strong",    "link",       "embedded"};
+    "html",      "comment", "emphasis",       "strong",    "link",       "embed"};
 static const int num_node_types = sizeof(node_types) / sizeof(*node_types);
 
 static void test_md_paragraph_text(test_batch_runner *runner, const char *markdown, const char *expected_text,
@@ -819,16 +819,16 @@ static void node_type_values(test_batch_runner *runner) {
         MARKDOWN_CORE_NODE_TABLE_CELL,   MARKDOWN_CORE_NODE_FORMULA_BLOCK, MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK,
         MARKDOWN_CORE_NODE_COMMENT_BLOCK};
     static const markdown_core_node_type inline_types[] = {
-        MARKDOWN_CORE_NODE_TEXT,           MARKDOWN_CORE_NODE_SOFT_BREAK,
-        MARKDOWN_CORE_NODE_LINE_BREAK,     MARKDOWN_CORE_NODE_CODE,
-        MARKDOWN_CORE_NODE_HTML,           MARKDOWN_CORE_NODE_EMPHASIS,
-        MARKDOWN_CORE_NODE_STRONG,         MARKDOWN_CORE_NODE_LINK,
-        MARKDOWN_CORE_NODE_EMBEDDED,       MARKDOWN_CORE_NODE_CITE,
-        MARKDOWN_CORE_NODE_STRIKETHROUGH,  MARKDOWN_CORE_NODE_FORMULA,
-        MARKDOWN_CORE_NODE_DIRECTIVE,      MARKDOWN_CORE_NODE_DIRECTIVE_LABEL,
-        MARKDOWN_CORE_NODE_COMMENT,        MARKDOWN_CORE_NODE_CITATION,
-        MARKDOWN_CORE_NODE_CROSS_LINK,     MARKDOWN_CORE_NODE_MARK,
-        MARKDOWN_CORE_NODE_CROSS_EMBEDDED, MARKDOWN_CORE_NODE_INSERTION};
+        MARKDOWN_CORE_NODE_TEXT,          MARKDOWN_CORE_NODE_SOFT_BREAK,
+        MARKDOWN_CORE_NODE_LINE_BREAK,    MARKDOWN_CORE_NODE_CODE,
+        MARKDOWN_CORE_NODE_HTML,          MARKDOWN_CORE_NODE_EMPHASIS,
+        MARKDOWN_CORE_NODE_STRONG,        MARKDOWN_CORE_NODE_LINK,
+        MARKDOWN_CORE_NODE_EMBED,         MARKDOWN_CORE_NODE_CITE,
+        MARKDOWN_CORE_NODE_STRIKETHROUGH, MARKDOWN_CORE_NODE_FORMULA,
+        MARKDOWN_CORE_NODE_DIRECTIVE,     MARKDOWN_CORE_NODE_DIRECTIVE_LABEL,
+        MARKDOWN_CORE_NODE_COMMENT,       MARKDOWN_CORE_NODE_CITATION,
+        MARKDOWN_CORE_NODE_CROSS_LINK,    MARKDOWN_CORE_NODE_MARK,
+        MARKDOWN_CORE_NODE_CROSS_EMBED,   MARKDOWN_CORE_NODE_INSERTION};
 
     for (size_t i = 0; i < sizeof(block_types) / sizeof(*block_types); ++i) {
         INT_EQ(runner, block_types[i] & MARKDOWN_CORE_NODE_TYPE_MASK, MARKDOWN_CORE_NODE_TYPE_BLOCK,
@@ -1262,7 +1262,7 @@ void hierarchy(test_batch_runner *runner) {
                                   MARKDOWN_CORE_NODE_EMPHASIS,
                                   MARKDOWN_CORE_NODE_STRONG,
                                   MARKDOWN_CORE_NODE_LINK,
-                                  MARKDOWN_CORE_NODE_EMBEDDED,
+                                  MARKDOWN_CORE_NODE_EMBED,
                                   0};
 
     test_content(runner, MARKDOWN_CORE_NODE_DOCUMENT, top_level_blocks);
@@ -1284,7 +1284,7 @@ void hierarchy(test_batch_runner *runner) {
     test_content(runner, MARKDOWN_CORE_NODE_EMPHASIS, all_inlines);
     test_content(runner, MARKDOWN_CORE_NODE_STRONG, all_inlines);
     test_content(runner, MARKDOWN_CORE_NODE_LINK, all_inlines);
-    test_content(runner, MARKDOWN_CORE_NODE_EMBEDDED, all_inlines);
+    test_content(runner, MARKDOWN_CORE_NODE_EMBED, all_inlines);
 }
 
 static void test_content(test_batch_runner *runner, markdown_core_node_type type, unsigned int *allowed_content) {
@@ -2172,7 +2172,7 @@ static bool sweep_finish_kind_sets(markdown_core_dialect_builder *builder, void 
                 /* Exactly one namespace must claim the kind. This is checkable
                  * only because the declaration keeps the KIND: block and
                  * inline values collide once masked -- masked 12 is a TableRow
-                 * and an Embedded alike -- so a bit set reconstructed from a
+                 * and an Embed alike -- so a bit set reconstructed from a
                  * stored mask would agree with whichever namespace the reader
                  * already assumed, and a Formula written where a block kind
                  * belongs would pass. */
@@ -2527,7 +2527,7 @@ static void source_pos(test_batch_runner *runner) {
         "            └── Paragraph scope=9:6..10:0,10:6..10:20 anchor=null attributes={} children=3\n"
         "                ├── Text scope=9:6..9:15 anchor=null attributes={} literal=\"Yes, okay.\" children=0\n"
         "                ├── SoftBreak scope=9:16..10:0 anchor=null attributes={} children=0\n"
-        "                └── Embedded scope=10:6..10:20 anchor=null attributes={} dest=url(\"hi\") title=\"yes\" "
+        "                └── Embed scope=10:6..10:20 anchor=null attributes={} dest=url(\"hi\") title=\"yes\" "
         "dimensions=null "
         "children=1\n"
         "                    └── Text scope=10:8..10:9 anchor=null attributes={} literal=\"ok\" children=0\n",
@@ -2658,7 +2658,7 @@ static void link_resource_lifecycle(test_batch_runner *runner) {
      * another arm's bytes as a resource pointer. */
     markdown_core_node *paragraph = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
     markdown_core_node *link = markdown_core_node_new(MARKDOWN_CORE_NODE_LINK);
-    markdown_core_node *image = markdown_core_node_new(MARKDOWN_CORE_NODE_EMBEDDED);
+    markdown_core_node *image = markdown_core_node_new(MARKDOWN_CORE_NODE_EMBED);
     markdown_core_node *converted = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
 
     OK(runner, append_child(paragraph, link), "hand-built link joins a paragraph");
@@ -3918,7 +3918,7 @@ static void node_payload_lifecycle(test_batch_runner *runner) {
     INT_EQ(runner, sizeof(markdown_core_node_data), sizeof(void *),
            "all payload arms share one pointer-sized node slot");
     static const markdown_core_node_type extra_types[] = {
-        MARKDOWN_CORE_NODE_METADATA,      MARKDOWN_CORE_NODE_INSERTION,       MARKDOWN_CORE_NODE_CROSS_EMBEDDED,
+        MARKDOWN_CORE_NODE_METADATA,      MARKDOWN_CORE_NODE_INSERTION,       MARKDOWN_CORE_NODE_CROSS_EMBED,
         MARKDOWN_CORE_NODE_MARK,          MARKDOWN_CORE_NODE_CROSS_LINK,      MARKDOWN_CORE_NODE_CITE,
         MARKDOWN_CORE_NODE_CITATION,      MARKDOWN_CORE_NODE_FOOTNOTE,        MARKDOWN_CORE_NODE_SPECIMEN,
         MARKDOWN_CORE_NODE_TABLE,         MARKDOWN_CORE_NODE_TABLE_ROW,       MARKDOWN_CORE_NODE_TABLE_CELL,
@@ -3968,7 +3968,7 @@ static void node_payload_lifecycle(test_batch_runner *runner) {
     INT_EQ(runner, markdown_core_node_set_kind(text, parent, MARKDOWN_CORE_NODE_TEXT), MARKDOWN_CORE_NODE_SET_KIND_OK,
            "setting the current kind preserves its data without allocation");
     INT_EQ(runner, payload_allocations + 1, payload_fail_at, "setting the current kind allocates nothing");
-    INT_EQ(runner, markdown_core_node_set_kind(text, parent, MARKDOWN_CORE_NODE_CROSS_EMBEDDED),
+    INT_EQ(runner, markdown_core_node_set_kind(text, parent, MARKDOWN_CORE_NODE_CROSS_EMBED),
            MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED, "conversion reports replacement allocation failure");
     OK(runner,
        text->kind == MARKDOWN_CORE_NODE_TEXT && text->as.literal == original_payload && child_at(parent, 0) == text,
@@ -4019,7 +4019,7 @@ static void node_payload_lifecycle(test_batch_runner *runner) {
     payload_fail_at = payload_allocations + 1;
     before = payload_live;
     OK(runner,
-       markdown_core_node_set_kind(cite, parent, MARKDOWN_CORE_NODE_CROSS_EMBEDDED) ==
+       markdown_core_node_set_kind(cite, parent, MARKDOWN_CORE_NODE_CROSS_EMBED) ==
                MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED &&
            child_at(cite, 0) == item && child_at(item->as.citation->prefix, 0) == prefix,
        "failed retyping preserves children and node-valued fields");
@@ -4052,25 +4052,25 @@ static void kind_conversion_reuses_cell_storage(test_batch_runner *runner) {
         OK(runner, node->as.data == cell_record && !node->node_data_allocation && !node->as.link->resource,
            "inline replacement reuses the original record address with new defaults");
         INT_EQ(runner, payload_allocations, attempts, "inline replacement makes no allocator call");
-        INT_EQ(runner, markdown_core_node_set_kind(node, parent, MARKDOWN_CORE_NODE_CROSS_EMBEDDED),
+        INT_EQ(runner, markdown_core_node_set_kind(node, parent, MARKDOWN_CORE_NODE_CROSS_EMBED),
                MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED, "external replacement can still fail atomically");
         OK(runner, node->kind == MARKDOWN_CORE_NODE_LINK && node->as.data == cell_record && child_at(parent, 0) == node,
            "failed external replacement retains the inline record and tree links");
 
         payload_fail_at = 0;
-        INT_EQ(runner, markdown_core_node_set_kind(node, parent, MARKDOWN_CORE_NODE_CROSS_EMBEDDED),
+        INT_EQ(runner, markdown_core_node_set_kind(node, parent, MARKDOWN_CORE_NODE_CROSS_EMBED),
                MARKDOWN_CORE_NODE_SET_KIND_OK, "a record exceeding capacity obtains external storage");
         void *external = node->node_data_allocation;
         OK(runner, external && node->as.data == external && external != cell_record,
            "external allocation ownership is explicit");
-        OK(runner, markdown_core_chunk_set_cstr(&node->as.cross_embedded->reference.path, "owned path"),
+        OK(runner, markdown_core_chunk_set_cstr(&node->as.cross_embed->reference.path, "owned path"),
            "the external record owns a string");
         attempts = payload_allocations;
         payload_fail_at = attempts + 1;
-        INT_EQ(runner, markdown_core_node_set_kind(node, parent, MARKDOWN_CORE_NODE_CROSS_EMBEDDED),
+        INT_EQ(runner, markdown_core_node_set_kind(node, parent, MARKDOWN_CORE_NODE_CROSS_EMBED),
                MARKDOWN_CORE_NODE_SET_KIND_OK, "the same external kind preserves its record without allocation");
         OK(runner, node->node_data_allocation == external, "no-op conversion preserves external ownership");
-        STR_EQ(runner, (char *)node->as.cross_embedded->reference.path.data, "owned path",
+        STR_EQ(runner, (char *)node->as.cross_embed->reference.path.data, "owned path",
                "no-op conversion preserves external fields");
 
         size_t releases = payload_releases;
@@ -4269,7 +4269,7 @@ static void kind_conversion_containment(test_batch_runner *runner) {
         {MARKDOWN_CORE_NODE_SPAN, MARKDOWN_CORE_NODE_PARAGRAPH, "![text]{}\n", "![text]{}", false},
         {MARKDOWN_CORE_NODE_LINK, MARKDOWN_CORE_NODE_PARAGRAPH, "! [text](u)\n", "! [text](u)", false},
         {MARKDOWN_CORE_NODE_LINK, MARKDOWN_CORE_NODE_PARAGRAPH, "! a@b.co\n", "! a@b.co", false},
-        {MARKDOWN_CORE_NODE_EMBEDDED, MARKDOWN_CORE_NODE_PARAGRAPH, "![text](u)\n", "![text](u)", false},
+        {MARKDOWN_CORE_NODE_EMBED, MARKDOWN_CORE_NODE_PARAGRAPH, "![text](u)\n", "![text](u)", false},
         {MARKDOWN_CORE_NODE_CITE, MARKDOWN_CORE_NODE_PARAGRAPH, "!^[text]\n", "!^[text]", false},
         {MARKDOWN_CORE_NODE_CITE, MARKDOWN_CORE_NODE_PARAGRAPH, "![^n]\n\n[^n]: text\n", "![^n]", true},
         {MARKDOWN_CORE_NODE_EMPHASIS, MARKDOWN_CORE_NODE_PARAGRAPH, "!*text*\n", "!*text*", false},
@@ -5316,7 +5316,7 @@ static void record_work(const markdown_core_element_instance *self, markdown_cor
         ELEMENT_STATE(parser, markdown_core_block_identifier_work, MARKDOWN_CORE_ELEMENT_PARAGRAPH)->scan;
     work->callout = ELEMENT_STATE(parser, markdown_core_callout_work, MARKDOWN_CORE_ELEMENT_CALLOUT)->scan;
     work->dimensions =
-        ELEMENT_STATE(parser, markdown_core_embedded_work, MARKDOWN_CORE_ELEMENT_EMBEDDED)->dimensions +
+        ELEMENT_STATE(parser, markdown_core_embed_work, MARKDOWN_CORE_ELEMENT_EMBED)->dimensions +
         ELEMENT_STATE(parser, markdown_core_cross_link_work, MARKDOWN_CORE_ELEMENT_CROSS_LINK)->dimensions;
     work->attributes = ATTRIBUTE_WORK(parser);
     work->anchors = parser->names.work;
@@ -5371,7 +5371,7 @@ static void deep_inline_construction(test_batch_runner *runner) {
                         continue;
                     }
                     markdown_core_node *node = tree_iter_get_node(iter);
-                    containers += node->kind == (shape ? MARKDOWN_CORE_NODE_SPAN : MARKDOWN_CORE_NODE_EMBEDDED);
+                    containers += node->kind == (shape ? MARKDOWN_CORE_NODE_SPAN : MARKDOWN_CORE_NODE_EMBED);
                     links += node->kind == MARKDOWN_CORE_NODE_LINK;
                 }
                 INT_EQ(runner, containers, sizes[d], "all nesting survives construction");
@@ -6573,11 +6573,10 @@ static void cross_link_fields(test_batch_runner *runner) {
     label = facade_cross_label(node);
     OK(runner, label.has_value && label.value.length == 0, "an authored empty label remains present");
     node = facade_child(paragraph, 4);
-    OK(runner, markdown_core_node_get_kind(node) == MARKDOWN_CORE_KIND_CROSS_EMBEDDED, "transclusion has its own kind");
+    OK(runner, markdown_core_node_get_kind(node) == MARKDOWN_CORE_KIND_CROSS_EMBED, "transclusion has its own kind");
     OK(runner,
-       strcmp(facade_kind_name(MARKDOWN_CORE_KIND_CROSS_EMBEDDED), "CrossEmbedded") == 0 &&
-           facade_dimensions(node) == NULL,
-       "an unsized CrossEmbedded retains its kind");
+       strcmp(facade_kind_name(MARKDOWN_CORE_KIND_CROSS_EMBED), "CrossEmbed") == 0 && facade_dimensions(node) == NULL,
+       "an unsized CrossEmbed retains its kind");
     dest = facade_destination(node);
     OK(runner,
        dest.path.length == 0 && dest.anchor.has_value && dest.anchor.value.length == 5 &&
@@ -7522,7 +7521,7 @@ static void image_dimension_linear_work(test_batch_runner *runner) {
                 tree_iter *iter = tree_iter_new(child_at(root, 0));
                 for (markdown_core_event_type event; (event = tree_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE;) {
                     markdown_core_node *node = tree_iter_get_node(iter);
-                    if (event == MARKDOWN_CORE_EVENT_ENTER && node->kind == MARKDOWN_CORE_NODE_EMBEDDED) {
+                    if (event == MARKDOWN_CORE_EVENT_ENTER && node->kind == MARKDOWN_CORE_NODE_EMBED) {
                         images++;
                         sized += node->as.link->dimensions.has_value;
                     }
@@ -10001,7 +10000,7 @@ static void completion_acts_on_every_root(test_batch_runner *runner) {
 }
 
 /* The shape that defeats a per-hook walk: depth and width vary independently
- * -- `deep_inline_construction`'s generator, Span or Embedded nesting around
+ * -- `deep_inline_construction`'s generator, Span or Embed nesting around
  * a run of addresses that autolink's step links -- and every address is
  * linked whatever they are. */
 static void completion_links_at_any_depth(test_batch_runner *runner) {

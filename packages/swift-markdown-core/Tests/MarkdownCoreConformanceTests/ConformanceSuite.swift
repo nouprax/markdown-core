@@ -33,9 +33,9 @@ private typealias Comment = Testing.Comment
             "ListItem", "CodeBlock", "HTMLBlock", "FormulaBlock", "Table",
             "DirectiveBlock", "DirectiveLabel", "Text", "SoftBreak",
             "LineBreak",
-            "Code", "HTML", "Comment", "CrossLink", "CrossEmbedded", "Formula", "Emphasis", "Strong",
+            "Code", "HTML", "Comment", "CrossLink", "CrossEmbed", "Formula", "Emphasis", "Strong",
             "Strikethrough", "Mark", "Insertion", "Span", "Superscript", "Subscript", "DefinitionList", "Definition",
-            "Link", "Embedded", "Directive",
+            "Link", "Embed", "Directive",
             "Cite", "Topic", "Citation", "Footnote", "Specimen", "Metadata", "Reference",
             "TableRow", "TableCell",
         ]
@@ -68,7 +68,7 @@ private typealias Comment = Testing.Comment
         #expect(table.head[0].cells.count == 1)
         let paragraph = try #require(document.content[3] as? Paragraph)
         let link = try #require(paragraph.content[0] as? Link)
-        let image = try #require(paragraph.content[2] as? Embedded)
+        let image = try #require(paragraph.content[2] as? Embed)
         #expect(link.dest == .url("/go") && link.title == nil)
         #expect(image.dest == .url("/image") && image.title == "title")
     }
@@ -181,7 +181,7 @@ struct IdentifierVisitor: MarkupVisitor {
     mutating func visit(_ node: HTML, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: MarkdownCore.Comment, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: CrossLink, phase: MarkupVisitPhase) { record(node, phase) }
-    mutating func visit(_ node: CrossEmbedded, phase: MarkupVisitPhase) { record(node, phase) }
+    mutating func visit(_ node: CrossEmbed, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: Formula, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: Emphasis, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: Strong, phase: MarkupVisitPhase) { record(node, phase) }
@@ -194,7 +194,7 @@ struct IdentifierVisitor: MarkupVisitor {
     mutating func visit(_ node: DefinitionList, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: Definition, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: Link, phase: MarkupVisitPhase) { record(node, phase) }
-    mutating func visit(_ node: Embedded, phase: MarkupVisitPhase) { record(node, phase) }
+    mutating func visit(_ node: Embed, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: Directive, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: Cite, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: Topic, phase: MarkupVisitPhase) { record(node, phase) }

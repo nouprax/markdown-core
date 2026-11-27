@@ -265,9 +265,9 @@ private fun describe(node: Markup): Line =
             Line("CrossLink", 0, listOf("dest=${destination(node.dest)}", "label=${optional(node.label)}"))
         }
 
-        is CrossEmbedded -> {
+        is CrossEmbed -> {
             Line(
-                "CrossEmbedded",
+                "CrossEmbed",
                 0,
                 listOf(
                     "dest=${destination(node.dest)}",
@@ -333,9 +333,9 @@ private fun describe(node: Markup): Line =
             )
         }
 
-        is Embedded -> {
+        is Embed -> {
             Line(
-                "Embedded",
+                "Embed",
                 node.content.size,
                 listOf(
                     "dest=${destination(node.dest)}",

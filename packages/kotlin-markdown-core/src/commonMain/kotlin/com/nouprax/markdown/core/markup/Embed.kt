@@ -5,7 +5,7 @@ package com.nouprax.markdown.core
  * Complete `W`, `WxH`, `alt|W` and `alt|WxH` labels
  * supply positive 32-bit dimensions without leading zeros.
  */
-public class Embedded internal constructor(
+public class Embed internal constructor(
     /** Required, for the reason [Link.dest] is. */
     public val dest: Destination,
     public val title: String?,

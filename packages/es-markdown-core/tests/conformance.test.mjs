@@ -61,7 +61,7 @@ test("conformance: public node schema is reachable", () => {
             "superscript",
             "subscript",
             "link",
-            "embedded",
+            "embed",
             "directive",
             "cite",
             "reference"

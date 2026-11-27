@@ -926,7 +926,7 @@ typedef struct asking {
 static bool lookup_of(const view *taken, size_t index, asking *lookup) {
     const markdown_core_node *node = taken->nodes[index].object;
     size_t below = index, root;
-    if (kind_is(taken, index, "Link") || kind_is(taken, index, "Embedded")) {
+    if (kind_is(taken, index, "Link") || kind_is(taken, index, "Embed")) {
         markdown_core_destination destination;
         TS_OK(markdown_core_node_destination(node, &destination));
         if (destination.kind != MARKDOWN_CORE_DESTINATION_REFERENCE) {

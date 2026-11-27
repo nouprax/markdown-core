@@ -69,8 +69,8 @@
         {
             "id": "reference-resolution-model",
             "kind": "ast-shape",
-            "summary": "mdast keeps a link reference definition as a `definition` node where it was written and its references as `linkReference` and `imageReference` carrying mdast's identifier. Markdown Core keeps the definition as a `Reference` node where it was written and has each reference `Link` or `Embedded` name its label under the full case fold (`dest=reference(\"...\")`). The two label normalizations differ, so the labels are not compared directly.",
-            "handling": "The comparison resolves both sides into `Link`/`Embedded` carrying the definition's destination and title and drops the definition nodes: mdast's references against mdast's own definitions inside the projection, and this side's with the shared `resolveReferences` -- the first definition of a label wins, as in both grammars. A reference with no definition stays the prose both models make of it, so a reference that resolved to the wrong definition, or to none, still shows up as a difference."
+            "summary": "mdast keeps a link reference definition as a `definition` node where it was written and its references as `linkReference` and `imageReference` carrying mdast's identifier. Markdown Core keeps the definition as a `Reference` node where it was written and has each reference `Link` or `Embed` name its label under the full case fold (`dest=reference(\"...\")`). The two label normalizations differ, so the labels are not compared directly.",
+            "handling": "The comparison resolves both sides into `Link`/`Embed` carrying the definition's destination and title and drops the definition nodes: mdast's references against mdast's own definitions inside the projection, and this side's with the shared `resolveReferences` -- the first definition of a label wins, as in both grammars. A reference with no definition stays the prose both models make of it, so a reference that resolved to the wrong definition, or to none, still shows up as a difference."
         },
         {
             "id": "table-row-width-shape",

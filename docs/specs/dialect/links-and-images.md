@@ -78,7 +78,7 @@ Add `!` before a link or reference image:
 [photo]: /sunrise.png
 ```
 
-Each image becomes `Embedded`. Its content is parsed alt text, its destination is
+Each image becomes `Embed`. Its content is parsed alt text, its destination is
 a URL value, and its title is optional. The parser does not infer a media type
 from the filename or load the resource. Internal `![[...]]` embeds use the
 separate [cross-embed syntax](cross-links.md).

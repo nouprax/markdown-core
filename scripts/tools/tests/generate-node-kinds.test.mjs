@@ -122,7 +122,7 @@ test("a slot is owned by its field's kind, by the kinds holding its value, or by
     const slots = new Map(buildModel(contract(), native()).slots.map((slot) => [slot.name, slot]));
     assert.deepEqual(slots.get("variant").owners, ["Callout"]);
     assert.deepEqual(slots.get("footnote").owners.sort(), ["Citation", "Footnote"]);
-    assert.deepEqual(slots.get("label").owners.sort(), ["Embedded", "Link", "Reference"]);
+    assert.deepEqual(slots.get("label").owners.sort(), ["Embed", "Link", "Reference"]);
     assert.equal(slots.get("class").any, true);
     assert.deepEqual(slots.get("class").owners, []);
     const broken = contract();

@@ -316,12 +316,12 @@ stream ../canonical-ast/callouts.md tokens
 stream ../canonical-ast/callouts.md scalars
 stream ../canonical-ast/callouts.md rows
 stream ../canonical-ast/callouts.md splits
-document ../canonical-ast/embedded-dimensions.md
-script ../canonical-ast/embedded-dimensions.md scripts/embedded-dimensions.script
-stream ../canonical-ast/embedded-dimensions.md tokens
-stream ../canonical-ast/embedded-dimensions.md scalars
-stream ../canonical-ast/embedded-dimensions.md rows
-stream ../canonical-ast/embedded-dimensions.md splits
+document ../canonical-ast/embed-dimensions.md
+script ../canonical-ast/embed-dimensions.md scripts/embed-dimensions.script
+stream ../canonical-ast/embed-dimensions.md tokens
+stream ../canonical-ast/embed-dimensions.md scalars
+stream ../canonical-ast/embed-dimensions.md rows
+stream ../canonical-ast/embed-dimensions.md splits
 document ../canonical-ast/obsidian-integration.md
 script ../canonical-ast/obsidian-integration.md scripts/obsidian-integration.script
 stream ../canonical-ast/obsidian-integration.md tokens

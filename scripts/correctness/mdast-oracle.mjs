@@ -26,7 +26,7 @@ import {
  *     identifier; Markdown Core keeps it as a `Reference` node and has each
  *     reference name its label under the full case fold (registered delta
  *     `reference-resolution-model`). The two label normalizations differ, so
- *     both sides are resolved into the `Link` or `Embedded` each reference
+ *     both sides are resolved into the `Link` or `Embed` each reference
  *     names, carrying the definition's destination and title, and the
  *     definitions leave the tree: this module resolves mdast's references
  *     against mdast's own definitions, and `resolveReferences` this side's --
@@ -48,7 +48,7 @@ const MDAST_KIND = {
     code: "CodeBlock",
     html: "HTML",
     link: "Link",
-    image: "Embedded",
+    image: "Embed",
     list: "List",
     listItem: "ListItem",
     blockquote: "Callout",
@@ -111,7 +111,7 @@ function convert(node, definitions, parentType = "root") {
 
     // Registered shape delta `reference-resolution-model`: a definition
     // leaves the tree, and a reference that resolves is the `Link` or
-    // `Embedded` it names, carrying the definition's destination and title --
+    // `Embed` it names, carrying the definition's destination and title --
     // the shape `resolveReferences` projects this repository's tree onto.
     if (node.type === "definition") return [];
     if (node.type === "linkReference" || node.type === "imageReference") {
@@ -124,7 +124,7 @@ function convert(node, definitions, parentType = "root") {
         }
         return [
             {
-                kind: node.type === "linkReference" ? "Link" : "Embedded",
+                kind: node.type === "linkReference" ? "Link" : "Embed",
                 fields: {
                     dest: urlDestination(definition.url ?? ""),
                     title: definition.title ?? "null"
@@ -287,7 +287,7 @@ export const MDAST_COMPARED = {
     HTML: ["literal"],
     Comment: ["literal"],
     Link: ["dest", "title"],
-    Embedded: ["dest", "title"],
+    Embed: ["dest", "title"],
     Table: ["columns"],
     // §5.6: footnote label bytes used to be compared by NOBODY, on either
     // side. mdast's `label` is the authored spelling and so is this side's, so

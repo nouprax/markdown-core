@@ -118,7 +118,7 @@ public final class com/nouprax/markdown/core/Context {
 	public final fun getSlots ()Ljava/util/List;
 }
 
-public final class com/nouprax/markdown/core/CrossEmbedded : com/nouprax/markdown/core/Markup {
+public final class com/nouprax/markdown/core/CrossEmbed : com/nouprax/markdown/core/Markup {
 	public fun getAnchor ()Ljava/lang/String;
 	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
 	public final fun getDest ()Lcom/nouprax/markdown/core/Destination;
@@ -260,7 +260,7 @@ public final class com/nouprax/markdown/core/Document$Companion {
 	public static synthetic fun parse$default (Lcom/nouprax/markdown/core/Document$Companion;Ljava/lang/String;Lcom/nouprax/markdown/core/TextUnit;ILjava/lang/Object;)Lcom/nouprax/markdown/core/Document;
 }
 
-public final class com/nouprax/markdown/core/Embedded : com/nouprax/markdown/core/Markup {
+public final class com/nouprax/markdown/core/Embed : com/nouprax/markdown/core/Markup {
 	public fun getAnchor ()Ljava/lang/String;
 	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
 	public final fun getContent ()Ljava/util/List;
@@ -534,7 +534,7 @@ public abstract interface class com/nouprax/markdown/core/MarkupVisitor {
 	public abstract fun visit (Lcom/nouprax/markdown/core/Code;Lcom/nouprax/markdown/core/MarkupVisitPhase;)V
 	public abstract fun visit (Lcom/nouprax/markdown/core/CodeBlock;Lcom/nouprax/markdown/core/MarkupVisitPhase;)V
 	public abstract fun visit (Lcom/nouprax/markdown/core/Comment;Lcom/nouprax/markdown/core/MarkupVisitPhase;)V
-	public abstract fun visit (Lcom/nouprax/markdown/core/CrossEmbedded;Lcom/nouprax/markdown/core/MarkupVisitPhase;)V
+	public abstract fun visit (Lcom/nouprax/markdown/core/CrossEmbed;Lcom/nouprax/markdown/core/MarkupVisitPhase;)V
 	public abstract fun visit (Lcom/nouprax/markdown/core/CrossLink;Lcom/nouprax/markdown/core/MarkupVisitPhase;)V
 	public abstract fun visit (Lcom/nouprax/markdown/core/Definition;Lcom/nouprax/markdown/core/MarkupVisitPhase;)V
 	public abstract fun visit (Lcom/nouprax/markdown/core/DefinitionList;Lcom/nouprax/markdown/core/MarkupVisitPhase;)V
@@ -542,7 +542,7 @@ public abstract interface class com/nouprax/markdown/core/MarkupVisitor {
 	public abstract fun visit (Lcom/nouprax/markdown/core/DirectiveBlock;Lcom/nouprax/markdown/core/MarkupVisitPhase;)V
 	public abstract fun visit (Lcom/nouprax/markdown/core/DirectiveLabel;Lcom/nouprax/markdown/core/MarkupVisitPhase;)V
 	public abstract fun visit (Lcom/nouprax/markdown/core/Document;Lcom/nouprax/markdown/core/MarkupVisitPhase;)V
-	public abstract fun visit (Lcom/nouprax/markdown/core/Embedded;Lcom/nouprax/markdown/core/MarkupVisitPhase;)V
+	public abstract fun visit (Lcom/nouprax/markdown/core/Embed;Lcom/nouprax/markdown/core/MarkupVisitPhase;)V
 	public abstract fun visit (Lcom/nouprax/markdown/core/Emphasis;Lcom/nouprax/markdown/core/MarkupVisitPhase;)V
 	public abstract fun visit (Lcom/nouprax/markdown/core/Footnote;Lcom/nouprax/markdown/core/MarkupVisitPhase;)V
 	public abstract fun visit (Lcom/nouprax/markdown/core/Formula;Lcom/nouprax/markdown/core/MarkupVisitPhase;)V
@@ -697,7 +697,7 @@ public final class com/nouprax/markdown/core/NodeKind : java/lang/Enum {
 	public static final field CODE Lcom/nouprax/markdown/core/NodeKind;
 	public static final field CODE_BLOCK Lcom/nouprax/markdown/core/NodeKind;
 	public static final field COMMENT Lcom/nouprax/markdown/core/NodeKind;
-	public static final field CROSS_EMBEDDED Lcom/nouprax/markdown/core/NodeKind;
+	public static final field CROSS_EMBED Lcom/nouprax/markdown/core/NodeKind;
 	public static final field CROSS_LINK Lcom/nouprax/markdown/core/NodeKind;
 	public static final field DEFINITION Lcom/nouprax/markdown/core/NodeKind;
 	public static final field DEFINITION_LIST Lcom/nouprax/markdown/core/NodeKind;
@@ -705,7 +705,7 @@ public final class com/nouprax/markdown/core/NodeKind : java/lang/Enum {
 	public static final field DIRECTIVE_BLOCK Lcom/nouprax/markdown/core/NodeKind;
 	public static final field DIRECTIVE_LABEL Lcom/nouprax/markdown/core/NodeKind;
 	public static final field DOCUMENT Lcom/nouprax/markdown/core/NodeKind;
-	public static final field EMBEDDED Lcom/nouprax/markdown/core/NodeKind;
+	public static final field EMBED Lcom/nouprax/markdown/core/NodeKind;
 	public static final field EMPHASIS Lcom/nouprax/markdown/core/NodeKind;
 	public static final field FOOTNOTE Lcom/nouprax/markdown/core/NodeKind;
 	public static final field FORMULA Lcom/nouprax/markdown/core/NodeKind;

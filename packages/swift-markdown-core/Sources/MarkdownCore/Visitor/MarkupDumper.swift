@@ -183,9 +183,9 @@ private struct LineVisitor: MarkupVisitor {
         )
     }
 
-    mutating func visit(_ node: CrossEmbedded, phase: MarkupVisitPhase) {
+    mutating func visit(_ node: CrossEmbed, phase: MarkupVisitPhase) {
         line(
-            "CrossEmbedded",
+            "CrossEmbed",
             node,
             fields: [
                 "dest=\(dump(destination: node.dest))",
@@ -245,9 +245,9 @@ private struct LineVisitor: MarkupVisitor {
         )
     }
 
-    mutating func visit(_ node: Embedded, phase: MarkupVisitPhase) {
+    mutating func visit(_ node: Embed, phase: MarkupVisitPhase) {
         line(
-            "Embedded",
+            "Embed",
             node,
             fields: [
                 "dest=\(dump(destination: node.dest))",

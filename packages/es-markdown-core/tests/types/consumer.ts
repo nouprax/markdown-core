@@ -14,9 +14,9 @@ import {
     type MetadataValue,
     type MetadataScalar,
     type MetadataListItem,
-    type Embedded,
+    type Embed,
     type CrossLink,
-    type CrossEmbedded,
+    type CrossEmbed,
     type Destination,
     type Dimensions,
     type Extent,
@@ -203,7 +203,7 @@ const visitor: MarkupVisitor = {
     crossLink: (node) => {
         void node.kind;
     },
-    crossEmbedded: (node) => {
+    crossEmbed: (node) => {
         void node.kind;
     },
     formula: (node) => {
@@ -251,13 +251,13 @@ const visitor: MarkupVisitor = {
         }
         void link.kind;
     },
-    embedded(embedded) {
-        const inferred: Embedded = embedded;
+    embed(embed) {
+        const inferred: Embed = embed;
         const dimensions: Dimensions | null = inferred.dimensions;
-        // @ts-expect-error Embedded is not a Heading
-        void embedded.level;
+        // @ts-expect-error Embed is not a Heading
+        void embed.level;
         void dimensions;
-        void embedded.kind;
+        void embed.kind;
     },
     directive: (node) => {
         void node.kind;
@@ -272,20 +272,20 @@ const visitor: MarkupVisitor = {
 walk(document, visitor);
 // @ts-expect-error node-level dispatch is not public
 document.accept(visitor);
-// @ts-expect-error a document cannot be passed to the Embedded callback
-visitor.embedded(document, "enter");
+// @ts-expect-error a document cannot be passed to the Embed callback
+visitor.embed(document, "enter");
 const mismatchedVisitor: MarkupVisitor = {
     ...visitor,
-    // @ts-expect-error the Embedded handler cannot accept only Headings
-    embedded: (heading: Heading) => {
+    // @ts-expect-error the Embed handler cannot accept only Headings
+    embed: (heading: Heading) => {
         void heading.level;
     }
 };
 void mismatchedVisitor;
-const { embedded: omitted, ...remaining } = visitor;
+const { embed: omitted, ...remaining } = visitor;
 // @ts-expect-error even one missing kind makes a visitor incomplete
-const missingEmbedded: MarkupVisitor = remaining;
-void [omitted, missingEmbedded];
+const missingEmbed: MarkupVisitor = remaining;
+void [omitted, missingEmbed];
 const walkingVisitor: MarkupVisitor = {
     document: () => undefined,
     callout: () => undefined,
@@ -307,7 +307,7 @@ const walkingVisitor: MarkupVisitor = {
     code: () => undefined,
     html: () => undefined,
     crossLink: () => undefined,
-    crossEmbedded: () => undefined,
+    crossEmbed: () => undefined,
     comment: () => undefined,
     formula: () => undefined,
     emphasis: () => undefined,
@@ -319,7 +319,7 @@ const walkingVisitor: MarkupVisitor = {
     superscript: () => undefined,
     subscript: () => undefined,
     link: () => undefined,
-    embedded: () => undefined,
+    embed: () => undefined,
     directive: () => undefined,
     topic: () => undefined,
     cite: () => undefined,
@@ -452,7 +452,7 @@ const metadata: Metadata = {
 };
 const parsedMetadata: Metadata | null = document.metadata;
 void [anchor, attributes, empty, record, listItem, metadata, parsedMetadata];
-declare const image: Embedded;
+declare const image: Embed;
 const dimensions: Dimensions | null = image.dimensions;
 const standaloneSize: Dimensions = { width: 640, height: null };
 void [dimensions, standaloneSize];
@@ -472,15 +472,15 @@ const recordMarkup: Markup = record;
 void recordMarkup;
 
 declare const crossLink: CrossLink;
-declare const crossEmbedded: CrossEmbedded;
-const embeddedSize: Dimensions | null = crossEmbedded.dimensions;
-void embeddedSize;
+declare const crossEmbed: CrossEmbed;
+const embedSize: Dimensions | null = crossEmbed.dimensions;
+void embedSize;
 // @ts-expect-error ordinary cross links have no dimensions
 void crossLink.dimensions;
 // @ts-expect-error the node kind replaces the old embedded flag
 void crossLink.embedded;
-// @ts-expect-error CrossEmbedded also has no redundant embedded flag
-void crossEmbedded.embedded;
+// @ts-expect-error CrossEmbed also has no redundant embedded flag
+void crossEmbed.embedded;
 
 // The language engine is its own entry point, and the main one does not carry it.
 const server: Server = new Server();

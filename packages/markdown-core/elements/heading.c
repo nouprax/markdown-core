@@ -304,7 +304,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool project_anchor_stack
             markdown_core_strbuf_putc(base, '-');
             break;
         case MARKDOWN_CORE_NODE_CROSS_LINK:
-        case MARKDOWN_CORE_NODE_CROSS_EMBEDDED: {
+        case MARKDOWN_CORE_NODE_CROSS_EMBED: {
             markdown_core_cross_reference *cross = markdown_core_node_cross_reference(node);
             if (cross->label.has_value) {
                 project_anchor_literal(work, base, cross->label.value.data, cross->label.value.len);
@@ -328,7 +328,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool project_anchor_stack
         case MARKDOWN_CORE_NODE_SUPERSCRIPT:
         case MARKDOWN_CORE_NODE_SUBSCRIPT:
         case MARKDOWN_CORE_NODE_LINK:
-        case MARKDOWN_CORE_NODE_EMBEDDED:
+        case MARKDOWN_CORE_NODE_EMBED:
         case MARKDOWN_CORE_NODE_DIRECTIVE_LABEL:
             ok = push_anchor_children(stack, node, ANCHOR_CONTENT);
             break;

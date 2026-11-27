@@ -42,5 +42,5 @@ generated:90303 missed Span.attributes # `:d[[\]]{.c}]`: the label holds a span
 # as the escape of the `]` after it: a sentinel between them moves where
 # the label ends.
 generated:91303 slot dest CrossLink # `\` escapes the label's `]`
-generated:91503 slot dest CrossEmbedded # `\` escapes the label's `]`
+generated:91503 slot dest CrossEmbed # `\` escapes the label's `]`
 generated:92803 slot dest CrossLink # `\` escapes the label's `]`

@@ -1,7 +1,7 @@
 # Kotlin Markdown Core
 
 Cross links (`[[Note#Heading|Label]]`) and embeds (`![[Image.png|100x145]]`)
-produce `CrossLink(dest, label)` and `CrossEmbedded(dest, label, dimensions)`,
+produce `CrossLink(dest, label)` and `CrossEmbed(dest, label, dimensions)`,
 respectively. `dest` is a cross destination with
 raw path and optional anchor; the label is null when no separator was authored
 and an empty string for `[[Note|]]`. These are leaves with exhaustive visit and
@@ -51,11 +51,11 @@ must implement `visit(metadata: Metadata, phase: MarkupVisitPhase)`; the node's
 scalar/list values do not receive separate Markup callbacks.
 Numbers retain exact decimal strings. Missing fields are null; an authored null
 is a present scalar value. No field order or individual field scope is stored.
-`Embedded.dimensions: Dimensions?` reads complete `W`, `WxH`, `alt|W` and
+`Embed.dimensions: Dimensions?` reads complete `W`, `WxH`, `alt|W` and
 `alt|WxH` suffixes on direct and resolved images. Values range from 1 to
 2147483647 without leading zeros; malformed suffixes remain parsed alt content.
 Numeric-only labels have empty alt content. Embedded cross links use the same
-size grammar in `CrossEmbedded.dimensions`, retaining the raw label prefix (empty
+size grammar in `CrossEmbed.dimensions`, retaining the raw label prefix (empty
 for size-only labels). Ordinary cross-link labels and invalid suffixes stay raw.
 `Dimensions` is a node-independent value with required `width` and optional
 `height`; it has no scope or visitor callbacks.
@@ -289,7 +289,7 @@ A link reference definition `[label]: /url "title"` is a `Reference` block where
 it was written, with its normalized `label`, a `Destination.Url` `dest`, its
 `title`, and the anchor and attributes it states. A reference occurrence --
 `[text][label]`, `[label][]`, `[label]` or `![alt][label]` -- is a `Link` or
-`Embedded` whose `dest` is `Destination.Reference(label)` with a null title.
+`Embed` whose `dest` is `Destination.Reference(label)` with a null title.
 `Document.references` lists every definition in source order, and
 `document.reference(label)` returns the node the label resolves to: the first
 `Reference` with that label, else the first `Heading` whose text declares it.
@@ -325,7 +325,7 @@ all `MarkupVisitor` callbacks. Each required overload receives a concrete node a
 node's descendants and `EXIT` after them. Consumers accumulate results in
 visitor state; there is no separate single-node dispatch API.
 
-`MarkupVisitor` requires a `fun visit(embedded: Embedded, phase: MarkupVisitPhase): Unit`
+`MarkupVisitor` requires a `fun visit(embed: Embed, phase: MarkupVisitPhase): Unit`
 overload for every concrete kind. Implementations use the declared parameter
 names, including `paragraph`, `tableRow`, and `citation`. Adding a kind makes
 incomplete implementations fail to compile. Visitors process callbacks without

@@ -1,7 +1,7 @@
 package com.nouprax.markdown.core
 
 /**
- * The destination of a [Link], [Embedded], [Reference], [CrossLink], or [CrossEmbedded]: a tagged value, not a
+ * The destination of a [Link], [Embed], [Reference], [CrossLink], or [CrossEmbed]: a tagged value, not a
  * node, so it has no scope and no children, and a branch's fields exist only in that branch.
  */
 public sealed interface Destination {

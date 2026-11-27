@@ -8,7 +8,7 @@ import type { Dimensions } from "../common/constraints.js";
  * Complete `W`, `WxH`, `alt|W` and `alt|WxH` labels
  * supply positive 32-bit dimensions without leading zeros.
  */
-export interface Embedded extends MarkupBase<"embedded"> {
+export interface Embed extends MarkupBase<"embed"> {
     /** Required, for the reason `Link.dest` is. */
     readonly dest: Destination;
     /** Optional. */

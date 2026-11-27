@@ -30,7 +30,7 @@ const XML_KIND = {
     html_block: "HTMLBlock",
     html_inline: "HTML",
     link: "Link",
-    image: "Embedded",
+    image: "Embed",
     list: "List",
     item: "ListItem",
     tasklist: "ListItem",
@@ -65,7 +65,7 @@ const COMPARED = {
     HTMLBlock: ["literal"],
     Comment: ["literal"],
     Link: ["dest", "title"],
-    Embedded: ["dest", "title"]
+    Embed: ["dest", "title"]
 };
 
 const LITERAL_BEARING = new Set(["text", "code", "code_block", "html_block", "html_inline"]);
@@ -589,7 +589,7 @@ function normalizeLabel(label) {
 
 /**
  * Registered delta `reference-definition-node`: upstream consumes a link
- * reference definition and copies it into every `Link` or `Embedded` that
+ * reference definition and copies it into every `Link` or `Embed` that
  * resolves to it, while this repository keeps the definition as a
  * `Reference` block where it was written and has each occurrence name its
  * label (`dest=reference("...")`), which the document resolves. A tree from
@@ -653,7 +653,7 @@ export function resolveReferences(root, source, fired) {
     survey(root);
     const rewrite = (node) => {
         const destination =
-            node.kind === "Link" || node.kind === "Embedded" ? parseDestination(node.fields.dest) : null;
+            node.kind === "Link" || node.kind === "Embed" ? parseDestination(node.fields.dest) : null;
         if (destination?.kind === "reference") {
             const definition = definitions.get(destination.label);
             const heading = definition ? undefined : headings.get(fold(destination.label));

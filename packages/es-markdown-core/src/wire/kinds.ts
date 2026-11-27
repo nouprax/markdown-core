@@ -24,7 +24,7 @@ export type NativeKind =
     | "strong"
     | "strikethrough"
     | "link"
-    | "embedded"
+    | "embed"
     | "directive"
     | "cite"
     | "tableRow"
@@ -33,7 +33,7 @@ export type NativeKind =
     | "comment"
     | "crossLink"
     | "mark"
-    | "crossEmbedded"
+    | "crossEmbed"
     | "insertion"
     | "span"
     | "superscript"
@@ -72,7 +72,7 @@ export const kinds: readonly (NativeKind | "none")[] = [
     "strong",
     "strikethrough",
     "link",
-    "embedded",
+    "embed",
     "directive",
     "cite",
     "tableRow",
@@ -81,7 +81,7 @@ export const kinds: readonly (NativeKind | "none")[] = [
     "comment",
     "crossLink",
     "mark",
-    "crossEmbedded",
+    "crossEmbed",
     "insertion",
     "span",
     "superscript",

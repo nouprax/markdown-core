@@ -611,7 +611,7 @@ markdown_core_place markdown_core_node_window(const markdown_core_node *node, ui
  * COMMITTED, and the walk goes on from the body after the last FINAL one. */
 
 static inline bool is_link(const markdown_core_node *node) {
-    return node->kind == MARKDOWN_CORE_NODE_LINK || node->kind == MARKDOWN_CORE_NODE_EMBEDDED;
+    return node->kind == MARKDOWN_CORE_NODE_LINK || node->kind == MARKDOWN_CORE_NODE_EMBED;
 }
 
 /* A node whose relations are being published: where the node and its
@@ -3844,7 +3844,7 @@ static const markdown_core_node_kind S_inline_kind[MARKDOWN_CORE_NODE_KIND_COUNT
     [MARKDOWN_CORE_NODE_EMPHASIS & MARKDOWN_CORE_NODE_VALUE_MASK] = MARKDOWN_CORE_KIND_EMPHASIS,
     [MARKDOWN_CORE_NODE_STRONG & MARKDOWN_CORE_NODE_VALUE_MASK] = MARKDOWN_CORE_KIND_STRONG,
     [MARKDOWN_CORE_NODE_LINK & MARKDOWN_CORE_NODE_VALUE_MASK] = MARKDOWN_CORE_KIND_LINK,
-    [MARKDOWN_CORE_NODE_EMBEDDED & MARKDOWN_CORE_NODE_VALUE_MASK] = MARKDOWN_CORE_KIND_EMBEDDED,
+    [MARKDOWN_CORE_NODE_EMBED & MARKDOWN_CORE_NODE_VALUE_MASK] = MARKDOWN_CORE_KIND_EMBED,
     [MARKDOWN_CORE_NODE_CITE & MARKDOWN_CORE_NODE_VALUE_MASK] = MARKDOWN_CORE_KIND_CITE,
     [MARKDOWN_CORE_NODE_STRIKETHROUGH & MARKDOWN_CORE_NODE_VALUE_MASK] = MARKDOWN_CORE_KIND_STRIKETHROUGH,
     [MARKDOWN_CORE_NODE_FORMULA & MARKDOWN_CORE_NODE_VALUE_MASK] = MARKDOWN_CORE_KIND_FORMULA,
@@ -3854,7 +3854,7 @@ static const markdown_core_node_kind S_inline_kind[MARKDOWN_CORE_NODE_KIND_COUNT
     [MARKDOWN_CORE_NODE_CITATION & MARKDOWN_CORE_NODE_VALUE_MASK] = MARKDOWN_CORE_KIND_CITATION,
     [MARKDOWN_CORE_NODE_CROSS_LINK & MARKDOWN_CORE_NODE_VALUE_MASK] = MARKDOWN_CORE_KIND_CROSS_LINK,
     [MARKDOWN_CORE_NODE_MARK & MARKDOWN_CORE_NODE_VALUE_MASK] = MARKDOWN_CORE_KIND_MARK,
-    [MARKDOWN_CORE_NODE_CROSS_EMBEDDED & MARKDOWN_CORE_NODE_VALUE_MASK] = MARKDOWN_CORE_KIND_CROSS_EMBEDDED,
+    [MARKDOWN_CORE_NODE_CROSS_EMBED & MARKDOWN_CORE_NODE_VALUE_MASK] = MARKDOWN_CORE_KIND_CROSS_EMBED,
     [MARKDOWN_CORE_NODE_INSERTION & MARKDOWN_CORE_NODE_VALUE_MASK] = MARKDOWN_CORE_KIND_INSERTION,
     [MARKDOWN_CORE_NODE_SPAN & MARKDOWN_CORE_NODE_VALUE_MASK] = MARKDOWN_CORE_KIND_SPAN,
     [MARKDOWN_CORE_NODE_SUPERSCRIPT & MARKDOWN_CORE_NODE_VALUE_MASK] = MARKDOWN_CORE_KIND_SUPERSCRIPT,
@@ -3887,7 +3887,7 @@ static const char *const S_kind_name[] = {
     "Strong",
     "Strikethrough",
     "Link",
-    "Embedded",
+    "Embed",
     "Directive",
     "Cite",
     "TableRow",
@@ -3896,7 +3896,7 @@ static const char *const S_kind_name[] = {
     "Comment",
     "CrossLink",
     "Mark",
-    "CrossEmbedded",
+    "CrossEmbed",
     "Insertion",
     "Span",
     "Superscript",
@@ -4561,7 +4561,7 @@ static void attribute_record(const markdown_core_node *node, size_t index, markd
     *value = chunk_string(record->value);
 }
 
-/* The resource a direct `Link` or `Embedded`, or a `Reference`, states; NULL
+/* The resource a direct `Link` or `Embed`, or a `Reference`, states; NULL
  * for a reference occurrence, which names its definition by label. */
 static const markdown_core_resource *resource_of(const markdown_core_node *node) {
     return node->kind == MARKDOWN_CORE_NODE_REFERENCE ? node->as.reference->resource : node->as.link->resource;
@@ -4569,7 +4569,7 @@ static const markdown_core_resource *resource_of(const markdown_core_node *node)
 
 static const markdown_core_dimensions *dimensions_of(const markdown_core_node *node) {
     const markdown_core_optional_dimensions *dimensions =
-        node->kind == MARKDOWN_CORE_NODE_EMBEDDED ? &node->as.link->dimensions : &node->as.cross_embedded->dimensions;
+        node->kind == MARKDOWN_CORE_NODE_EMBED ? &node->as.link->dimensions : &node->as.cross_embed->dimensions;
     return dimensions->has_value ? &dimensions->value : NULL;
 }
 
@@ -4658,10 +4658,10 @@ static void specimen_properties(const markdown_core_node *specimen, markdown_cor
      KIND_BIT(MARKDOWN_CORE_KIND_HTML_BLOCK) | KIND_BIT(MARKDOWN_CORE_KIND_COMMENT))
 #define FORMULA_KINDS (KIND_BIT(MARKDOWN_CORE_KIND_FORMULA) | KIND_BIT(MARKDOWN_CORE_KIND_FORMULA_BLOCK))
 #define DIRECTIVE_KINDS (KIND_BIT(MARKDOWN_CORE_KIND_DIRECTIVE) | KIND_BIT(MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK))
-#define LINK_KINDS (KIND_BIT(MARKDOWN_CORE_KIND_LINK) | KIND_BIT(MARKDOWN_CORE_KIND_EMBEDDED))
+#define LINK_KINDS (KIND_BIT(MARKDOWN_CORE_KIND_LINK) | KIND_BIT(MARKDOWN_CORE_KIND_EMBED))
 #define RESOURCE_KINDS (LINK_KINDS | KIND_BIT(MARKDOWN_CORE_KIND_REFERENCE))
-#define CROSS_KINDS (KIND_BIT(MARKDOWN_CORE_KIND_CROSS_LINK) | KIND_BIT(MARKDOWN_CORE_KIND_CROSS_EMBEDDED))
-#define DIMENSIONS_KINDS (KIND_BIT(MARKDOWN_CORE_KIND_EMBEDDED) | KIND_BIT(MARKDOWN_CORE_KIND_CROSS_EMBEDDED))
+#define CROSS_KINDS (KIND_BIT(MARKDOWN_CORE_KIND_CROSS_LINK) | KIND_BIT(MARKDOWN_CORE_KIND_CROSS_EMBED))
+#define DIMENSIONS_KINDS (KIND_BIT(MARKDOWN_CORE_KIND_EMBED) | KIND_BIT(MARKDOWN_CORE_KIND_CROSS_EMBED))
 
 markdown_core_status markdown_core_node_heading_level(const markdown_core_node *node, int32_t *level) {
     REQUIRE_KIND(node, KIND_BIT(MARKDOWN_CORE_KIND_HEADING));
@@ -5662,7 +5662,7 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
         buffer_cstr(buffer, " label=");
         buffer_optional_string(buffer, cross_label(node));
         break;
-    case MARKDOWN_CORE_KIND_CROSS_EMBEDDED:
+    case MARKDOWN_CORE_KIND_CROSS_EMBED:
         buffer_cstr(buffer, " dest=");
         buffer_destination(buffer, destination_of(node));
         buffer_cstr(buffer, " label=");
@@ -5670,7 +5670,7 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
         buffer_cstr(buffer, " dimensions=");
         buffer_dimensions(buffer, dimensions_of(node));
         break;
-    case MARKDOWN_CORE_KIND_EMBEDDED:
+    case MARKDOWN_CORE_KIND_EMBED:
         buffer_cstr(buffer, " dest=");
         buffer_destination(buffer, destination_of(node));
         buffer_cstr(buffer, " title=");

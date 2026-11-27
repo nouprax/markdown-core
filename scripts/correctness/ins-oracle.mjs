@@ -42,9 +42,9 @@ const canonicalKinds = new Set([
     ...Object.values(leafKinds),
     "TableFoot",
     "Document",
-    "Embedded",
+    "Embed",
     "CrossLink",
-    "CrossEmbedded",
+    "CrossEmbed",
     "Mark",
     "Cite",
     "Citation",
@@ -89,7 +89,7 @@ export function fromTokens(tokens) {
             stack.pop();
         } else if (token.type === "image") {
             append(stack.at(-1).node.children, {
-                kind: "Embedded",
+                kind: "Embed",
                 children: fromTokens(token.children ?? []).children
             });
         } else {

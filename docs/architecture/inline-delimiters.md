@@ -72,7 +72,7 @@ its source is not rescanned by the enclosing parser.
 
 Pairing a parsed container and closing a bracket scope both reduce a stack
 range through one operation: remove its unresolved markers and retain only its
-last boundary. The AST's bracket grammar still determines Link, Embedded, Span and
+last boundary. The AST's bracket grammar still determines Link, Embed, Span and
 inline-footnote and bibliography ownership, including tail precedence and attribute attachment.
 Those constructs are bracket scopes, not interchangeable emphasis markers.
 

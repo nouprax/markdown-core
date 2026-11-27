@@ -925,7 +925,7 @@ static bool marked(const context_query *query, const markdown_core_context_field
      * it. One the line's end cuts short is still being written. */
     const markdown_core_node_kind owner = field->owner;
     if ((field->kind == MARKDOWN_CORE_SLOT_DEST || field->kind == MARKDOWN_CORE_SLOT_ANCHOR) &&
-        (owner == MARKDOWN_CORE_KIND_LINK || owner == MARKDOWN_CORE_KIND_EMBEDDED ||
+        (owner == MARKDOWN_CORE_KIND_LINK || owner == MARKDOWN_CORE_KIND_EMBED ||
          owner == MARKDOWN_CORE_KIND_REFERENCE)) {
         const size_t origin = field->start - field->lead;
         /* A field the text's end opens has no byte at its origin. */
@@ -1474,7 +1474,7 @@ static bool take_slots(markdown_core_context *context, const context_query *quer
         const size_t origin = verdicts[i].start - (kind == MARKDOWN_CORE_SLOT_ANCHOR ? field->lead : 0);
         if ((kind == MARKDOWN_CORE_SLOT_DEST || kind == MARKDOWN_CORE_SLOT_ANCHOR) && origin > line &&
             query->source[origin - 1] == '<' && field->owner != MARKDOWN_CORE_KIND_CROSS_LINK &&
-            field->owner != MARKDOWN_CORE_KIND_CROSS_EMBEDDED) {
+            field->owner != MARKDOWN_CORE_KIND_CROSS_EMBED) {
             slot->wrap = '<';
         } else if ((kind == MARKDOWN_CORE_SLOT_BIB || kind == MARKDOWN_CORE_SLOT_SPECIMEN) && start > line + 1 &&
                    query->source[start - 1] == '{' && query->source[start - 2] == '@') {
@@ -2368,8 +2368,8 @@ markdown_core_status markdown_core_slot_spell(const markdown_core_context *conte
     }
     const char *closer = "";
     bool held = true;
-    const bool cross = owner == MARKDOWN_CORE_KIND_CROSS_LINK || owner == MARKDOWN_CORE_KIND_CROSS_EMBEDDED;
-    const bool call = owner == MARKDOWN_CORE_KIND_LINK || owner == MARKDOWN_CORE_KIND_EMBEDDED;
+    const bool cross = owner == MARKDOWN_CORE_KIND_CROSS_LINK || owner == MARKDOWN_CORE_KIND_CROSS_EMBED;
+    const bool call = owner == MARKDOWN_CORE_KIND_LINK || owner == MARKDOWN_CORE_KIND_EMBED;
     const uint8_t fence = owner == MARKDOWN_CORE_KIND_CODE_BLOCK ? fence_of(context, slot->start) : 0;
     switch (kind) {
     case MARKDOWN_CORE_SLOT_DEST:

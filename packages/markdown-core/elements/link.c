@@ -6,15 +6,15 @@
 #include "attributes.h"
 #include "parts.h"
 #include "link.h"
-#include "embedded.h"
+#include "embed.h"
 #include "footnote.h"
 #include "inline_internal.h"
 #include "block_internal.h"
 
 /* The elements whose state this element reads, as `self->peers` holds them. */
-enum { LINK_EMBEDDED, LINK_ATTRIBUTES, LINK_FOOTNOTE, LINK_ESCAPE, LINK_ENTITIES };
+enum { LINK_EMBED, LINK_ATTRIBUTES, LINK_FOOTNOTE, LINK_ESCAPE, LINK_ENTITIES };
 static const markdown_core_element *const LINK_PEERS[] = {
-    [LINK_EMBEDDED] = &MARKDOWN_CORE_ELEMENT_EMBEDDED, [LINK_ATTRIBUTES] = &MARKDOWN_CORE_ELEMENT_ATTRIBUTES,
+    [LINK_EMBED] = &MARKDOWN_CORE_ELEMENT_EMBED,       [LINK_ATTRIBUTES] = &MARKDOWN_CORE_ELEMENT_ATTRIBUTES,
     [LINK_FOOTNOTE] = &MARKDOWN_CORE_ELEMENT_FOOTNOTE, [LINK_ESCAPE] = &MARKDOWN_CORE_ELEMENT_ESCAPE,
     [LINK_ENTITIES] = &MARKDOWN_CORE_ELEMENT_ENTITIES, NULL};
 
@@ -584,8 +584,8 @@ static void S_report_destination(markdown_core_inline_state *inline_state, const
     if (S_reference_cut(data, path, hash, end)) {
         return;
     }
-    const bool image = opener->shape == &MARKDOWN_CORE_EMBEDDED_BRACKET;
-    const markdown_core_node_kind kind = image ? MARKDOWN_CORE_KIND_EMBEDDED : MARKDOWN_CORE_KIND_LINK;
+    const bool image = opener->shape == &MARKDOWN_CORE_EMBED_BRACKET;
+    const markdown_core_node_kind kind = image ? MARKDOWN_CORE_KIND_EMBED : MARKDOWN_CORE_KIND_LINK;
     const bufsize_t at = opener->position - opener->shape->width;
     if (hash < end) {
         const markdown_core_field fragment = {MARKDOWN_CORE_SLOT_ANCHOR,
@@ -782,8 +782,8 @@ static void S_report_label(markdown_core_inline_state *inline_state, const brack
         start + 1 + markdown_core_inline_reference_label_length(data + start + 1, len - start - 1) < len) {
         return;
     }
-    const bool image = opener->shape == &MARKDOWN_CORE_EMBEDDED_BRACKET;
-    const markdown_core_node_kind kind = image ? MARKDOWN_CORE_KIND_EMBEDDED : MARKDOWN_CORE_KIND_LINK;
+    const bool image = opener->shape == &MARKDOWN_CORE_EMBED_BRACKET;
+    const markdown_core_node_kind kind = image ? MARKDOWN_CORE_KIND_EMBED : MARKDOWN_CORE_KIND_LINK;
     const markdown_core_field label = {MARKDOWN_CORE_SLOT_LABEL, kind, start + 1, label_end, {{0}}, 0, false, 0};
     markdown_core_inline_open(inline_state, kind, opener->position - opener->shape->width, opener->position, &label, 1);
 }
@@ -800,7 +800,7 @@ markdown_core_link_match markdown_core_link_recognize(const markdown_core_elemen
     bool explicit_tail = false;
     // If we got here, we matched a potential link/image text.
     // Now we check to see if it's a link/image.
-    bool is_image = opener->shape == &MARKDOWN_CORE_EMBEDDED_BRACKET;
+    bool is_image = opener->shape == &MARKDOWN_CORE_EMBED_BRACKET;
 
     bool link_allowed = is_image || !markdown_core_brackets(inline_state)->no_link_openers;
 
@@ -885,7 +885,7 @@ markdown_core_link_match markdown_core_link_recognize(const markdown_core_elemen
     }
 
     /* `[t][l]`, `[l][]` and `[l]` resolve identically and to the same node: the
-     * `Link` or `Embedded` the definition names (M2). Nothing records which of the
+     * `Link` or `Embed` the definition names (M2). Nothing records which of the
      * three spellings the author wrote, and nothing downstream can recover it
      * -- the module states one node for every successful form. */
     if (link_allowed && found_label) {
@@ -906,7 +906,7 @@ markdown_core_link_match markdown_core_link_recognize(const markdown_core_elemen
 bool markdown_core_link_commit(const markdown_core_element_instance *link, markdown_core_parser *parser,
                                markdown_core_inline_state *inline_state, bracket *opener,
                                markdown_core_link_candidate *candidate, bufsize_t initial_pos) {
-    bool is_image = opener->shape == &MARKDOWN_CORE_EMBEDDED_BRACKET;
+    bool is_image = opener->shape == &MARKDOWN_CORE_EMBED_BRACKET;
     bool explicit_tail = candidate->explicit_tail;
     bool reference = candidate->label.len != 0;
     markdown_core_chunk url = candidate->url;
@@ -914,16 +914,15 @@ bool markdown_core_link_commit(const markdown_core_element_instance *link, markd
     markdown_core_node *inl;
     markdown_core_inline_settle_bracket(inline_state, opener);
     if (!markdown_core_node_can_contain_type(markdown_core_scaffold_parent(opener->inl_text),
-                                             is_image ? MARKDOWN_CORE_NODE_EMBEDDED : MARKDOWN_CORE_NODE_LINK)) {
+                                             is_image ? MARKDOWN_CORE_NODE_EMBED : MARKDOWN_CORE_NODE_LINK)) {
         markdown_core_chunk_free(&url);
         markdown_core_optional_chunk_free(&title);
         return false;
     }
-    inl = markdown_core_inline_make_simple(inline_state,
-                                           is_image ? MARKDOWN_CORE_NODE_EMBEDDED : MARKDOWN_CORE_NODE_LINK);
+    inl = markdown_core_inline_make_simple(inline_state, is_image ? MARKDOWN_CORE_NODE_EMBED : MARKDOWN_CORE_NODE_LINK);
     if (inl && reference) {
         /* A RESOLVED REFERENCE NAMES ITS DEFINITION BY LABEL: the Link or
-         * Embedded holds its own copy of the normalized label, and its
+         * Embed holds its own copy of the normalized label, and its
          * destination and title are those of the node the document finds by
          * that label. The occurrence keeps its own scope and attributes. */
         const bufsize_t length = candidate->label.len;
@@ -980,9 +979,9 @@ bool markdown_core_link_commit(const markdown_core_element_instance *link, markd
     markdown_core_scaffold_insert_before(opener->inl_text, inl);
     markdown_core_inline_take_bracket_content(parser, inline_state, opener, inl);
 
-    /* Only the embedded element opens an image bracket. */
+    /* Only the embed element opens an image bracket. */
     if (is_image) {
-        markdown_core_inline_apply_image_dimensions(link->peers[LINK_EMBEDDED], inline_state, opener, inl,
+        markdown_core_inline_apply_image_dimensions(link->peers[LINK_EMBED], inline_state, opener, inl,
                                                     initial_pos - 1);
     }
 
@@ -1080,7 +1079,7 @@ static void report_open(const markdown_core_element_instance *self, markdown_cor
         const bufsize_t start = b->position - b->shape->width;
         markdown_core_field fields[2];
         size_t count = 0;
-        markdown_core_node_kind opens = b->shape == &MARKDOWN_CORE_EMBEDDED_BRACKET   ? MARKDOWN_CORE_KIND_EMBEDDED
+        markdown_core_node_kind opens = b->shape == &MARKDOWN_CORE_EMBED_BRACKET      ? MARKDOWN_CORE_KIND_EMBED
                                         : b->shape == &MARKDOWN_CORE_FOOTNOTE_BRACKET ? MARKDOWN_CORE_KIND_FOOTNOTE
                                                                                       : MARKDOWN_CORE_KIND_NONE;
         const bool label =
@@ -1269,7 +1268,7 @@ static const markdown_core_open_ops LINK_OPENS = {
 
 const markdown_core_facet MARKDOWN_CORE_LINK_FACETS[] = {
     {.kind = MARKDOWN_CORE_KIND_LINK, .parts = markdown_core_link_parts},
-    {.kind = MARKDOWN_CORE_KIND_EMBEDDED, .parts = markdown_core_link_parts},
+    {.kind = MARKDOWN_CORE_KIND_EMBED, .parts = markdown_core_link_parts},
     {.kind = MARKDOWN_CORE_KIND_REFERENCE, .parts = markdown_core_reference_parts},
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };

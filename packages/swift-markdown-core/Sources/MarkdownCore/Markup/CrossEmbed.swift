@@ -1,8 +1,8 @@
 import MarkdownCoreC
 
 /// A workspace transclusion written as `![[...]]`.
-public struct CrossEmbedded: Markup {
-    let record: CrossEmbeddedRecord
+public struct CrossEmbed: Markup {
+    let record: CrossEmbedRecord
 
     /// The node's identifier within its document.
     public var id: MarkupID { record.id }
@@ -22,7 +22,7 @@ public struct CrossEmbedded: Markup {
     public var dimensions: Dimensions? { record.dimensions }
 }
 
-final class CrossEmbeddedRecord: MarkupRecord, @unchecked Sendable {
+final class CrossEmbedRecord: MarkupRecord, @unchecked Sendable {
     let dest: Destination
     let label: String?
     let dimensions: Dimensions?
@@ -34,15 +34,15 @@ final class CrossEmbeddedRecord: MarkupRecord, @unchecked Sendable {
         super.init(fields, children: [])
     }
 
-    override var markup: any Markup { CrossEmbedded(record: self) }
+    override var markup: any Markup { CrossEmbed(record: self) }
 
     override func hasEqualFields(_ other: MarkupRecord) -> Bool {
-        let other = unsafeDowncast(other, to: CrossEmbeddedRecord.self)
+        let other = unsafeDowncast(other, to: CrossEmbedRecord.self)
         return dest == other.dest && label == other.label && dimensions == other.dimensions
     }
 }
 
-extension CrossEmbeddedRecord {
+extension CrossEmbedRecord {
     convenience init(from node: OpaquePointer) {
         self.init(
             InheritedFields(from: node),
@@ -53,6 +53,6 @@ extension CrossEmbeddedRecord {
     }
 }
 
-extension CrossEmbedded: RecordBacked {
+extension CrossEmbed: RecordBacked {
     var base: MarkupRecord { record }
 }

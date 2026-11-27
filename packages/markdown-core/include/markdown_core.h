@@ -270,7 +270,7 @@ typedef enum markdown_core_node_kind {
     MARKDOWN_CORE_KIND_STRONG = 20,
     MARKDOWN_CORE_KIND_STRIKETHROUGH = 21,
     MARKDOWN_CORE_KIND_LINK = 22,
-    MARKDOWN_CORE_KIND_EMBEDDED = 23,
+    MARKDOWN_CORE_KIND_EMBED = 23,
     MARKDOWN_CORE_KIND_DIRECTIVE = 24,
     MARKDOWN_CORE_KIND_CITE = 25,
     MARKDOWN_CORE_KIND_TABLE_ROW = 26,
@@ -279,7 +279,7 @@ typedef enum markdown_core_node_kind {
     MARKDOWN_CORE_KIND_COMMENT = 29,
     MARKDOWN_CORE_KIND_CROSS_LINK = 30,
     MARKDOWN_CORE_KIND_MARK = 31,
-    MARKDOWN_CORE_KIND_CROSS_EMBEDDED = 32,
+    MARKDOWN_CORE_KIND_CROSS_EMBED = 32,
     MARKDOWN_CORE_KIND_INSERTION = 33,
     MARKDOWN_CORE_KIND_SPAN = 34,
     MARKDOWN_CORE_KIND_SUPERSCRIPT = 35,
@@ -840,7 +840,7 @@ MARKDOWN_CORE_API size_t markdown_core_attribute_value_record_count(const markdo
 MARKDOWN_CORE_API markdown_core_status
 markdown_core_attribute_value_record_at(const markdown_core_attribute_value *attributes, size_t index,
                                         markdown_core_string *name, markdown_core_string *value);
-/** The borrowed dimensions of an `Embedded` or `CrossEmbedded`, valid for the
+/** The borrowed dimensions of an `Embed` or `CrossEmbed`, valid for the
  * document lifetime, or NULL when none were authored. Dimension values have
  * no node identity. */
 MARKDOWN_CORE_API markdown_core_status markdown_core_node_dimensions(const markdown_core_node *node,
@@ -863,11 +863,11 @@ MARKDOWN_CORE_API markdown_core_status markdown_core_node_callout_properties(con
  * title means no title. */
 MARKDOWN_CORE_API markdown_core_status markdown_core_node_callout_title(const markdown_core_node *node,
                                                                         markdown_core_nodes *title);
-/** The tagged `Destination` value of a `Link`, `Embedded`, `Reference`,
- * `CrossLink`, or `CrossEmbedded`: a value, not a node, so it has no scope
+/** The tagged `Destination` value of a `Link`, `Embed`, `Reference`,
+ * `CrossLink`, or `CrossEmbed`: a value, not a node, so it has no scope
  * and no children, and a branch's fields exist only in that branch; the
  * fields a branch does not use are zero. `MARKDOWN_CORE_DESTINATION_URL`
- * fills `url`: a direct `Link` or `Embedded` and every `Reference` answer
+ * fills `url`: a direct `Link` or `Embed` and every `Reference` answer
  * it. `MARKDOWN_CORE_DESTINATION_CROSS`, the workspace address a cross link
  * produces, fills `path` and `anchor`. `MARKDOWN_CORE_DESTINATION_REFERENCE`
  * fills `label`: a reference occurrence -- `[t][l]`, `[l][]` or `[l]` --
@@ -897,12 +897,12 @@ typedef struct markdown_core_destination {
 MARKDOWN_CORE_API markdown_core_status markdown_core_node_destination(const markdown_core_node *node,
                                                                       markdown_core_destination *destination);
 /** The raw label of a `CrossLink` or remaining raw prefix of a
- * `CrossEmbedded` after a valid dimension suffix. Absent if no separator was
- * authored. A size-only CrossEmbedded label is present and empty. */
+ * `CrossEmbed` after a valid dimension suffix. Absent if no separator was
+ * authored. A size-only CrossEmbed label is present and empty. */
 MARKDOWN_CORE_API markdown_core_status markdown_core_node_cross_label(const markdown_core_node *node,
                                                                       markdown_core_optional_string *label);
 
-/** The OPTIONAL title of a `Link`, `Embedded` or `Reference`: `[a](/u)`
+/** The OPTIONAL title of a `Link`, `Embed` or `Reference`: `[a](/u)`
  * wrote no title and `[a](/u "")` wrote an empty one. A reference
  * occurrence writes none; the `Reference` it names states its own. */
 MARKDOWN_CORE_API markdown_core_status markdown_core_node_title(const markdown_core_node *node,

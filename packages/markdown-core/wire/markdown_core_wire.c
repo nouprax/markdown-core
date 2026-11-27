@@ -190,7 +190,7 @@ static void put_destination(wire_buffer *buffer, const markdown_core_node *node)
     }
 }
 
-/* `dest`, then `title`: a Link's, an Embedded's or a Reference's. */
+/* `dest`, then `title`: a Link's, an Embed's or a Reference's. */
 static void put_resource(wire_buffer *buffer, const markdown_core_node *node) {
     markdown_core_optional_string title;
     put_destination(buffer, node);
@@ -373,7 +373,7 @@ static size_t node_edges(const markdown_core_node *node, markdown_core_node_kind
     case MARKDOWN_CORE_KIND_COMMENT:
     case MARKDOWN_CORE_KIND_TOPIC:
     case MARKDOWN_CORE_KIND_CROSS_LINK:
-    case MARKDOWN_CORE_KIND_CROSS_EMBEDDED:
+    case MARKDOWN_CORE_KIND_CROSS_EMBED:
     case MARKDOWN_CORE_KIND_METADATA:
     case MARKDOWN_CORE_KIND_REFERENCE:
         return 0;
@@ -393,7 +393,7 @@ static size_t node_edges(const markdown_core_node *node, markdown_core_node_kind
     case MARKDOWN_CORE_KIND_SUPERSCRIPT:
     case MARKDOWN_CORE_KIND_SUBSCRIPT:
     case MARKDOWN_CORE_KIND_LINK:
-    case MARKDOWN_CORE_KIND_EMBEDDED:
+    case MARKDOWN_CORE_KIND_EMBED:
     case MARKDOWN_CORE_KIND_DEFINITION_LIST:
         /* The one node-valued field is the children. */
         edges[0] = nodes_edge(children);
@@ -605,18 +605,18 @@ static void put_record(wire_buffer *buffer, const markdown_core_node *node) {
         }
         break;
     case MARKDOWN_CORE_KIND_CROSS_LINK:
-    case MARKDOWN_CORE_KIND_CROSS_EMBEDDED:
+    case MARKDOWN_CORE_KIND_CROSS_EMBED:
         put_destination(buffer, node);
         markdown_core_node_cross_label(node, &first);
         put_optional_string(buffer, first);
-        if (kind == MARKDOWN_CORE_KIND_CROSS_EMBEDDED) {
+        if (kind == MARKDOWN_CORE_KIND_CROSS_EMBED) {
             put_dimensions(buffer, node);
         }
         break;
     case MARKDOWN_CORE_KIND_LINK:
-    case MARKDOWN_CORE_KIND_EMBEDDED:
+    case MARKDOWN_CORE_KIND_EMBED:
         put_resource(buffer, node);
-        if (kind == MARKDOWN_CORE_KIND_EMBEDDED) {
+        if (kind == MARKDOWN_CORE_KIND_EMBED) {
             put_dimensions(buffer, node);
         }
         put_nodes_count(buffer, &edges[0]);

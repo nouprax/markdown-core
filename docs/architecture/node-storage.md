@@ -84,7 +84,7 @@ every release of one walked the allocator's merge path, and releasing the
 finished tree cost more than a third of parsing it.
 
 Resources are slots too. A resource is the destination and title a direct
-`Link` or `Embedded` or a `Reference` states, owned by that one node; a
+`Link` or `Embed` or a `Reference` states, owned by that one node; a
 reference occurrence holds its label and no resource. It is taken from a
 second pool of the parse, and `slab.h` is the one mechanism both pools use.
 Its node releases it: into a pool, its slot goes back to that pool's resource
@@ -150,14 +150,14 @@ including the first allocation, which cannot copy the sentinel's NUL byte.
 Failed growth preserves the old storage and terminated value and records OOM.
 
 `CrossLink` stores a `markdown_core_cross_reference` record containing its raw
-path, optional anchor, and optional label. `CrossEmbedded` stores a
-`markdown_core_cross_embedded` record containing the same reference fields and
+path, optional anchor, and optional label. `CrossEmbed` stores a
+`markdown_core_cross_embed` record containing the same reference fields and
 optional dimensions. The two kinds share the reference layout, while each
 occurrence owns its string chunks; optional presence remains independent of
 string length. The node kind identifies a link or transclusion, with no
 embedded flag in either record.
 
-Only `Embedded` and `CrossEmbedded` expose `Dimensions(width, height?)`. The
+Only `Embed` and `CrossEmbed` expose `Dimensions(width, height?)`. The
 optional value is stored inline in the occurrence's typed record, without a
 separate allocation, and its lifetime ends with that record. Cross references
 own their raw destination fields directly.

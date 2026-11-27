@@ -179,7 +179,7 @@ public sealed class Markup {
                 listOf(Relation(null, content))
             }
 
-            is Embedded -> {
+            is Embed -> {
                 listOf(Relation(null, content))
             }
 
@@ -192,7 +192,7 @@ public sealed class Markup {
             }
 
             is ThematicBreak, is CodeBlock, is HTMLBlock, is FormulaBlock, is Text, is SoftBreak, is LineBreak, is Code,
-            is HTML, is Comment, is CrossLink, is CrossEmbedded, is Formula, is Metadata, is Reference, is Topic,
+            is HTML, is Comment, is CrossLink, is CrossEmbed, is Formula, is Metadata, is Reference, is Topic,
             -> {
                 emptyList()
             }
@@ -294,8 +294,8 @@ public sealed class Markup {
                 other is CrossLink && dest == other.dest && label == other.label
             }
 
-            is CrossEmbedded -> {
-                other is CrossEmbedded && dest == other.dest && label == other.label &&
+            is CrossEmbed -> {
+                other is CrossEmbed && dest == other.dest && label == other.label &&
                     dimensions == other.dimensions
             }
 
@@ -347,8 +347,8 @@ public sealed class Markup {
                 other is Link && dest == other.dest && title == other.title
             }
 
-            is Embedded -> {
-                other is Embedded && dest == other.dest && title == other.title &&
+            is Embed -> {
+                other is Embed && dest == other.dest && title == other.title &&
                     dimensions == other.dimensions
             }
 

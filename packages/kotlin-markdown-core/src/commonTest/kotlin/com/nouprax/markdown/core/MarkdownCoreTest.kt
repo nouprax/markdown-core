@@ -103,9 +103,9 @@ class ApiTest {
     }
 
     @Test
-    fun embeddedCrossLinksShareDimensionsAndKeepRawPrefixes() {
+    fun embedCrossLinksShareDimensionsAndKeepRawPrefixes() {
         val document = Document.parse("![[v.mp4|*raw*|2147483647x2]] ![[n|3]] [[n|100]] ![[n|bad|01]] ![[n]]\n")
-        val links = assertIs<Paragraph>(document.content.single()).content.filterIsInstance<CrossEmbedded>()
+        val links = assertIs<Paragraph>(document.content.single()).content.filterIsInstance<CrossEmbed>()
         assertEquals(listOf(Dimensions(2147483647, 2), Dimensions(3), null, null), links.map { it.dimensions })
         assertEquals(
             "100",
@@ -122,7 +122,7 @@ class ApiTest {
     fun imageDimensionsBelongToOccurrencesWithSharedDestinations() {
         val source = "![*alt*|2147483647x2][r] ![3][r] ![bad|01][r]\n\n[r]: /shared \"title\"\n"
         val document = Document.parse(source)
-        val images = assertIs<Paragraph>(document.content.first()).content.filterIsInstance<Embedded>()
+        val images = assertIs<Paragraph>(document.content.first()).content.filterIsInstance<Embed>()
         assertEquals(listOf(Dimensions(2147483647, 2), Dimensions(3), null), images.map { it.dimensions })
         assertEquals(1, setOf(Dimensions(640, 480), Dimensions(640, 480)).size)
         assertTrue(images.all { it.dest == Destination.Reference("r") && it.title == null })
@@ -144,12 +144,12 @@ class ApiTest {
         images[0].walk(visitor)
         assertEquals(
             listOf(
-                "enter:Embedded",
+                "enter:Embed",
                 "enter:Emphasis",
                 "enter:Text",
                 "exit:Text",
                 "exit:Emphasis",
-                "exit:Embedded",
+                "exit:Embed",
             ),
             visitor.events,
         )
@@ -250,13 +250,13 @@ class ApiTest {
         val document = Document.parse("# Heading\n\nBody ![alt](image.png)\n")
         val visitor = KindVisitor()
         val paragraph = assertIs<Paragraph>(document.content.last())
-        val embedded = paragraph.content.filterIsInstance<Embedded>().single()
-        val node: Markup = embedded
+        val embed = paragraph.content.filterIsInstance<Embed>().single()
+        val node: Markup = embed
         document.walk(visitor)
-        assertEquals(listOf("Document", "heading:1", "Text", "Paragraph", "Text", "Embedded", "Text"), visitor.kinds)
+        assertEquals(listOf("Document", "heading:1", "Text", "Paragraph", "Text", "Embed", "Text"), visitor.kinds)
         visitor.kinds.clear()
         node.walk(visitor)
-        assertEquals(listOf("Embedded", "Text"), visitor.kinds)
+        assertEquals(listOf("Embed", "Text"), visitor.kinds)
     }
 
     @Test
@@ -522,7 +522,7 @@ class BindingMappingTest {
         val document = Document.parse(source)
 
         // The definition is a Reference where it was written, and every
-        // reference form is a Link or Embedded naming its label.
+        // reference form is a Link or Embed naming its label.
         val reference = assertIs<Reference>(document.content[0])
         assertEquals("foo", reference.label)
         assertEquals(Destination.Url("/url"), reference.dest)
@@ -548,7 +548,7 @@ class BindingMappingTest {
             assertEquals("foo", assertIs<Destination.Reference>(link.dest).label)
             assertNull(link.title)
         }
-        val image = inlines.filterIsInstance<Embedded>().single()
+        val image = inlines.filterIsInstance<Embed>().single()
         assertEquals(Destination.Reference("foo"), image.dest)
         assertNull(image.title)
         assertEquals(Placement.STANDALONE, inlines.filterIsInstance<Formula>().single().mode)
@@ -572,7 +572,7 @@ class BindingMappingTest {
         // The owning node keeps its label field separate from block content;
         // the per-node dumper deliberately emits both relations.
         val dump = document.dump(source)
-        for (fragment in listOf("Reference scope=", "dest=reference(\"foo\")", "Embedded scope=", "DirectiveLabel")) {
+        for (fragment in listOf("Reference scope=", "dest=reference(\"foo\")", "Embed scope=", "DirectiveLabel")) {
             assertTrue(dump.contains(fragment), "dump is missing $fragment")
         }
         assertEquals(listOf("Paragraph"), block.content.map { it::class.simpleName })
@@ -734,10 +734,10 @@ class BindingMappingTest {
 
         val rich = assertIs<Paragraph>(withEverything.content[1]).content
         assertEquals("t", rich.filterIsInstance<Link>().single().title)
-        assertEquals("u", rich.filterIsInstance<Embedded>().single().title)
+        assertEquals("u", rich.filterIsInstance<Embed>().single().title)
         val plain = assertIs<Paragraph>(withNothing.content[1]).content
         assertEquals(null, plain.filterIsInstance<Link>().single().title)
-        assertEquals(null, plain.filterIsInstance<Embedded>().single().title)
+        assertEquals(null, plain.filterIsInstance<Embed>().single().title)
 
         assertEquals(listOf(Record("k", "v")), assertIs<DirectiveBlock>(withEverything.content[2]).attributes.records)
         assertEquals(emptyList(), assertIs<DirectiveBlock>(withNothing.content[2]).attributes.records)
@@ -892,7 +892,7 @@ class RobustnessTest {
         val paragraph = assertIs<Paragraph>(document.content[1])
         val code = assertIs<Code>(paragraph.content[0])
         val link = assertIs<Link>(paragraph.content[2])
-        val image = assertIs<Embedded>(paragraph.content[4])
+        val image = assertIs<Embed>(paragraph.content[4])
         assertEquals(listOf("code"), code.attributes.classes)
         assertEquals(
             10,

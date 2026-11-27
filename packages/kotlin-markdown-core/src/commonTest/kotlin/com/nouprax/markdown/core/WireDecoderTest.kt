@@ -243,7 +243,7 @@ class WireDecoderTest {
                     .string("r")
                     .optional<String>(null) { string(it) }
                     .u32(0)
-                    .record(NodeKind.EMBEDDED)
+                    .record(NodeKind.EMBED)
                     .u8(2)
                     .string("r")
                     .optional<String>(null) { string(it) }
@@ -269,7 +269,7 @@ class WireDecoderTest {
         assertNull(occurrence.title)
         assertEquals("own", occurrence.anchor)
         assertEquals(listOf("mine"), occurrence.attributes.classes)
-        val image = assertIs<Embedded>(inlines[2])
+        val image = assertIs<Embed>(inlines[2])
         assertEquals(Destination.Reference("r"), image.dest)
         assertNull(image.title)
         assertNull(image.dimensions)

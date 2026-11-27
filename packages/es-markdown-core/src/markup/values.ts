@@ -67,7 +67,7 @@ export type OrderedListVariant =
     | "default";
 export type OrderedListDelimiter = "period" | { readonly kind: "parenthesis"; readonly closed: boolean } | "default";
 /**
- * The target of a `Link`, `Embedded` or `Reference`: a tagged value, not a
+ * The target of a `Link`, `Embed` or `Reference`: a tagged value, not a
  * node, so it has no id, no extent and no children, and a branch's fields
  * exist only in that branch. A direct link or image and every `Reference` own
  * the `url` branch, the complete semantic destination the inherited grammar

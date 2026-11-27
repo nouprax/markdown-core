@@ -304,7 +304,7 @@ Document scope=1:1..1:86 anchor=null attributes={} children=1
     ├── Link scope=1:1..1:15 anchor=null attributes={} dest=url("#dest") title=null children=1
     │   └── Topic scope=1:2..1:7 anchor=null attributes={} name="label" children=0
     ├── Text scope=1:16..1:16 anchor=null attributes={} literal=" " children=0
-    ├── Embedded scope=1:17..1:31 anchor=null attributes={} dest=url("/i.png") title=null dimensions=null children=1
+    ├── Embed scope=1:17..1:31 anchor=null attributes={} dest=url("/i.png") title=null dimensions=null children=1
     │   └── Topic scope=1:19..1:22 anchor=null attributes={} name="alt" children=0
     ├── Text scope=1:32..1:32 anchor=null attributes={} literal=" " children=0
     ├── CrossLink scope=1:33..1:48 anchor=null attributes={} dest=cross(path="Note",anchor="Heading") label=null children=0

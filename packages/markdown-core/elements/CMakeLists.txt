@@ -42,7 +42,7 @@ set(LIBRARY_SOURCES
     link_scanners.c
     list.c
     mark.c
-    embedded.c
+    embed.c
     paragraph.c
     properties.c
     yaml.c

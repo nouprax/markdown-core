@@ -46,7 +46,7 @@ const INLINE_CONTENT = new Set([
     "Strong",
     "Strikethrough",
     "Link",
-    "Embedded"
+    "Embed"
 ]);
 
 function taskMarkers(tree) {
@@ -61,17 +61,17 @@ const stateValidators = {
     "definition.compact.false": (tree) => /Definition scope=.* compact=false /.test(tree),
     "definition.bodies.multiple": (tree) => /Definition scope=.* children=(?:[2-9]|[1-9]\d+)(?:\n|$)/.test(tree),
     "definition.body.empty": (tree) => /DefinitionBody children=0/.test(tree),
-    "crossEmbedded.dimensions.width": (tree) =>
-        /CrossEmbedded scope=.* dimensions=\(width=[1-9][0-9]*,height=null\) /.test(tree),
-    "crossEmbedded.dimensions.width-height": (tree) =>
-        /CrossEmbedded scope=.* dimensions=\(width=[1-9][0-9]*,height=[1-9][0-9]*\) /.test(tree),
-    "crossEmbedded.dimensions.null": (tree) => /CrossEmbedded scope=.* dimensions=null /.test(tree),
+    "crossEmbed.dimensions.width": (tree) =>
+        /CrossEmbed scope=.* dimensions=\(width=[1-9][0-9]*,height=null\) /.test(tree),
+    "crossEmbed.dimensions.width-height": (tree) =>
+        /CrossEmbed scope=.* dimensions=\(width=[1-9][0-9]*,height=[1-9][0-9]*\) /.test(tree),
+    "crossEmbed.dimensions.null": (tree) => /CrossEmbed scope=.* dimensions=null /.test(tree),
     "crossLink.label.null": (tree) => /CrossLink scope=.* label=null /.test(tree),
     "crossLink.label.empty": (tree) => /CrossLink scope=.* label="" /.test(tree),
     "crossLink.label.value": (tree) => /CrossLink scope=.* label="[^"\n]+" /.test(tree),
-    "crossEmbedded.label.null": (tree) => /CrossEmbedded scope=.* label=null /.test(tree),
-    "crossEmbedded.label.empty": (tree) => /CrossEmbedded scope=.* label="" /.test(tree),
-    "crossEmbedded.label.value": (tree) => /CrossEmbedded scope=.* label="[^"\n]+" /.test(tree),
+    "crossEmbed.label.null": (tree) => /CrossEmbed scope=.* label=null /.test(tree),
+    "crossEmbed.label.empty": (tree) => /CrossEmbed scope=.* label="" /.test(tree),
+    "crossEmbed.label.value": (tree) => /CrossEmbed scope=.* label="[^"\n]+" /.test(tree),
     "destination.cross.path": (tree) => / dest=cross\(path="[^"\n]+",anchor=/.test(tree),
     "destination.cross.current-document": (tree) => / dest=cross\(path="",anchor="/.test(tree),
     "destination.cross.anchor.null": (tree) => / dest=cross\(path="[^"\n]*",anchor=null\)/.test(tree),
@@ -132,10 +132,10 @@ const stateValidators = {
     "metadata.list.empty": (tree) => /Metadata scope=.*[a-z]=list\(\[\]\)/.test(tree),
     "metadata.list.populated": (tree) => /Metadata scope=.*[a-z]=list\(\[(?:text|number)\(/.test(tree),
     "document.metadata.null": (tree) => !/Metadata scope=/.test(tree),
-    "embedded.dimensions.width": (tree) => /Embedded scope=.* dimensions=\(width=[1-9][0-9]*,height=null\) /.test(tree),
-    "embedded.dimensions.width-height": (tree) =>
-        /Embedded scope=.* dimensions=\(width=[1-9][0-9]*,height=[1-9][0-9]*\) /.test(tree),
-    "embedded.dimensions.null": (tree) => /Embedded scope=.* dimensions=null /.test(tree),
+    "embed.dimensions.width": (tree) => /Embed scope=.* dimensions=\(width=[1-9][0-9]*,height=null\) /.test(tree),
+    "embed.dimensions.width-height": (tree) =>
+        /Embed scope=.* dimensions=\(width=[1-9][0-9]*,height=[1-9][0-9]*\) /.test(tree),
+    "embed.dimensions.null": (tree) => /Embed scope=.* dimensions=null /.test(tree),
     // The dump visualizes the DirectiveLabel field as a nested Markup node:
     // absent emits no label node, empty has `children=0`, and populated owns
     // inline descendants.
@@ -146,18 +146,18 @@ const stateValidators = {
     "directive.label.empty": (tree) => /DirectiveLabel scope=\S+ anchor=null attributes=\{\} children=0$/m.test(tree),
     "directive.label.populated": (tree) =>
         /DirectiveLabel scope=\S+ anchor=null attributes=\{\} children=[1-9]\d*$/m.test(tree),
-    // A reference occurrence is a `Link` or `Embedded` naming its definition's
+    // A reference occurrence is a `Link` or `Embed` naming its definition's
     // normalized label, and the definition is a `Reference` where it was
     // written, holding the url destination it states.
     "destination.reference.label": (tree) =>
-        /(?:Link|Embedded) scope=.* dest=reference\("(?:\\.|[^"\\])+"\) /.test(tree),
+        /(?:Link|Embed) scope=.* dest=reference\("(?:\\.|[^"\\])+"\) /.test(tree),
     "reference.definition.url": (tree) =>
         /Reference scope=.* label="(?:\\.|[^"\\])+" dest=url\("(?:\\.|[^"\\])*"\) title=/.test(tree),
     "link.title.null": (tree) => /^.*Link scope=.* title=null /m.test(tree),
     "link.title.empty": (tree) => /^.*Link scope=.* title="" /m.test(tree),
     "link.title.value": (tree) => /^.*Link scope=.* title=".+" /m.test(tree),
-    "embedded.title.null": (tree) => /^.*Embedded scope=.* title=null /m.test(tree),
-    "embedded.title.value": (tree) => /^.*Embedded scope=.* title=".+" /m.test(tree),
+    "embed.title.null": (tree) => /^.*Embed scope=.* title=null /m.test(tree),
+    "embed.title.value": (tree) => /^.*Embed scope=.* title=".+" /m.test(tree),
     "scope.positive": (tree) => / scope=[1-9]\d*:[1-9]\d*\.\./.test(tree),
     /* `scope.zero` was here, and it required the canonical corpus to demonstrate
        a node with NO position -- 0:0..0:0. Its only two witnesses in that corpus

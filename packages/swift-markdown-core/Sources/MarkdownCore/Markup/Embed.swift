@@ -8,8 +8,8 @@ import MarkdownCoreC
 /// flattening it to a string is the consumer's decision, not the parser's.
 /// Complete `W`, `WxH`, `alt|W` and `alt|WxH` labels supply positive 32-bit
 /// dimensions without leading zeros, on both direct and reference images.
-public struct Embedded: Markup {
-    let record: EmbeddedRecord
+public struct Embed: Markup {
+    let record: EmbedRecord
 
     /// The node's identifier within its document.
     public var id: MarkupID { record.id }
@@ -32,7 +32,7 @@ public struct Embedded: Markup {
     public var dimensions: Dimensions? { record.dimensions }
 }
 
-final class EmbeddedRecord: MarkupRecord, @unchecked Sendable {
+final class EmbedRecord: MarkupRecord, @unchecked Sendable {
     let dest: Destination
     let title: String?
     let dimensions: Dimensions?
@@ -50,15 +50,15 @@ final class EmbeddedRecord: MarkupRecord, @unchecked Sendable {
         super.init(fields, children: content)
     }
 
-    override var markup: any Markup { Embedded(record: self) }
+    override var markup: any Markup { Embed(record: self) }
 
     override func hasEqualFields(_ other: MarkupRecord) -> Bool {
-        let other = unsafeDowncast(other, to: EmbeddedRecord.self)
+        let other = unsafeDowncast(other, to: EmbedRecord.self)
         return dest == other.dest && title == other.title && dimensions == other.dimensions
     }
 }
 
-extension EmbeddedRecord {
+extension EmbedRecord {
     convenience init(from node: OpaquePointer, content: [MarkupRecord]) {
         self.init(
             InheritedFields(from: node),
@@ -70,6 +70,6 @@ extension EmbeddedRecord {
     }
 }
 
-extension Embedded: RecordBacked {
+extension Embed: RecordBacked {
     var base: MarkupRecord { record }
 }

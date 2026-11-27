@@ -261,7 +261,7 @@ extension DocumentBuilder {
         case MARKDOWN_CORE_KIND_HTML: return HTMLRecord(from: node)
         case MARKDOWN_CORE_KIND_COMMENT: return CommentRecord(from: node)
         case MARKDOWN_CORE_KIND_CROSS_LINK: return CrossLinkRecord(from: node)
-        case MARKDOWN_CORE_KIND_CROSS_EMBEDDED: return CrossEmbeddedRecord(from: node)
+        case MARKDOWN_CORE_KIND_CROSS_EMBED: return CrossEmbedRecord(from: node)
         case MARKDOWN_CORE_KIND_FORMULA: return FormulaRecord(from: node)
         case MARKDOWN_CORE_KIND_EMPHASIS: return EmphasisRecord(from: node, content: children)
         case MARKDOWN_CORE_KIND_STRONG: return StrongRecord(from: node, content: children)
@@ -272,7 +272,7 @@ extension DocumentBuilder {
         case MARKDOWN_CORE_KIND_SUPERSCRIPT: return SuperscriptRecord(from: node, content: children)
         case MARKDOWN_CORE_KIND_SUBSCRIPT: return SubscriptRecord(from: node, content: children)
         case MARKDOWN_CORE_KIND_LINK: return LinkRecord(from: node, content: children)
-        case MARKDOWN_CORE_KIND_EMBEDDED: return EmbeddedRecord(from: node, content: children)
+        case MARKDOWN_CORE_KIND_EMBED: return EmbedRecord(from: node, content: children)
         case MARKDOWN_CORE_KIND_DIRECTIVE:
             return DirectiveRecord(from: node, label: take(relations.label, as: DirectiveLabelRecord.self))
         case MARKDOWN_CORE_KIND_CITE: return CiteRecord(from: node, citations: take(relations.citations))

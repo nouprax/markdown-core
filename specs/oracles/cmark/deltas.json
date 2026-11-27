@@ -75,7 +75,7 @@
         {
             "id": "reference-definition-node",
             "kind": "deliberate-difference",
-            "summary": "A link reference definition is a `Reference` block where it was written, holding its normalized label, destination and title, and a reference `Link` or `Embedded` names that label (`dest=reference(\"...\")`) with no title. Upstream consumes the definition and copies its destination and title into every occurrence that resolves to it.",
+            "summary": "A link reference definition is a `Reference` block where it was written, holding its normalized label, destination and title, and a reference `Link` or `Embed` names that label (`dest=reference(\"...\")`) with no title. Upstream consumes the definition and copies its destination and title into every occurrence that resolves to it.",
             "handling": "The shared normalizer projects this side's tree onto upstream's shape (`resolveReferences`): each reference destination takes its target's destination as the document resolves the label -- the url and title of the first `Reference` with the label, or the `#anchor` of the first `Heading` whose text declares it -- every `Reference` leaves the tree, and the projection records that it acted. A model difference, so a projection rather than a list of inputs; which occurrences resolve, and to which target, is compared unchanged.",
             "projected": true
         }

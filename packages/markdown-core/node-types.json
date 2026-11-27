@@ -270,10 +270,10 @@
             }
         },
         {
-            "name": "EMBEDDED",
-            "kind": "Embedded",
+            "name": "EMBED",
+            "kind": "Embed",
             "ops": "LINK",
-            "structure": "EMBEDDED",
+            "structure": "EMBED",
             "contain": {
                 "inlines": true
             }
@@ -358,9 +358,9 @@
             }
         },
         {
-            "name": "CROSS_EMBEDDED",
-            "kind": "CrossEmbedded",
-            "ops": "CROSS_EMBEDDED",
+            "name": "CROSS_EMBED",
+            "kind": "CrossEmbed",
+            "ops": "CROSS_EMBED",
             "structure": "CROSS_LINK",
             "contain": null
         },

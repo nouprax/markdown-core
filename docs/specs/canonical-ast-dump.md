@@ -135,7 +135,7 @@ then `TableBody`, including an empty body. The table's `children` counts their
 rows, not the group lines. A row and a cell print no scalar fields.
 
 A `Dimensions` value prints `(width=W,height=H)` with no internal spaces;
-`H` is `null` when only width was authored. `Embedded.dimensions` and `CrossEmbedded.dimensions` print `null`
+`H` is `null` when only width was authored. `Embed.dimensions` and `CrossEmbed.dimensions` print `null`
 when absent, so `dimensions=null` and `dimensions=(width=100,height=null)`
 remain distinct. A present value always has positive width; height without
 width is invalid. The value introduces no node or child line.
@@ -172,7 +172,7 @@ that the dump represents as nested descendants.
 | `Code` | `anchor`, `attributes`, `literal` |
 | `HTML` | `anchor`, `attributes`, `literal` |
 | `CrossLink` | `anchor`, `attributes`, `dest`, `label` |
-| `CrossEmbedded` | `anchor`, `attributes`, `dest`, `label`, `dimensions` |
+| `CrossEmbed` | `anchor`, `attributes`, `dest`, `label`, `dimensions` |
 | `Comment` | `anchor`, `attributes`, `literal` |
 | `Formula` | `anchor`, `attributes`, `mode`, `literal` |
 | `Emphasis` | `anchor`, `attributes` |
@@ -184,7 +184,7 @@ that the dump represents as nested descendants.
 | `Superscript` | `anchor`, `attributes` |
 | `Subscript` | `anchor`, `attributes` |
 | `Link` | `anchor`, `attributes`, `dest`, `title` |
-| `Embedded` | `anchor`, `attributes`, `dest`, `title`, `dimensions` |
+| `Embed` | `anchor`, `attributes`, `dest`, `title`, `dimensions` |
 | `Directive` | `anchor`, `attributes`, `name` |
 | `Cite` | `anchor`, `attributes` |
 | `Topic` | `anchor`, `attributes`, `name` |

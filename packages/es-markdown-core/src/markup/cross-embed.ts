@@ -3,7 +3,7 @@ import type { Destination } from "./values.js";
 import type { Dimensions } from "../common/constraints.js";
 
 /** A workspace transclusion. The label is absent only when no separator was written. */
-export interface CrossEmbedded extends MarkupBase<"crossEmbedded"> {
+export interface CrossEmbed extends MarkupBase<"crossEmbed"> {
     readonly dest: Destination;
     /** Raw prefix after a valid dimension suffix; null only when no separator was authored. */
     readonly label: string | null;

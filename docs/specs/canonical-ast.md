@@ -262,7 +262,7 @@ explicit null values.
 `Dimensions(width: Int, height: Int?)` is a node-independent value. Width is
 required and height is optional; every present component is in 1..2147483647.
 It has no kind, id, extent, anchor, attributes, children or visitor callbacks.
-`Embedded.dimensions` and `CrossEmbedded.dimensions` have type `Dimensions?`, absent when no complete valid suffix was
+`Embed.dimensions` and `CrossEmbed.dimensions` have type `Dimensions?`, absent when no complete valid suffix was
 recognized, including malformed labels. The dimension suffix produces this value from image
 labels and embedded cross-link labels. `CrossLink` has no dimensions field.
 The value is independent of a destination's shared identity and attribute records.
@@ -275,18 +275,18 @@ Destination = url(String) | cross(path: String, anchor: String?) | reference(lab
 
 `Destination` is a tagged value, not a node: it has no id, extent, children,
 anchor, or attributes, and a branch's fields exist only in that branch. It is
-the `dest` of every `Link`, `Embedded` and `Reference`. A direct `Link` or
-`Embedded` and every `Reference` own the `url` branch: the
+the `dest` of every `Link`, `Embed` and `Reference`. A direct `Link` or
+`Embed` and every `Reference` own the `url` branch: the
 complete semantic destination the inherited grammar produced, the bytes
 between angle brackets or the bare destination with backslash escapes and
 character references decoded and no percent-encoding, normalization, or
-resolution, and possibly empty. A reference `Link` or `Embedded` owns the
+resolution, and possibly empty. A reference `Link` or `Embed` owns the
 `reference` branch: the normalized label it names, which resolves to the
 first `Reference` in document source order whose label is equal, or, when
 none is, the first `Heading` in document source order whose text declares
 it. The `cross` branch is the workspace address of
 the [cross links](dialect/cross-links.md) module and is stored by
-`CrossLink` and `CrossEmbedded`. The parser fetches no URL, opens no file, tests no
+`CrossLink` and `CrossEmbed`. The parser fetches no URL, opens no file, tests no
 existence, and infers no media type; no such result is a field or a branch.
 The C facade answers it through `markdown_core_node_destination`, whose
 `kind` names the branch and whose other branch's fields are zeroed; Swift
@@ -391,7 +391,7 @@ them without checking.
 | `Code` | `literal: String` | mode is `embedded`; leaf |
 | `HTML` | `literal: String` | raw HTML is preserved; an HTML comment token is a `Comment`; leaf |
 | `CrossLink` | `dest: Destination`, `label: String?` | inline leaf; cross destination; complete raw label; no separator means null |
-| `CrossEmbedded` | `dest: Destination`, `label: String?`, `dimensions: Dimensions?` | inline leaf; workspace transclusion; cross destination; label is the raw prefix after a valid size suffix; no separator means null |
+| `CrossEmbed` | `dest: Destination`, `label: String?`, `dimensions: Dimensions?` | inline leaf; workspace transclusion; cross destination; label is the raw prefix after a valid size suffix; no separator means null |
 | `Comment` | `literal: String` | an HTML comment or a `%%` comment, the one kind valid in both block and inline content, which the parent edge records; `literal` excludes the delimiters and keeps every byte between them; leaf |
 | `Formula` | `mode: Placement`, `literal: String` | either mode; leaf |
 | `Emphasis` | `content: [Markup]` | inline content |
@@ -403,7 +403,7 @@ them without checking.
 | `Superscript` | `content: [Markup]` | inline content; empty bodies are retained |
 | `Subscript` | `content: [Markup]` | inline content; non-empty body |
 | `Link` | `dest: Destination`, `title: String?`, `content: [Markup]` | `dest` is the tagged `Destination` value and is never absent: `[a]()` and `[a](<>)` wrote one and wrote nothing in it, so it is `url("")`; a direct link owns the `url` branch; a reference occurrence owns the `reference` branch with the normalized label it names, and an unresolved reference is the inherited literal text; absent and empty title remain distinct; inline content |
-| `Embedded` | `dest: Destination`, `title: String?`, `dimensions: Dimensions?`, `content: [Markup]` | `dest` is the tagged `Destination` value and is never absent, for the reason `Link.dest` is not; a direct image owns the `url` branch and a reference image the `reference` branch; absent and empty title remain distinct; content is parsed alt-text inline content |
+| `Embed` | `dest: Destination`, `title: String?`, `dimensions: Dimensions?`, `content: [Markup]` | `dest` is the tagged `Destination` value and is never absent, for the reason `Link.dest` is not; a direct image owns the `url` branch and a reference image the `reference` branch; absent and empty title remain distinct; content is parsed alt-text inline content |
 | `Directive` | `name: String`, `label: DirectiveLabel?` | letter-first name; attributes use the inherited fields; label is a typed Markup field spanning its brackets, never content; absent and empty labels remain distinct; leaf |
 | `Cite` | `citations: [Citation]` | one or more items in source order; every item has exactly one referent and one cite never mixes referent families; an inherited `[^label]` call is one item with a `footnote(label)` referent whose value is the normalized label without the caret and with empty affixes; its items are owned Citation nodes in the citations field; ordinary content remains empty |
 | `Topic` | `name: String` | inline leaf; the name as written, without the `#`; null anchor and empty attributes |
@@ -416,11 +416,11 @@ them without checking.
 | `Reference` | `label: String`, `dest: Destination`, `title: String?` | A link reference definition where it was written: a leaf block with its normalized label, the `url` destination it states, and its title, absent and empty remaining distinct. Its anchor and attributes are the ones the definition states. Duplicates and unused definitions remain. |
 
 Every row also has the ordered inherited fields `id: MarkupID`,
-`extent: Extent`, `runs: [Run]`, `anchor: String?`, and `attributes: Attributes`; they are not repeated in the table. The `url` of a `Link` or `Embedded` destination, and
+`extent: Extent`, `runs: [Run]`, `anchor: String?`, and `attributes: Attributes`; they are not repeated in the table. The `url` of a `Link` or `Embed` destination, and
 every `title`, are the CommonMark-unescaped values with angle-bracket
 wrappers removed and no percent-encoding or normalization. A link reference
 definition is a `Reference` block where it was written, and every successful
-full, collapsed or shortcut form is a `Link` or `Embedded` whose `reference`
+full, collapsed or shortcut form is a `Link` or `Embed` whose `reference`
 destination names the definition's label, with no title and its own
 occurrence scope. An unresolved reference is the inherited literal text with
 its brackets.

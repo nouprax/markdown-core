@@ -6,6 +6,13 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Rename the image node `Embedded` to `Embed` and the workspace transclusion
+  `CrossEmbedded` to `CrossEmbed` across C, Swift, Kotlin, ES, the dump and
+  the fixtures: C uses `MARKDOWN_CORE_KIND_EMBED` and
+  `MARKDOWN_CORE_KIND_CROSS_EMBED`, ES uses `kind: "embed"` and
+  `"crossEmbed"`, and the visitors' callbacks are `embed` and `crossEmbed`.
+  A formula's `embedded` placement is unchanged.
+
 - Android requires API 24 (Android 7.0) or later, up from API 21, matching
   the Google Play services and AndroidX floor; CI tests it on an API 24
   emulator. The build moves to AGP 9.5.2.

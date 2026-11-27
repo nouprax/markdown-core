@@ -151,7 +151,7 @@ class AstTest {
                 "HTML",
                 "Comment",
                 "CrossLink",
-                "CrossEmbedded",
+                "CrossEmbed",
                 "Formula",
                 "Emphasis",
                 "Strong",
@@ -162,7 +162,7 @@ class AstTest {
                 "Superscript",
                 "Subscript",
                 "Link",
-                "Embedded",
+                "Embed",
                 "Reference",
                 "Directive",
                 "Cite",
@@ -205,7 +205,7 @@ class AstTest {
         )
         val paragraph = document.content[3] as Paragraph
         val link = paragraph.content[0] as Link
-        val image = paragraph.content[2] as Embedded
+        val image = paragraph.content[2] as Embed
         assertEquals("/go", (link.dest as Destination.Url).value)
         assertNull(link.title)
         assertEquals("/image", (image.dest as Destination.Url).value)

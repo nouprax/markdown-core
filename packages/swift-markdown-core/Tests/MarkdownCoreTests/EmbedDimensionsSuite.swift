@@ -1,13 +1,13 @@
 import MarkdownCore
 import Testing
 
-@Suite("ast") struct EmbeddedDimensionsSuite {
+@Suite("ast") struct EmbedDimensionsSuite {
     @Test("image dimensions preserve formatted alt and per-occurrence values")
     func imageDimensions() throws {
         let source = "![*alt*|2147483647x2][r] ![3][r] ![bad|01][r]\n\n[r]: /shared \"title\"\n"
         let document = try Document.parse(source)
         let paragraph = try #require(document.content.first as? Paragraph)
-        let images = paragraph.content.compactMap { $0 as? Embedded }
+        let images = paragraph.content.compactMap { $0 as? Embed }
         #expect(images.map(\.dimensions) == [Dimensions(width: 2147483647, height: 2), Dimensions(width: 3), nil])
         let size = Dimensions(width: 640, height: 480)
         #expect(Set([size, Dimensions(width: 640, height: 480)]).count == 1)
@@ -22,16 +22,16 @@ import Testing
         images[0].walk(with: &visitor)
         #expect(
             visitor.events == [
-                "enter:Embedded", "enter:Emphasis", "enter:Text", "exit:Text", "exit:Emphasis",
-                "exit:Embedded",
+                "enter:Embed", "enter:Emphasis", "enter:Text", "exit:Text", "exit:Emphasis",
+                "exit:Embed",
             ]
         )
     }
-    @Test("embedded cross links share Dimensions while preserving raw prefixes")
-    func embeddedDimensions() throws {
+    @Test("embed cross links share Dimensions while preserving raw prefixes")
+    func embedDimensions() throws {
         let document = try Document.parse("![[v.mp4|*raw*|2147483647x2]] ![[n|3]] [[n|100]] ![[n|bad|01]] ![[n]]\n")
         let paragraph = try #require(document.content.first as? Paragraph)
-        let links = paragraph.content.compactMap { $0 as? CrossEmbedded }
+        let links = paragraph.content.compactMap { $0 as? CrossEmbed }
         #expect(
             links.map(\.dimensions) == [Dimensions(width: 2147483647, height: 2), Dimensions(width: 3), nil, nil]
         )
@@ -40,6 +40,6 @@ import Testing
         #expect(plain.label == "100")
         var visitor = RecordingWalkingVisitor()
         links[0].walk(with: &visitor)
-        #expect(visitor.events == ["enter:CrossEmbedded", "exit:CrossEmbedded"])
+        #expect(visitor.events == ["enter:CrossEmbed", "exit:CrossEmbed"])
     }
 }

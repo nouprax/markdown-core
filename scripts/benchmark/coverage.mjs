@@ -57,7 +57,7 @@ export const featureOwners = {
     html: { elements: ["HTML", "HTML_BLOCK"], certificates: [] },
     insertion: { elements: ["INSERTION"], certificates: ["insertion-strong", "run-insertion"] },
     "line-breaks": { elements: ["LINE_BREAK"], certificates: [] },
-    "links-and-images": { elements: ["AUTOLINK", "LINK", "EMBEDDED"], certificates: ["embed-dimensions"] },
+    "links-and-images": { elements: ["AUTOLINK", "LINK", "EMBED"], certificates: ["embed-dimensions"] },
     lists: { elements: ["LIST"], certificates: ["decimal-list"] },
     marks: { elements: ["MARK"], certificates: ["run-mark"] },
     properties: { elements: [], certificates: ["metadataempty", "metadata"] },

@@ -1,7 +1,7 @@
 package com.nouprax.markdown.core
 
 /** A workspace transclusion. [label] is absent only when no separator was written. */
-public class CrossEmbedded internal constructor(
+public class CrossEmbed internal constructor(
     public val dest: Destination,
     /** Raw prefix after a valid size suffix. */
     public val label: String?,

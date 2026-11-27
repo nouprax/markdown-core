@@ -48,12 +48,12 @@ enum { SENTINEL_LENGTH = sizeof(SENTINEL) - 1 };
  * (the slot model of scripts/tools/generate-node-kinds.mjs): any node's
  * anchor and attributes, and the fields of the owners the model names. */
 static const char *const FIELDS[][2] = {
-    {"", "anchor"},        {"", "attributes"},      {"Link", "dest"},          {"Embedded", "dest"},
-    {"Reference", "dest"}, {"CrossLink", "dest"},   {"CrossEmbedded", "dest"}, {"Reference", "label"},
-    {"Footnote", "label"}, {"Specimen", "label"},   {"Citation", "referent"},  {"DirectiveBlock", "name"},
-    {"Directive", "name"}, {"Topic", "name"},       {"Callout", "variant"},    {"CodeBlock", "language"},
-    {"Metadata", "name"},  {"Metadata", "title"},   {"Metadata", "subtitle"},  {"Metadata", "time"},
-    {"Metadata", "date"},  {"Metadata", "authors"}, {"Metadata", "keywords"},  {"Metadata", "abstract"},
+    {"", "anchor"},        {"", "attributes"},      {"Link", "dest"},         {"Embed", "dest"},
+    {"Reference", "dest"}, {"CrossLink", "dest"},   {"CrossEmbed", "dest"},   {"Reference", "label"},
+    {"Footnote", "label"}, {"Specimen", "label"},   {"Citation", "referent"}, {"DirectiveBlock", "name"},
+    {"Directive", "name"}, {"Topic", "name"},       {"Callout", "variant"},   {"CodeBlock", "language"},
+    {"Metadata", "name"},  {"Metadata", "title"},   {"Metadata", "subtitle"}, {"Metadata", "time"},
+    {"Metadata", "date"},  {"Metadata", "authors"}, {"Metadata", "keywords"}, {"Metadata", "abstract"},
     {"Metadata", "state"}, {"Metadata", "comment"},
 };
 
@@ -1503,7 +1503,7 @@ static bool refusable(const char *kind, const char *owner, const char *value, bo
     if (!strcmp(kind, "bib") && opened(source, from, '{', '}') && !ascii_word(value, "")) {
         return true;
     }
-    const bool cross = !strcmp(owner, "CrossLink") || !strcmp(owner, "CrossEmbedded");
+    const bool cross = !strcmp(owner, "CrossLink") || !strcmp(owner, "CrossEmbed");
     const bool brace = wrap == '{' && from >= 2 && source[from - 2] == '@';
     if (!strcmp(kind, "dest") && cross) {
         return !size || literal(value) || holds(value, "|[]#") || value[size - 1] == '\\';
@@ -1747,7 +1747,7 @@ static uint8_t *spelled_source(const uint8_t *source, size_t length, size_t from
                                size_t text_size, const char *later, const char *kind, const char *owner,
                                const char *label, size_t label_size, size_t *out_size) {
     char tail[2048] = "";
-    const bool call = !strcmp(owner, "Link") || !strcmp(owner, "Embedded");
+    const bool call = !strcmp(owner, "Link") || !strcmp(owner, "Embed");
     if (!strcmp(kind, "label") && call) {
         snprintf(tail, sizeof(tail), "\n\n[%.*s]: /o\n", (int)label_size, label);
     } else if (!strcmp(kind, "footnote") && !strcmp(owner, "Citation")) {
@@ -1875,7 +1875,7 @@ static bool unheld(const char *kind, const char *owner, const uint8_t *source, s
         return true;
     }
     if ((!strcmp(kind, "dest") || !strcmp(kind, "anchor")) && strcmp(owner, "CrossLink") &&
-        strcmp(owner, "CrossEmbedded") && next && !strchr(") \t\r\n", next)) {
+        strcmp(owner, "CrossEmbed") && next && !strchr(") \t\r\n", next)) {
         return true;
     }
     /* A label that goes on to the next line, or a slot whose `|` keeps
@@ -2280,7 +2280,7 @@ static void check_example(report *r, const uint8_t *source, size_t length) {
                             in_row(document, source, length, position), what, name, kind_name(slot.owner));
                 continue;
             }
-            const bool call = slot.owner == MARKDOWN_CORE_KIND_LINK || slot.owner == MARKDOWN_CORE_KIND_EMBEDDED;
+            const bool call = slot.owner == MARKDOWN_CORE_KIND_LINK || slot.owner == MARKDOWN_CORE_KIND_EMBED;
             const check_mode mode = !strcmp(name, "record")          ? CHECK_RECORD
                                     : !strcmp(name, "label") && call ? CHECK_CALL
                                     : !strcmp(name, "label")         ? CHECK_DEFINITION

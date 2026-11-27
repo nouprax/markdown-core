@@ -282,9 +282,9 @@ export class Decoder {
                     dest: this.destination(),
                     label: this.optional(() => this.string())
                 };
-            case "crossEmbedded":
+            case "crossEmbed":
                 return {
-                    ...(base as Base<"crossEmbedded">),
+                    ...(base as Base<"crossEmbed">),
                     dest: this.destination(),
                     label: this.optional(() => this.string()),
                     dimensions: this.optional(() => this.dimensions())
@@ -295,13 +295,13 @@ export class Decoder {
                 const content = this.count();
                 return { ...(base as Base<"link">), dest, title, content: this.nodes(content).take(content) };
             }
-            case "embedded": {
+            case "embed": {
                 const dest = this.destination();
                 const title = this.optional(() => this.string());
                 const dimensions = this.optional(() => this.dimensions());
                 const content = this.count();
                 return {
-                    ...(base as Base<"embedded">),
+                    ...(base as Base<"embed">),
                     dest,
                     title,
                     dimensions,

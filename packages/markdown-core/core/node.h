@@ -83,7 +83,7 @@ typedef struct {
     struct markdown_core_node *title;
 } markdown_core_callout;
 
-/* THE RESOURCE a direct Link or Embedded, or a Reference, states: its
+/* THE RESOURCE a direct Link or Embed, or a Reference, states: its
  * destination and title, which the node owns out of its slot. */
 typedef struct markdown_core_resource {
     /* REQUIRED (Q26). `[a]()`, `[a](<>)` and `[a]: <>` wrote a destination
@@ -100,7 +100,7 @@ typedef struct {
     markdown_core_dimensions value;
 } markdown_core_optional_dimensions;
 
-/* A LINK OR EMBEDDED names its destination one of two ways (4.5): a direct
+/* A LINK OR EMBED names its destination one of two ways (4.5): a direct
  * one states it, in `resource`; a reference names the definition it resolves
  * to by its normalized label, in `label`, as a citation names a footnote, and
  * has no resource. The label is in storage the node owns
@@ -121,7 +121,7 @@ typedef struct {
 typedef struct {
     markdown_core_cross_reference reference;
     markdown_core_optional_dimensions dimensions;
-} markdown_core_cross_embedded;
+} markdown_core_cross_embed;
 
 /* THE REFERENT of one citation (M4): a tagged value. A `bib` referent, which
  * the citations module first produces with P7, carries a key and a mode; a
@@ -383,7 +383,7 @@ typedef union {
     markdown_core_callout *callout;
     markdown_core_link *link;
     markdown_core_cross_reference *cross_link;
-    markdown_core_cross_embedded *cross_embedded;
+    markdown_core_cross_embed *cross_embed;
     markdown_core_citation_item *citation;
     markdown_core_footnote_value *footnote;
     markdown_core_specimen_value *specimen;

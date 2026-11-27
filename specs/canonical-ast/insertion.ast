@@ -21,7 +21,7 @@ Document scope=1:1..16:14 anchor=null attributes={} children=7
 │       ├── Text scope=3:13..3:13 anchor=null attributes={} literal=" " children=0
 │       ├── CrossLink scope=3:14..3:29 anchor=null attributes={} dest=cross(path="Note",anchor=null) label="display" children=0
 │       ├── Text scope=3:30..3:30 anchor=null attributes={} literal=" " children=0
-│       ├── CrossEmbedded scope=3:31..3:44 anchor=null attributes={} dest=cross(path="Pic",anchor=null) label="" dimensions=(width=20,height=30) children=0
+│       ├── CrossEmbed scope=3:31..3:44 anchor=null attributes={} dest=cross(path="Pic",anchor=null) label="" dimensions=(width=20,height=30) children=0
 │       ├── Text scope=3:45..3:45 anchor=null attributes={} literal=" " children=0
 │       ├── Link scope=3:46..3:55 anchor=null attributes={} dest=url("/u") title=null children=1
 │       │   └── Text scope=3:47..3:50 anchor=null attributes={} literal="link" children=0

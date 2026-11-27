@@ -1379,7 +1379,7 @@ static void S_untake(const markdown_core_element_instance *self, markdown_core_p
  * line's end, the blocks that offer it. A heading's inline tokens win over
  * its tail. */
 static const markdown_core_node_type ATTRIBUTES_TOKEN_KINDS[] = {MARKDOWN_CORE_NODE_CODE, MARKDOWN_CORE_NODE_LINK,
-                                                                 MARKDOWN_CORE_NODE_EMBEDDED,
+                                                                 MARKDOWN_CORE_NODE_EMBED,
                                                                  MARKDOWN_CORE_NODE_DIRECTIVE, MARKDOWN_CORE_NODE_NONE};
 static const markdown_core_node_type ATTRIBUTES_TAIL_KINDS[] = {MARKDOWN_CORE_NODE_HEADING,
                                                                 MARKDOWN_CORE_NODE_CODE_BLOCK, MARKDOWN_CORE_NODE_NONE};

@@ -2046,7 +2046,7 @@
                     }
                 }
             ],
-            "elements": ["AUTOLINK", "LINK", "EMBEDDED"],
+            "elements": ["AUTOLINK", "LINK", "EMBED"],
             "certificates": [
                 {
                     "id": "common-angle-autolink",

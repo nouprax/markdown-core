@@ -425,7 +425,7 @@
             "invariants": "inline leaf; dest is cross(path, anchor); the complete raw label is null only when no separator was authored"
         },
         {
-            "name": "CrossEmbedded",
+            "name": "CrossEmbed",
             "ordinal": 32,
             "fields": [
                 {
@@ -594,7 +594,7 @@
             "invariants": "`dest` is the tagged `Destination` value and is never absent: `[a]()` and `[a](<>)` wrote one and wrote nothing in it, so it is `url(\"\")`; a direct link owns the `url` branch; a reference occurrence owns the `reference` branch with the normalized label it names, and an unresolved reference is the inherited literal text; absent and empty title remain distinct; inline content"
         },
         {
-            "name": "Embedded",
+            "name": "Embed",
             "ordinal": 23,
             "fields": [
                 {
@@ -853,7 +853,7 @@
     ],
     "values": {
         "Destination": {
-            "purpose": "A tagged value, not a node: it has no id, extent, children, anchor, or attributes, and a branch's fields exist only in that branch. A direct Link or Embedded and every Reference own the url branch; a reference Link or Embedded owns the reference branch, the normalized label it names: the first Reference in document source order whose label is equal, or, when none is, the first Heading in document source order whose text declares it; the cross branch is the workspace address CrossLink and CrossEmbedded produce.",
+            "purpose": "A tagged value, not a node: it has no id, extent, children, anchor, or attributes, and a branch's fields exist only in that branch. A direct Link or Embed and every Reference own the url branch; a reference Link or Embed owns the reference branch, the normalized label it names: the first Reference in document source order whose label is equal, or, when none is, the first Heading in document source order whose text declares it; the cross branch is the workspace address CrossLink and CrossEmbed produce.",
             "branches": {
                 "url": [
                     {
@@ -887,9 +887,9 @@
                 ]
             },
             "holders": {
-                "url": ["Link", "Embedded", "Reference"],
-                "cross": ["CrossLink", "CrossEmbedded"],
-                "reference": ["Link", "Embedded"]
+                "url": ["Link", "Embed", "Reference"],
+                "cross": ["CrossLink", "CrossEmbed"],
+                "reference": ["Link", "Embed"]
             },
             "dump": "url(\"...\"), cross(path=\"...\",anchor=null) or reference(\"...\")"
         },

@@ -178,15 +178,15 @@ static void check_null_and_empty(void) {
         {"[a](/u)\n", MARKDOWN_CORE_KIND_LINK, "/u", false, ""},
         {"[a](/u \"\")\n", MARKDOWN_CORE_KIND_LINK, "/u", true, ""},
         {"[a](/u \"t\")\n", MARKDOWN_CORE_KIND_LINK, "/u", true, "t"},
-        {"![a]()\n", MARKDOWN_CORE_KIND_EMBEDDED, "", false, ""},
-        {"![a](/s \"\")\n", MARKDOWN_CORE_KIND_EMBEDDED, "/s", true, ""},
+        {"![a]()\n", MARKDOWN_CORE_KIND_EMBED, "", false, ""},
+        {"![a](/s \"\")\n", MARKDOWN_CORE_KIND_EMBED, "/s", true, ""},
         /* M2: a resolved reference names its definition by label, and the
          * Reference the document resolves it to answers what the definition
          * stated, through the same accessors. */
         {"[a]: <>\n\n[a]\n", MARKDOWN_CORE_KIND_LINK, "", false, ""},
         {"[a]: <> \"\"\n\n[a][]\n", MARKDOWN_CORE_KIND_LINK, "", true, ""},
         {"[a]: /u \"t\"\n\n[x][a]\n", MARKDOWN_CORE_KIND_LINK, "/u", true, "t"},
-        {"![a][r]\n\n[r]: /s \"\"\n", MARKDOWN_CORE_KIND_EMBEDDED, "/s", true, ""},
+        {"![a][r]\n\n[r]: /s \"\"\n", MARKDOWN_CORE_KIND_EMBED, "/s", true, ""},
     };
     static const struct {
         const char *source;
@@ -292,7 +292,7 @@ static void check_image_dimensions(void) {
     int index = 0;
     for (size_t at = 0; at < inlines.count; at++) {
         const markdown_core_node *node = inlines.items[at];
-        if (markdown_core_node_get_kind(node) != MARKDOWN_CORE_KIND_EMBEDDED) {
+        if (markdown_core_node_get_kind(node) != MARKDOWN_CORE_KIND_EMBED) {
             continue;
         }
         const markdown_core_dimensions *dimensions = NULL;
@@ -342,7 +342,7 @@ static void check_reference_resolution(void) {
     for (size_t index = 0; index < inlines.count; index++) {
         const markdown_core_node *child = inlines.items[index];
         markdown_core_node_kind kind = markdown_core_node_get_kind(child);
-        if (kind != MARKDOWN_CORE_KIND_LINK && kind != MARKDOWN_CORE_KIND_EMBEDDED) {
+        if (kind != MARKDOWN_CORE_KIND_LINK && kind != MARKDOWN_CORE_KIND_EMBED) {
             others++;
             continue;
         }

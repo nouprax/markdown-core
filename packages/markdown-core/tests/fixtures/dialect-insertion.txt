@@ -538,11 +538,11 @@ Document scope=1:1..1:69 anchor=null attributes={} children=1
     ├── Insertion scope=1:1..1:35 anchor=null attributes={} children=3
     │   ├── CrossLink scope=1:3..1:18 anchor=null attributes={} dest=cross(path="Note",anchor=null) label="display" children=0
     │   ├── Text scope=1:19..1:19 anchor=null attributes={} literal=" " children=0
-    │   └── CrossEmbedded scope=1:20..1:33 anchor=null attributes={} dest=cross(path="Pic",anchor=null) label="" dimensions=(width=20,height=30) children=0
+    │   └── CrossEmbed scope=1:20..1:33 anchor=null attributes={} dest=cross(path="Pic",anchor=null) label="" dimensions=(width=20,height=30) children=0
     ├── Text scope=1:36..1:36 anchor=null attributes={} literal=" " children=0
     ├── CrossLink scope=1:37..1:52 anchor=null attributes={} dest=cross(path="Note",anchor=null) label="++raw++" children=0
     ├── Text scope=1:53..1:53 anchor=null attributes={} literal=" " children=0
-    └── CrossEmbedded scope=1:54..1:69 anchor=null attributes={} dest=cross(path="Pic",anchor=null) label="++raw++" dimensions=null children=0
+    └── CrossEmbed scope=1:54..1:69 anchor=null attributes={} dest=cross(path="Pic",anchor=null) label="++raw++" dimensions=null children=0
 ````````````````````````````````
 
 crossed-cross-link
@@ -617,12 +617,12 @@ embedded-content
 .
 Document scope=1:1..1:45 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..1:45 anchor=null attributes={} children=3
-    ├── Embedded scope=1:1..1:22 anchor=null attributes={} dest=url("/image.png") title=null dimensions=null children=1
+    ├── Embed scope=1:1..1:22 anchor=null attributes={} dest=url("/image.png") title=null dimensions=null children=1
     │   └── Insertion scope=1:3..1:9 anchor=null attributes={} children=1
     │       └── Text scope=1:5..1:7 anchor=null attributes={} literal="alt" children=0
     ├── Text scope=1:23..1:23 anchor=null attributes={} literal=" " children=0
     └── Insertion scope=1:24..1:45 anchor=null attributes={} children=1
-        └── Embedded scope=1:26..1:43 anchor=null attributes={} dest=url("/image.png") title=null dimensions=null children=1
+        └── Embed scope=1:26..1:43 anchor=null attributes={} dest=url("/image.png") title=null dimensions=null children=1
             └── Text scope=1:28..1:30 anchor=null attributes={} literal="alt" children=0
 ````````````````````````````````
 

@@ -1,7 +1,7 @@
 # @nouprax/es-markdown-core
 
 Cross links (`[[Note#Heading|Label]]`) and embeds (`![[Image.png|100x145]]`)
-produce `CrossLink(dest, label)` and `CrossEmbedded(dest, label, dimensions)`,
+produce `CrossLink(dest, label)` and `CrossEmbed(dest, label, dimensions)`,
 respectively. `dest` is a cross destination with
 raw path and optional anchor; the label is null when no separator was authored
 and an empty string for `[[Note|]]`. These are leaves with exhaustive visit and
@@ -44,11 +44,11 @@ callbacks before content, even when all metadata fields are absent. Every
 scalar/list values do not receive separate Markup callbacks.
 Numbers retain exact decimal strings. Missing fields are null; an authored null
 is a present scalar value. No field order or individual field scope is stored.
-`Embedded.dimensions: Dimensions | null` reads complete `W`, `WxH`, `alt|W` and
+`Embed.dimensions: Dimensions | null` reads complete `W`, `WxH`, `alt|W` and
 `alt|WxH` suffixes on direct and resolved images. Values range from 1 to
 2147483647 without leading zeros; malformed suffixes remain parsed alt content.
 Numeric-only labels have empty alt content. Embedded cross links use the same
-size grammar in `CrossEmbedded.dimensions`, retaining the raw label prefix (empty
+size grammar in `CrossEmbed.dimensions`, retaining the raw label prefix (empty
 for size-only labels). Ordinary cross-link labels and invalid suffixes stay raw.
 `Dimensions` is a node-independent value with required `width` and optional
 `height`; it has no scope or visitor callbacks.

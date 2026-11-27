@@ -23,7 +23,7 @@ import { MessageWriter, nativeMessage } from "./wire.mjs";
 test("ast: dimensions belong to each image occurrence while each one names its Reference", () => {
     const source = '![*alt*|2147483647x2][r] ![3][r] ![bad|01][r]\n\n[r]: /shared "title"\n';
     const document = Document.parse(source);
-    const images = document.content[0].content.filter((node) => node.kind === "embedded");
+    const images = document.content[0].content.filter((node) => node.kind === "embed");
     assert.deepEqual(
         images.map((node) => node.dimensions),
         [{ width: 2147483647, height: 2 }, { width: 3, height: null }, null]
@@ -47,12 +47,12 @@ test("ast: dimensions belong to each image occurrence while each one names its R
         walkingVisitor((node, phase) => events.push(`${phase}:${nodeKindName(node)}`))
     );
     assert.deepEqual(events, [
-        "enter:Embedded",
+        "enter:Embed",
         "enter:Emphasis",
         "enter:Text",
         "exit:Text",
         "exit:Emphasis",
-        "exit:Embedded"
+        "exit:Embed"
     ]);
 });
 
@@ -1371,7 +1371,7 @@ test("ast: References, reference destinations and the reference label table deco
         .bool(false)
         .u32(1)
         .text("b", { id: 5 })
-        .record("embedded", { id: 6 })
+        .record("embed", { id: 6 })
         .u8(2)
         .string("h")
         .bool(false)
@@ -1726,7 +1726,7 @@ test("ast: dimensions belong to occurrences and universal attributes survive rel
     const bytes = nativeMessage("![a|640x480][r] ![b][r]\n\n[r]: /u\n");
     const document = decoder(bytes).decode();
     bytes.fill(0);
-    const images = document.content[0].content.filter((value) => value.kind === "embedded");
+    const images = document.content[0].content.filter((value) => value.kind === "embed");
     assert.deepEqual(
         images.map((value) => value.dest),
         [
@@ -1756,14 +1756,14 @@ test("ast: cross links retain raw values after native release", () => {
     const bytes = nativeMessage("[[Note]] [[Note|]] ![[#^id|raw *label*]]\n");
     const document = decoder(bytes).decode();
     const links = document.content[0].content.filter(
-        (node) => node.kind === "crossLink" || node.kind === "crossEmbedded"
+        (node) => node.kind === "crossLink" || node.kind === "crossEmbed"
     );
     assert.deepEqual(
         links.map((node) => [node.kind, node.dest, node.label]),
         [
             ["crossLink", { kind: "cross", path: "Note", anchor: null }, null],
             ["crossLink", { kind: "cross", path: "Note", anchor: null }, ""],
-            ["crossEmbedded", { kind: "cross", path: "", anchor: "id" }, "raw *label*"]
+            ["crossEmbed", { kind: "cross", path: "", anchor: "id" }, "raw *label*"]
         ]
     );
     assert.ok(links.every((node) => !("embedded" in node)));
@@ -1774,7 +1774,7 @@ test("ast: cross links retain raw values after native release", () => {
         links[2],
         walkingVisitor((node, phase) => events.push(`${phase}:${node.kind}`))
     );
-    assert.deepEqual(events, ["enter:crossEmbedded", "exit:crossEmbedded"]);
+    assert.deepEqual(events, ["enter:crossEmbed", "exit:crossEmbed"]);
     bytes.fill(0);
     assert.equal(links[2].label, "raw *label*");
 });
@@ -1815,7 +1815,7 @@ test("ast: Properties keep recognized fields and literal prose after native rele
     assert.equal(Document.parse("---\nname: 1\n").metadata, null);
 });
 
-test("ast: embedded dimensions survive the wire lifetime", () => {
+test("ast: embed dimensions survive the wire lifetime", () => {
     const bytes = nativeMessage("![[#^id|raw *label*|2147483647x2]]\n");
     const document = decoder(bytes).decode();
     bytes.fill(0);

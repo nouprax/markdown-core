@@ -272,13 +272,13 @@ class State {
             this.start();
             this.line("CrossLink", node, [`dest=${destination(node.dest)}`, `label=${optional(node.label)}`]);
         },
-        crossEmbedded: (node, phase) => {
+        crossEmbed: (node, phase) => {
             if (phase === "exit") {
                 this.end();
                 return;
             }
             this.start();
-            this.line("CrossEmbedded", node, [
+            this.line("CrossEmbed", node, [
                 `dest=${destination(node.dest)}`,
                 `label=${optional(node.label)}`,
                 `dimensions=${dimensions(node.dimensions)}`
@@ -377,14 +377,14 @@ class State {
                 node.content
             );
         },
-        embedded: (node, phase) => {
+        embed: (node, phase) => {
             if (phase === "exit") {
                 this.end();
                 return;
             }
             this.start();
             this.container(
-                "Embedded",
+                "Embed",
                 node,
                 [
                     `dest=${destination(node.dest)}`,

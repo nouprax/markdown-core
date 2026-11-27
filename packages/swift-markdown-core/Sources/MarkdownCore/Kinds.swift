@@ -47,8 +47,8 @@ public enum NodeKind: Int32, Sendable, Hashable, CaseIterable, CustomStringConve
     case strikethrough = 21
     /// `Link`.
     case link = 22
-    /// `Embedded`.
-    case embedded = 23
+    /// `Embed`.
+    case embed = 23
     /// `Directive`.
     case directive = 24
     /// `Cite`.
@@ -65,8 +65,8 @@ public enum NodeKind: Int32, Sendable, Hashable, CaseIterable, CustomStringConve
     case crossLink = 30
     /// `Mark`.
     case mark = 31
-    /// `CrossEmbedded`.
-    case crossEmbedded = 32
+    /// `CrossEmbed`.
+    case crossEmbed = 32
     /// `Insertion`.
     case insertion = 33
     /// `Span`.
@@ -116,7 +116,7 @@ public enum NodeKind: Int32, Sendable, Hashable, CaseIterable, CustomStringConve
         "Strong",
         "Strikethrough",
         "Link",
-        "Embedded",
+        "Embed",
         "Directive",
         "Cite",
         "TableRow",
@@ -125,7 +125,7 @@ public enum NodeKind: Int32, Sendable, Hashable, CaseIterable, CustomStringConve
         "Comment",
         "CrossLink",
         "Mark",
-        "CrossEmbedded",
+        "CrossEmbed",
         "Insertion",
         "Span",
         "Superscript",

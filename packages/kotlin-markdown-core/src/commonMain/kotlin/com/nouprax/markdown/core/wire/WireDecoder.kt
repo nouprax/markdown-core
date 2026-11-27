@@ -273,8 +273,8 @@ internal object WireDecoder {
                     Link(destination(), optional { string() }, content(), id, extent, runs, anchor, attributes)
                 }
 
-                NodeKind.EMBEDDED -> {
-                    Embedded(
+                NodeKind.EMBED -> {
+                    Embed(
                         destination(),
                         optional { string() },
                         optional { dimensions() },
@@ -330,8 +330,8 @@ internal object WireDecoder {
                     Mark(content(), id, extent, runs, anchor, attributes)
                 }
 
-                NodeKind.CROSS_EMBEDDED -> {
-                    CrossEmbedded(
+                NodeKind.CROSS_EMBED -> {
+                    CrossEmbed(
                         cross(),
                         optional { string() },
                         optional { dimensions() },

@@ -33,5 +33,5 @@ Document scope=1:1..23:38 anchor=null attributes={} children=11
     ├── Link scope=23:20..23:25 anchor=null attributes={} dest=reference("note") title=null children=1
     │   └── Text scope=23:21..23:24 anchor=null attributes={} literal="note" children=0
     ├── Text scope=23:26..23:26 anchor=null attributes={} literal=" " children=0
-    └── Embedded scope=23:27..23:38 anchor=null attributes={} dest=reference("note") title=null dimensions=null children=1
+    └── Embed scope=23:27..23:38 anchor=null attributes={} dest=reference("note") title=null dimensions=null children=1
         └── Text scope=23:29..23:31 anchor=null attributes={} literal="alt" children=0

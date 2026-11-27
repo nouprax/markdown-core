@@ -250,7 +250,7 @@ static int case_pattern_image_link(pc_context *context) {
         return -1;
     }
     if (pc_expect_count(context, MARKDOWN_CORE_KIND_LINK, 160000, "Link") != 0 ||
-        pc_expect_count(context, MARKDOWN_CORE_KIND_EMBEDDED, 0, "Embedded") != 0) {
+        pc_expect_count(context, MARKDOWN_CORE_KIND_EMBED, 0, "Embed") != 0) {
         return -1;
     }
     expected = ts_repeat("![", 160000, &expected_length);
@@ -348,7 +348,7 @@ static int case_cross_reference_kinds(pc_context *context) {
         return -1;
     }
     if (pc_expect_count(context, MARKDOWN_CORE_KIND_CROSS_LINK, repetitions, "CrossLink") != 0 ||
-        pc_expect_count(context, MARKDOWN_CORE_KIND_CROSS_EMBEDDED, 2 * repetitions, "CrossEmbedded") != 0) {
+        pc_expect_count(context, MARKDOWN_CORE_KIND_CROSS_EMBED, 2 * repetitions, "CrossEmbed") != 0) {
         return -1;
     }
     return 0;
@@ -1108,8 +1108,7 @@ static int pc_reference_payload_visit(const markdown_core_node *node, ts_ast_ran
     markdown_core_node_kind kind = markdown_core_node_get_kind(node);
     (void)range;
     total->bytes += pc_attribute_bytes(markdown_core_node_attributes(node));
-    if (kind == MARKDOWN_CORE_KIND_LINK || kind == MARKDOWN_CORE_KIND_EMBEDDED ||
-        kind == MARKDOWN_CORE_KIND_REFERENCE) {
+    if (kind == MARKDOWN_CORE_KIND_LINK || kind == MARKDOWN_CORE_KIND_EMBED || kind == MARKDOWN_CORE_KIND_REFERENCE) {
         TS_OK(markdown_core_node_destination(node, &dest));
         TS_OK(markdown_core_node_title(node, &title));
         total->occurrences += dest.kind == MARKDOWN_CORE_DESTINATION_REFERENCE;

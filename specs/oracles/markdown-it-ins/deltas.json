@@ -31,7 +31,7 @@
         {
             "id": "cross-links",
             "input": "++[[Note|display]] ![[Pic|20x30]]++ [[Note|++raw++]] ![[Pic|++raw++]]\n",
-            "reason": "CrossLink and CrossEmbedded are opaque product nodes, including raw labels and dimensions; the oracle treats their spelling as inline text.",
+            "reason": "CrossLink and CrossEmbed are opaque product nodes, including raw labels and dimensions; the oracle treats their spelling as inline text.",
             "oracleDigest": "9d3aae69c6337cdae53a6ceb599b11dc6b1fefe5cd18da4eec77db348276f492",
             "markdownCoreDigest": "9b05e5a46317954a44b0ff1bcd80bf70144424d0dfebff3ef1c4f5fbd991563d"
         },

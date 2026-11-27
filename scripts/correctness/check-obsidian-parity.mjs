@@ -78,7 +78,7 @@ const mdastKinds = {
     inlineCode: "Code",
     code: "CodeBlock",
     link: "Link",
-    image: "Embedded",
+    image: "Embed",
     break: "LineBreak",
     thematicBreak: "ThematicBreak",
     wikilink: "CrossLink",
@@ -93,9 +93,9 @@ const comparedFields = {
     Code: ["literal"],
     CodeBlock: ["literal", "info"],
     Link: ["dest", "title"],
-    Embedded: ["dest", "title"],
+    Embed: ["dest", "title"],
     CrossLink: ["dest", "label"],
-    CrossEmbedded: ["dest", "label"]
+    CrossEmbed: ["dest", "label"]
 };
 
 const yamlStringFallback = {
@@ -284,7 +284,7 @@ function normalizeChildren(children) {
 }
 
 function fromMdast(node, unknown, source) {
-    const kind = node.type === "wikilink" && node.embedded ? "CrossEmbedded" : mdastKinds[node.type];
+    const kind = node.type === "wikilink" && node.embed ? "CrossEmbed" : mdastKinds[node.type];
     if (!kind) {
         unknown.add(node.type);
         return { kind: `?${node.type}`, fields: {}, children: [] };
@@ -618,7 +618,7 @@ for (const [input, label, dest, kind] of [
         crossDestination("Folder/Note", "Heading#Child"),
         "CrossLink"
     ],
-    ["![[Note#^block-id]]\n", "null", crossDestination("Note", "block-id"), "CrossEmbedded"]
+    ["![[Note#^block-id]]\n", "null", crossDestination("Note", "block-id"), "CrossEmbed"]
 ]) {
     const parsed = processor.runSync(processor.parse(input), input);
     const oracle = fromMdast(parsed, new Set(), input).children[0]?.children[0];

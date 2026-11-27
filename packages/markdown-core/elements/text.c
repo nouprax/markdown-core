@@ -1,11 +1,11 @@
 #include "parts.h"
-#include "embedded.h"
+#include "embed.h"
 #include "text.h"
 #include "inline_internal.h"
 
 /* The elements whose state this element reads, as `self->peers` holds them. */
-enum { TEXT_EMBEDDED };
-static const markdown_core_element *const TEXT_PEERS[] = {[TEXT_EMBEDDED] = &MARKDOWN_CORE_ELEMENT_EMBEDDED, NULL};
+enum { TEXT_EMBED };
+static const markdown_core_element *const TEXT_PEERS[] = {[TEXT_EMBED] = &MARKDOWN_CORE_ELEMENT_EMBED, NULL};
 
 markdown_core_node *markdown_core_text_parse(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                              markdown_core_inline_state *inline_state, bufsize_t endpos) {
@@ -37,8 +37,8 @@ markdown_core_node *markdown_core_text_parse(const markdown_core_element_instanc
     /* Text runs are disjoint, so recording separators costs at most one
      * extra visit per byte, regardless of bracket nesting or digit-run
      * length. No image closer scans its label again. */
-    if (self->peers[TEXT_EMBEDDED]) {
-        markdown_core_embedded_record_text(self->peers[TEXT_EMBEDDED], inline_state, endpos);
+    if (self->peers[TEXT_EMBED]) {
+        markdown_core_embed_record_text(self->peers[TEXT_EMBED], inline_state, endpos);
     }
     contents = markdown_core_chunk_dup(&inline_state->input, inline_state->pos, endpos - inline_state->pos);
     startpos = inline_state->pos;

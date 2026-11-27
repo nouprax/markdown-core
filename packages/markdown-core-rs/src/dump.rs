@@ -154,7 +154,7 @@ fn name(kind: &Kind) -> &'static str {
         Kind::Code { .. } => "Code",
         Kind::Html { .. } => "HTML",
         Kind::CrossLink { .. } => "CrossLink",
-        Kind::CrossEmbedded { .. } => "CrossEmbedded",
+        Kind::CrossEmbed { .. } => "CrossEmbed",
         Kind::Comment { .. } => "Comment",
         Kind::Formula { .. } => "Formula",
         Kind::Emphasis { .. } => "Emphasis",
@@ -166,7 +166,7 @@ fn name(kind: &Kind) -> &'static str {
         Kind::Superscript { .. } => "Superscript",
         Kind::Subscript { .. } => "Subscript",
         Kind::Link { .. } => "Link",
-        Kind::Embedded { .. } => "Embedded",
+        Kind::Embed { .. } => "Embed",
         Kind::Directive { .. } => "Directive",
         Kind::Cite { .. } => "Cite",
         Kind::Topic { .. } => "Topic",
@@ -350,7 +350,7 @@ fn fields<'a>(line: &mut String, kind: &'a Kind) -> (usize, Vec<Row<'a>>) {
             opt_text(line, label.as_deref());
             (0, Vec::new())
         }
-        Kind::CrossEmbedded {
+        Kind::CrossEmbed {
             dest,
             label,
             dimensions,
@@ -383,7 +383,7 @@ fn fields<'a>(line: &mut String, kind: &'a Kind) -> (usize, Vec<Row<'a>>) {
             opt_text(line, title.as_deref());
             (content.len(), nodes(content))
         }
-        Kind::Embedded {
+        Kind::Embed {
             dest,
             title,
             dimensions,

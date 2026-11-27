@@ -79,7 +79,7 @@ impl Node {
             | Kind::Superscript { content }
             | Kind::Subscript { content }
             | Kind::Link { content, .. }
-            | Kind::Embedded { content, .. }
+            | Kind::Embed { content, .. }
             | Kind::Footnote { content, .. }
             | Kind::Specimen { content, .. } => list.extend(content),
             Kind::List { items, .. } => list.extend(items),
@@ -120,7 +120,7 @@ impl Node {
             | Kind::Code { .. }
             | Kind::Html { .. }
             | Kind::CrossLink { .. }
-            | Kind::CrossEmbedded { .. }
+            | Kind::CrossEmbed { .. }
             | Kind::Comment { .. }
             | Kind::Formula { .. }
             | Kind::Topic { .. }
@@ -156,7 +156,7 @@ impl Node {
             | Kind::Superscript { content }
             | Kind::Subscript { content }
             | Kind::Link { content, .. }
-            | Kind::Embedded { content, .. }
+            | Kind::Embed { content, .. }
             | Kind::Footnote { content, .. }
             | Kind::Specimen { content, .. } => list.extend(content),
             Kind::List { items, .. } => list.extend(items),
@@ -197,7 +197,7 @@ impl Node {
             | Kind::Code { .. }
             | Kind::Html { .. }
             | Kind::CrossLink { .. }
-            | Kind::CrossEmbedded { .. }
+            | Kind::CrossEmbed { .. }
             | Kind::Comment { .. }
             | Kind::Formula { .. }
             | Kind::Topic { .. }
@@ -301,7 +301,7 @@ pub enum Kind {
         dest: Destination,
         label: Option<String>,
     },
-    CrossEmbedded {
+    CrossEmbed {
         dest: Destination,
         label: Option<String>,
         dimensions: Option<Dimensions>,
@@ -342,7 +342,7 @@ pub enum Kind {
         title: Option<String>,
         content: Vec<Node>,
     },
-    Embedded {
+    Embed {
         dest: Destination,
         title: Option<String>,
         dimensions: Option<Dimensions>,

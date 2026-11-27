@@ -1427,12 +1427,12 @@ impl<'a> Compiler<'a> {
 
     /// A cross link or a cross embed.
     fn cross_link(&self, index: usize) -> Kind {
-        let mut embedded = false;
+        let mut embed = false;
         let mut written = String::new();
         let mut label: Option<String> = None;
         for child in self.inside(index) {
             match self.name(child) {
-                Name::CrossLinkMarker if self.text(child).starts_with('!') => embedded = true,
+                Name::CrossLinkMarker if self.text(child).starts_with('!') => embed = true,
                 Name::CrossLinkDest => written.push_str(self.text(child)),
                 Name::CrossLinkSeparator => label = Some(String::new()),
                 Name::CrossLinkLabel => {
@@ -1464,7 +1464,7 @@ impl<'a> Compiler<'a> {
                 anchor: None,
             },
         };
-        if !embedded {
+        if !embed {
             return Kind::CrossLink { dest, label };
         }
         let mut dimensions = None;
@@ -1474,7 +1474,7 @@ impl<'a> Compiler<'a> {
                 label = Some(rest.to_string());
             }
         }
-        Kind::CrossEmbedded {
+        Kind::CrossEmbed {
             dest,
             label,
             dimensions,
@@ -1526,7 +1526,7 @@ impl<'a> Compiler<'a> {
                 content,
             }
         } else {
-            Kind::Embedded {
+            Kind::Embed {
                 dest,
                 title,
                 dimensions,
@@ -1765,7 +1765,7 @@ fn anchor_text(node: &Node, base: &mut String) {
             base.push_str(&anchor(name));
         }
         Kind::SoftBreak | Kind::LineBreak => base.push('-'),
-        Kind::CrossLink { dest, label } | Kind::CrossEmbedded { dest, label, .. } => {
+        Kind::CrossLink { dest, label } | Kind::CrossEmbed { dest, label, .. } => {
             match (label, dest) {
                 (Some(label), _) => base.push_str(&anchor(label)),
                 (None, Destination::Cross { path, anchor: name }) => {
@@ -1817,7 +1817,7 @@ fn anchor_text(node: &Node, base: &mut String) {
         | Kind::Superscript { content }
         | Kind::Subscript { content }
         | Kind::Link { content, .. }
-        | Kind::Embedded { content, .. }
+        | Kind::Embed { content, .. }
         | Kind::DirectiveLabel { content } => {
             for child in content {
                 anchor_text(child, base);

@@ -57,7 +57,7 @@ Put `!` immediately before the opening brackets:
 ![[movie.mp4|raw *caption*|320x180]]
 ```
 
-These become `CrossEmbedded`, requesting transclusion. The second stores a raw
+These become `CrossEmbed`, requesting transclusion. The second stores a raw
 label of `raw *caption*` and dimensions of 320 by 180. The kind of resource,
 loading, playback, and transclusion are determined by the application.
 

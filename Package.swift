@@ -75,7 +75,7 @@ let package = Package(
                 "elements/link.c",
                 "elements/list.c",
                 "elements/mark.c",
-                "elements/embedded.c",
+                "elements/embed.c",
                 "elements/properties.c",
                 "elements/yaml.c",
                 "elements/session.c",
