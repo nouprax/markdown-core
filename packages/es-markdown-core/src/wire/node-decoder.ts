@@ -232,7 +232,7 @@ export class Decoder {
                 };
             }
             case "directiveBlock": {
-                const name = this.optional(() => this.string());
+                const name = this.string();
                 const label = this.presence();
                 const content = this.count();
                 const nodes = this.nodes(label + content);

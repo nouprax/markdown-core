@@ -131,13 +131,14 @@ reference tails retain isolated witnesses. Direct/resolving tails and Spans,
 complete citation versus virtual heading shortcut, ordinary author tails,
 alphabetic/Roman/default markers and capital-period spacing have agreements.
 
-P8/P10 retire both definition-list gaps and `fenced-divs-nested` by agreement.
-The Div projection uses `name=null`. DefinitionList projects each term and its
+P8/P10 retire both definition-list gaps. The dialect has no nameless fenced
+divs, so every fenced-div case, `fenced-divs-nested` included, is an exact
+difference; the Div projection keeps `name=null`. DefinitionList projects each term and its
 ordered body collections to Definition, including empty bodies. A first body
 starting with Plain means compact, with Para means loose; other first-body
 shapes expose no flag, so Pandoc projects null and the product boolean remains
-compared. Exact differences cover those unobservable flags, the dialect's
-minimum closer width, and global explicit-ID reservation. Unit tests detect
+compared. Exact differences cover those unobservable flags and global
+explicit-ID reservation. Unit tests detect
 changed names, compact flags, terms and body grouping independently.
 
 The composition runner now exercises 488 inputs: 306 ordered pairs, 54 nested or

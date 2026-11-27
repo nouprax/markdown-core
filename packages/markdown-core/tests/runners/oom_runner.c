@@ -122,7 +122,7 @@ static const char OOM_LINE_AND_CORE_CORPUS[] = "# heading\r\n"
 static const char OOM_ELEMENT_EDGE_CORPUS[] = "probe $x$ $$ y $$ \\\\(z\\)q\\\\) $`x`$\n\n"
                                               "$$ padded $$\n\n```formula\n padded \n```\n\n"
                                               "$$\n padded \n$$\n\n$$\n$$\n\n"
-                                              "::: {.a k=1} trailing\n\n::: {.a k=1\n\n"
+                                              ":::x{.a k=1} trailing\n\n:::x{.a k=1\n\n"
                                               ":inline[label]{.a class=\"\" .b id=x id=y entity=&amp;}\n"
                                               "\n"
                                               ":::outer[lab]{empty=\"\" key='value'}\n"
@@ -229,10 +229,10 @@ static const char OOM_CITATION_CORPUS[] = "^^ *^^* ^^^^ [^^]{} ^[^^]\n\n"
                                           "iv. first\nv. next\n\n(A) upper\n(B) next\n\n";
 
 static const char OOM_DEFINITION_LIST_CORPUS[] =
-    "# Reserved\n\n::: {#reserved .box k=value}\n*Term* @key\n: first ^[footnote]\n: second\n\n"
+    "# Reserved\n\n:::box{#reserved .box k=value}\n*Term* @key\n: first ^[footnote]\n: second\n\n"
     "Loose\n\n: inner\n  : body\n\n    continued\n\n"
     "Code\n: ```\n  :::\n  ```\n\n"
-    "[reference]: /url {.attr}\n\nT\n: [reference]\n::: \n\n::: warning\n:::\n\n::: {}\n:::\n";
+    "[reference]: /url {.attr}\n\nT\n: [reference]\n::: \n\n:::warning\n:::\n\n:::x{}\n:::\n";
 
 static const char OOM_TABLE_CORPUS[] =
     "+---+---+\r| \0 | b |\r+---+---+\r| c | \0 |\r+---+---+\r\r"
@@ -254,13 +254,13 @@ static const char OOM_TABLE_CORPUS[] =
     "|\n+-------------------------------+\n\nTable: *caption*\n\nh   j\n--- ---\nv   w\n\n-------\nh   j\n--- ---\nv   "
     "w\n\nx   y\n-------\n\nTable: after\n\n+---+---+\n| a | b |\n+   +   +\n| c | d |\n+---+---+\n"
     "\n: candidate\n:::note[label]{#id .class k=value}\n---- ----\na    b\n:::\n\n"
-    "| h |\n| - |\n| b |\n: cap\n::: {.note}\nbody\n:::\n\n"
+    "| h |\n| - |\n| b |\n: cap\n:::x{.note}\nbody\n:::\n\n"
     "| h |\n| - |\n| b |\n: cap\n%%\ncomment\n%%\n\n"
     "| h |\n| - |\n| b |\n: cap\n:::note[bad\n%%\nunclosed\n";
 
 static const oom_case OOM_CASES[] = {
     {"pipe tables beside the bytes of other table syntax", OOM_TABLE_CORPUS, sizeof(OOM_TABLE_CORPUS) - 1},
-    {"definition term/body ownership and nameless containers", OOM_DEFINITION_LIST_CORPUS,
+    {"definition term/body ownership and directive containers", OOM_DEFINITION_LIST_CORPUS,
      sizeof(OOM_DEFINITION_LIST_CORPUS) - 1},
     {"citation ownership", OOM_CITATION_CORPUS, sizeof(OOM_CITATION_CORPUS) - 1},
     {"heading declarations and anchors", OOM_HEADING_CORPUS, sizeof(OOM_HEADING_CORPUS) - 1},

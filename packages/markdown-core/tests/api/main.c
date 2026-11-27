@@ -5672,8 +5672,7 @@ static void probe_directive_openers(const markdown_core_element_instance *self, 
     const markdown_core_element_instance *directive =
         markdown_core_parser_instance(parser, &MARKDOWN_CORE_ELEMENT_DIRECTIVE);
     text_counting = 1;
-    const char *directives[] = {"::: {.a k=1} junk\n", "::: {.a k=1}\n", "::: classname junk\n", "::: classname\n",
-                                "::: {.a k=1\n"};
+    const char *directives[] = {":::x{.a k=1} junk\n", ":::x{.a k=1}\n", ":::x junk\n", ":::x\n", ":::x{.a k=1\n"};
     /* The openers a line's tail refuses: the opener validates the complete
      * line before it opens anything. */
     for (size_t i = 0; i < sizeof(directives) / sizeof(*directives); i += 2) {
@@ -7797,7 +7796,7 @@ static void definition_gate_reads_the_prefix_not_the_line(test_batch_runner *run
                                            "- > Term\n  > : body\n",
                                            "> - Term\n>   : body\n",
                                            "> > Term\n> > : body\n",
-                                           "::: note\nTerm\n: body\n:::\n"};
+                                           ":::note\nTerm\n: body\n:::\n"};
     for (size_t i = 0; i < sizeof(admitted) / sizeof(*admitted); i++) {
         root = markdown_core_parse_document(admitted[i], strlen(admitted[i]));
         OK(runner, root != NULL, "definition shape %zu parses", i);
@@ -8737,7 +8736,7 @@ static void directive_recognition_survives_construction(test_batch_runner *runne
     static const char *const attributes[] = {"{}", "{.a k=1 k=2}", "{key=\"a b\" flag .c}", "{x=a=b=c}"};
     for (size_t i = 0; i < sizeof(attributes) / sizeof(*attributes); i++) {
         markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
-        markdown_core_strbuf_puts(&source, "::: ");
+        markdown_core_strbuf_puts(&source, ":::x");
         markdown_core_strbuf_puts(&source, attributes[i]);
         markdown_core_strbuf_puts(&source, "\nbody\n:::\n");
         markdown_core_attribute_scratch scratch = {0};

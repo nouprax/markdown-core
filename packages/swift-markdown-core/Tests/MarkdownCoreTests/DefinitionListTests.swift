@@ -5,10 +5,10 @@ import Testing
     @Test("definition terms and ordered bodies survive native release and walk without body wrapper nodes")
     func ownedFields() throws {
         let block = try #require(
-            Document.parse("::: box\n*T*\n: one\n:\n\nU\n\n: two\n:::\n").content.first as? DirectiveBlock
+            Document.parse(":::box\n*T*\n: one\n:\n\nU\n\n: two\n:::\n").content.first as? DirectiveBlock
         )
-        #expect(block.name == nil)
-        #expect(block.attributes.classes == ["box"])
+        #expect(block.name == "box")
+        #expect(block.attributes.classes.isEmpty)
         let list = try #require(block.content.first as? DefinitionList)
         #expect(list.definitions.count == 2)
         let first = list.definitions[0]

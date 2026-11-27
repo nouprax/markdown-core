@@ -95,7 +95,6 @@ const builtinProducts = new Set([
     "cross-embed",
     "inline-directive",
     "leaf-directive",
-    "anonymous-container",
     "loose-definition",
     "class-span",
     "cite-author",
@@ -493,10 +492,7 @@ export function productGrammar(id) {
         return pair(frame([":", k, "[", label, "]"]), frame(["[", label, "](/", k, ")"]));
     }
     if (id.includes("container"))
-        return pair(
-            [...(id === "named-container" ? [":::", k, "\n"] : ["::: {}\n"]), b, "\n\n", t, "\n:::\n\n"],
-            [...(id === "named-container" ? ["> ", k, "\n>\n"] : []), "> ", b, "\n>\n> ", t, "\n\n"]
-        );
+        return pair([":::", k, "\n", b, "\n\n", t, "\n:::\n\n"], ["> ", k, "\n>\n", "> ", b, "\n>\n> ", t, "\n\n"]);
     if (id === "loose-definition") return pair([literal, "\n\n: ", b, "\n\n"], ["- ", literal, "\n\n  ", b, "\n\n"]);
     if (id === "anchor") return pair(["> ", b, "\n\n#", k, "#\n\n"], ["> ", b, "\n\n[", k, "]: /target\n\n"]);
     throw new Error(`no product grammar: ${id}`);

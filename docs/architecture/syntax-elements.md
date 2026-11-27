@@ -44,7 +44,7 @@ Commit abbreviations identify the reviewed history, not implementation layers.
 | Span: bracketed content with attributes | `span.c` | `0c68bd1d` |
 | Superscript: `^...^` word body | `superscript.c` | `0c68bd1d` |
 | Subscript: single-tilde word body | `subscript.c` | `0c68bd1d` |
-| DirectiveBlock: named and nameless fenced containers | `directive.c` | `1ad40aed`, `5f5a516c` |
+| DirectiveBlock: named fenced containers | `directive.c` | `1ad40aed`, `5f5a516c` |
 | Formula: non-nesting opaque pairs | `formula.c` | `ab01af37` |
 | Topic: `#name` hashtags | `topic.c` | Topic grammar (2026-10-21) |
 

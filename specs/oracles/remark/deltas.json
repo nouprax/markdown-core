@@ -808,72 +808,6 @@
             "why": "Remark has no bracketed-span syntax. This minimized seeded-fuzz witness preserves its competing literal interpretation while the product fixture pins the Span and source scopes."
         },
         {
-            "id": "p8-nameless-container-1",
-            "input": "::: {.warning}\ncontent\n:::\n",
-            "authority": "docs/specs/dialect/directives.md (P8)",
-            "note": "Braced nameless opener; the container owns its body and closing fence. Remark implements named directives only and retains the nameless opener as prose."
-        },
-        {
-            "id": "p8-nameless-container-2",
-            "input": "::: warning\nx\n:::\n\n:::: {#id .c k=v} ::::\ny\n::::\n",
-            "authority": "docs/specs/dialect/directives.md (P8)",
-            "note": "One unbraced class word and a braced container with a trailing colon run are nameless openers. Remark implements named directives only and retains the nameless opener as prose."
-        },
-        {
-            "id": "p8-nameless-container-3",
-            "input": "::: -\nx\n:::\n\n::: {-}\ny\n:::\n\n::: {}\nz\n:::\n",
-            "authority": "docs/specs/dialect/directives.md (P8)",
-            "note": "Unbraced minus is a literal class, braced minus is the attribute shorthand, and empty braces still open a container. Remark implements named directives only and retains the nameless opener as prose."
-        },
-        {
-            "id": "p8-nameless-container-4",
-            "input": ":::: {.outer}\n:::note\nx\n:::\n::::\n",
-            "authority": "docs/specs/dialect/directives.md (P8)",
-            "note": "Named and nameless containers share the nesting stack and closest matching closer. Remark implements named directives only and retains the nameless opener as prose."
-        },
-        {
-            "id": "p8-nameless-container-5",
-            "input": ":::: {.a}\n:::\nx\n::::\n",
-            "authority": "docs/specs/dialect/directives.md (P8)",
-            "note": "A shorter fence is content; the matching width closes the nameless container. Remark implements named directives only and retains the nameless opener as prose."
-        },
-        {
-            "id": "p8-nameless-container-6",
-            "input": "para\n\n::: {.a}\ntext\n",
-            "authority": "docs/specs/dialect/directives.md (P8)",
-            "note": "An unclosed nameless container owns content through end of input. Remark implements named directives only and retains the nameless opener as prose."
-        },
-        {
-            "id": "p8-nameless-container-7",
-            "input": "para\n::: {.a}\nx\n:::\n",
-            "authority": "docs/specs/dialect/directives.md (P8)",
-            "note": "A nameless container interrupts paragraph content under the ordinary directive block-start rule. Remark implements named directives only and retains the nameless opener as prose."
-        },
-        {
-            "id": "p8-nameless-container-8",
-            "input": "::: {.a}\n# h\n\n- i\n:::\n",
-            "authority": "docs/specs/dialect/directives.md (P8)",
-            "note": "Nameless content uses the ordinary heading and list parser and heading anchor synthesis. Remark implements named directives only and retains the nameless opener as prose."
-        },
-        {
-            "id": "p8-nameless-container-9",
-            "input": "::: {.outer}\n```\n:::\n```\n<div>\n:::\n</div>\n\n::::note\nx\n::::\ny\n:::\n",
-            "authority": "docs/specs/dialect/directives.md (P8)",
-            "note": "Code and HTML own their colon lines; a nested named container owns its closer before the outer nameless container. Remark implements named directives only and retains the nameless opener as prose."
-        },
-        {
-            "id": "p8-nameless-container-10",
-            "input": "::: {.outer}\n- ```\n  x\n:::\nafter\n",
-            "authority": "docs/specs/dialect/directives.md (P8)",
-            "note": "A code block whose list prefix fails ends before the enclosing div closer; subsequent prose is outside the div. Remark implements named directives only and retains the nameless opener as prose."
-        },
-        {
-            "id": "p8-nameless-container-11",
-            "input": "::: {.outer}\n:::: {.inner}\nx\n:::\ny\n::::\nz\n:::\n",
-            "authority": "docs/specs/dialect/directives.md (P8)",
-            "note": "The closest open container shields its parent from a shorter colon run; after it closes the parent resumes. Remark implements named directives only and retains the nameless opener as prose."
-        },
-        {
             "id": "directive-inherited-lazy-parent",
             "input": "> :::a\n> text\nlazy\n",
             "authority": "docs/specs/dialect/directives.md; inherited paragraph continuation",
@@ -886,6 +820,20 @@
             "authority": "docs/specs/dialect/topics.md",
             "summary": "An unclosed attribute container is ordinary text, and the `#x` inside it is a topic here; remark has no topics.",
             "why": "A failed construct releases its source to ordinary Markdown, where valid inner syntax is still recognized; a `#` after `{` opens a topic."
+        },
+        {
+            "id": "p8-container-opaque-lines",
+            "input": ":::box{.outer}\n```\n:::\n```\n<div>\n:::\n</div>\n\n::::note\nx\n::::\ny\n:::\n",
+            "authority": "docs/specs/dialect/directives.md (P8)",
+            "summary": "Code and HTML own their colon lines, and a nested container owns its closer before the outer one.",
+            "why": "remark-directive closes the container at a colon line inside fenced code, leaving the rest as one code block; the product fixture pins the opaque ownership and scopes."
+        },
+        {
+            "id": "p8-container-shorter-closer",
+            "input": ":::box{.outer}\n::::box{.inner}\nx\n:::\ny\n::::\nz\n:::\n",
+            "authority": "docs/specs/dialect/directives.md (P8)",
+            "summary": "A closer needs at least as many colons as its opener, so a shorter run inside the innermost open container is its content.",
+            "why": "remark-directive closes the inner container at the shorter run and keeps the rest as prose; the product fixture pins the minimum closer length."
         }
     ],
     "baselineBacklog": [],

@@ -797,7 +797,7 @@ final class com.nouprax.markdown.core/DirectiveBlock : com.nouprax.markdown.core
     final val label // com.nouprax.markdown.core/DirectiveBlock.label|{}label[0]
         final fun <get-label>(): com.nouprax.markdown.core/DirectiveLabel? // com.nouprax.markdown.core/DirectiveBlock.label.<get-label>|<get-label>(){}[0]
     final val name // com.nouprax.markdown.core/DirectiveBlock.name|{}name[0]
-        final fun <get-name>(): kotlin/String? // com.nouprax.markdown.core/DirectiveBlock.name.<get-name>|<get-name>(){}[0]
+        final fun <get-name>(): kotlin/String // com.nouprax.markdown.core/DirectiveBlock.name.<get-name>|<get-name>(){}[0]
     final val runs // com.nouprax.markdown.core/DirectiveBlock.runs|{}runs[0]
         final fun <get-runs>(): kotlin.collections/List<com.nouprax.markdown.core/Run> // com.nouprax.markdown.core/DirectiveBlock.runs.<get-runs>|<get-runs>(){}[0]
 }

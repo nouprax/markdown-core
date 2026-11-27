@@ -239,19 +239,19 @@
             "id": "p8-closer-width",
             "item": "P8",
             "status": "projection",
-            "reason": "Named and nameless containers share one closer rule: the colon run must be at least as long as the opening fence. Pandoc closes with any run of three or more.",
+            "reason": "Markdown Core has no nameless fenced divs: every container is named, `:::name`, so `::: {.class}` and `::: class` lines are paragraph text. Pandoc's fenced_divs reads them as Divs.",
             "inputDigest": "0b033d2dbebbfd8e2346620c7efdf28c689e156970eaae232de0fd67a432ecea",
             "oracleDigest": "989ef93a38e4b86d0ab8fa2afd79a9eb9e51f9ce3b9e6ee36ba00828a2a64085",
-            "coreDigest": "533354eb48cfc5ab941c8e7570fd1ee06b7ad04e6c7e5b608ae7afaa089fa221"
+            "coreDigest": "0e626ca0837fbeb463d80cb7c675340129f55a69e4d1d65fac7b88005404da5b"
         },
         {
             "id": "p8-explicit-anchor-reservation",
             "item": "P8",
             "status": "projection",
-            "reason": "The document reserves every explicit anchor before synthesizing heading anchors (P3). Pandoc gives the earlier heading the later div ID as well; Markdown Core allocates reserved-1.",
+            "reason": "Markdown Core has no nameless fenced divs: every container is named, `:::name`, so `::: {.class}` and `::: class` lines are paragraph text. Pandoc's fenced_divs reads them as Divs.",
             "inputDigest": "c56b024236a89fa87a33edf5f0ba4cf1835c92eed97346aeee13c54deda1af33",
             "oracleDigest": "73bcf79ef51bd83aee81dc5134b59ee093b7710cff0c6b9c9c29702f9ffd3c9b",
-            "coreDigest": "ec34b64acbaab69a29fd9b543b9c86a732d34b1989f9a63f58b0643ba4e59ab3"
+            "coreDigest": "3cf08b8d0d1d2ab4f3919862dcd19cca5f20369e1a9d0ec21e6d6a648c6ff56f"
         },
         {
             "id": "p10-nested-and-lazy",
@@ -459,6 +459,42 @@
             "inputDigest": "b99dac49aba14398d13da53ff8cfd2049caba07cea00ea524354a8b97e718cc7",
             "oracleDigest": "bec1b399070128667dff8280002961850186419f27e5ade59320d4428d1b0dd6",
             "coreDigest": "979d7534efe62cbd6ae73d9912db021695700ea66c21867a8fa6dd586dd94d96"
+        },
+        {
+            "id": "fenced-divs-nested",
+            "item": "P8",
+            "status": "projection",
+            "reason": "Markdown Core has no nameless fenced divs: every container is named, `:::name`, so `::: {.class}` and `::: class` lines are paragraph text. Pandoc's fenced_divs reads them as Divs.",
+            "inputDigest": "3346c57ddcbae338cf3576adeffd93510099e974422a5b7e974848597d68c877",
+            "oracleDigest": "94e1fc6751ff037379ed455c7d0337472135c2aef4cbec719284fa96af8d404e",
+            "coreDigest": "1f97cc7858ce937dd68db1d6820040c2954541fe8f41581cfceef752427a4bcb"
+        },
+        {
+            "id": "p8-class-and-empty",
+            "item": "P8",
+            "status": "projection",
+            "reason": "Markdown Core has no nameless fenced divs: every container is named, `:::name`, so `::: {.class}` and `::: class` lines are paragraph text. Pandoc's fenced_divs reads them as Divs.",
+            "inputDigest": "9cba484e50ef38cd3cf9a17fea1bae5b65de0a0acbb323071355992aec99fd3c",
+            "oracleDigest": "c5442f7e4bdea5b6776fb4abf0ef097030910a361929e5796c17bba1bf6535ea",
+            "coreDigest": "d341e476fc937375fb5091668cbadfb981d58c3429b44b899e711c9fdd4569f5"
+        },
+        {
+            "id": "p8-opaque-and-nested",
+            "item": "P8",
+            "status": "projection",
+            "reason": "Markdown Core has no nameless fenced divs: every container is named, `:::name`, so `::: {.class}` and `::: class` lines are paragraph text. Pandoc's fenced_divs reads them as Divs.",
+            "inputDigest": "eba65bcf1108239478ae85b978f40bb21e283203b1eb695e00ed34b29bd29ab5",
+            "oracleDigest": "496d977d1cfe000320372fb45cb2b7fd2448cc42ca5320e24f74e0493fc7a5b0",
+            "coreDigest": "8cab1305510996517873355f2855209ad4a98b9592c52494cdd62f80db0243df"
+        },
+        {
+            "id": "p8-p10-closing-boundary",
+            "item": "P8",
+            "status": "projection",
+            "reason": "Markdown Core has no nameless fenced divs: every container is named, `:::name`, so `::: {.class}` and `::: class` lines are paragraph text. Pandoc's fenced_divs reads them as Divs.",
+            "inputDigest": "aec2a220489452ad41a890c75744c2227810071f27a531b1d5d65d74153e5723",
+            "oracleDigest": "35eb5da55c923755320d9c022d04d5e141309bc9b577ecc1c455b93834bb4727",
+            "coreDigest": "c7f6a1883bf0881910e87c747097b2e0883e3c00b10093e67b4ead317690c8e3"
         }
     ]
 }

@@ -367,7 +367,7 @@ them without checking.
 | `Table` | `columns: [TableColumn]`, `head: [TableRow]`, `content: [TableRow]` | non-empty columns define the logical grid; rows are owned exactly once in head/content order: one head row, then the body rows |
 | `TableRow` | `cells: [TableCell]` | cells in column order; no row-local header state |
 | `TableCell` | `content: [Markup]` | inline content, stored as parsed |
-| `DirectiveBlock` | `name: String?`, `label: DirectiveLabel?`, `content: [Markup]` | null name for a nameless container, otherwise a letter-first name; attributes use the inherited fields; label is a typed Markup field spanning its brackets, never content; absent and empty labels remain distinct; block content |
+| `DirectiveBlock` | `name: String`, `label: DirectiveLabel?`, `content: [Markup]` | a required name; attributes use the inherited fields; label is a typed Markup field spanning its brackets, never content; absent and empty labels remain distinct; block content |
 | `DirectiveLabel` | `content: [Markup]` | inline content; the scope spans the brackets, so an empty label is still a place |
 | `Text` | `literal: String` | leaf |
 | `SoftBreak` | none | leaf |

@@ -56,8 +56,8 @@ requires distinguishing reader configuration from failed-candidate fallback.
 | 27 | `p7-unresolved-reference-tail`: unresolved link-reference tails | For `[@a][missing]`, Core accepts the preceding complete citation group. Pandoc retains the first pair of brackets as text and parses its `@a` as authorInText, producing different citation modes and structure. |
 | 28 | `p7-explicit-citation-shortcut`: citation/reference-definition precedence | Core still registers `[@a]: /u` as a link-reference definition, but a complete `[@a]` citation in content takes precedence over a shortcut link. Pandoc also parses the definition-shaped line as a citation followed by text. |
 | 29 | `p9a-start-always-authored`: control reader without startnum | The dialect dropped letter markers, so `h. eight` and `i. nine` are one Core paragraph. This control omits Pandoc's `startnum`, and Pandoc makes a lower-alpha list starting at 1. |
-| 30 | `p8-closer-width`: container closing-fence width | Core requires the closing colon run to be at least as long as the opening fence. Pandoc accepts any run of at least three colons. A container opened with four colons therefore ends at a different position when it encounters three colons. |
-| 31 | `p8-explicit-anchor-reservation`: reserving explicit container IDs | The same rule as item 12, with the later explicit ID on a fenced div. Core gives the earlier `# Reserved` the anchor `reserved-1`; Pandoc keeps `reserved`. |
+| 30 | `p8-closer-width`: container closing-fence width | The same dropped syntax as item 55: `:::: {.outer}` is paragraph text in Core. Pandoc opens a Div there and also accepts any run of at least three colons as its closer. |
+| 31 | `p8-explicit-anchor-reservation`: reserving explicit container IDs | The same dropped syntax as item 55: `::: {#reserved}` is text in Core, so its ID reserves nothing and `# Reserved` keeps `reserved`. Pandoc makes a Div with that ID. |
 | 32 | `p10-nested-and-lazy`: compactness of nested definition bodies | Core stores a separate compact boolean determined by source blank lines between term and body. Pandoc represents compactness through Plain/Para. When the first body is a nested DefinitionList, no corresponding flag is available and the comparison value is null; term and body content agree. |
 | 33 | `p10-padding-and-tabs`: compactness of code definition bodies | The same AST-information difference as item 32, with a CodeBlock as the first body. This is not a TAB or code-content parsing error; Pandoc does not retain the corresponding compact flag. |
 | 34 | `p10-empty-bodies`: compactness of empty definition bodies | The same AST-information difference as item 32, with an empty first body. The empty body and subsequent bodies are preserved and compared. Only Core's explicitly retained compactness information differs. |
@@ -81,6 +81,10 @@ requires distinguishing reader configuration from failed-candidate fallback.
 | 52 | `p4-image-collapsed-heading-reference`: a collapsed image reference to a heading | The same rule as item 44, for `![H][]`. |
 | 53 | `p4-image-full-heading-reference`: a full image reference to a heading | The same rule as item 44, for `![alt][H]`. |
 | 54 | `p4-isolated-authored-heading-label`: an isolated authored heading label | The same rule as item 44, for `[*Foo*]` alone after `# *Foo*`. |
+| 55 | `fenced-divs-nested`: nested nameless divs | Core has no nameless fenced divs: every container is named, `:::name`, so `::::: {#special .sidebar}` and `::: Warning` are paragraph text. Pandoc's `fenced_divs` reads them as nested Divs. |
+| 56 | `p8-class-and-empty`: class-word and empty-attribute openers | The same rule as item 55, for `::: warning` and `::: {}`. |
+| 57 | `p8-opaque-and-nested`: opaque lines inside a div | The same rule as item 55; code fences and HTML still own their lines on both sides. |
+| 58 | `p8-p10-closing-boundary`: a definition list inside a div | The same rule as item 55: `::: {.box}` is text and the definition list is not inside a container in Core. |
 
 The clearest repeated relationships are:
 
@@ -88,7 +92,8 @@ The clearest repeated relationships are:
   references, and headings.
 - 17, 44–54: the dropped implicit heading references, across shortcut, full,
   collapsed and image forms.
-- 12, 16, 18, 31: one global explicit-ID reservation rule across four declaration
+- 30, 31, 55–58: the dropped nameless fenced divs.
+- 12, 16, 18: one global explicit-ID reservation rule across three declaration
   sites.
 - 32–34: one compactness-information difference across nested blocks, code
   blocks, and empty bodies.

@@ -21,7 +21,7 @@ differences and explains overlapping syntax.
 | Heading links | Automatic anchors are generated, while cross-link targets stay raw; applications match them. |
 | Properties | One initial `---` envelope with ten known fields. Unsupported members, including `...`, are ignored. |
 | Attributes | One grammar at every site; a bare name such as `{disabled}` records `disabled="true"`. Ordered duplicate classes/records survive. |
-| Colon containers | Named directives and nameless fenced divs share one model and one minimum closing-fence length. |
+| Colon containers | Every container is named, `:::name`; a container closes at a colon run at least as long as its opener. |
 | Formula brackets | Two authored backslashes open `\\(...\\)` or `\\[...\\]`; a single backslash remains a Markdown escape. |
 | Task markers | One of `[ ]`, `[x]`, `[X]`, `[?]`, `[-]` plus a following separator; the item records its status. |
 | Comments | HTML and percent comments remain `Comment` nodes. |
@@ -43,7 +43,7 @@ block start, the effective precedence is:
 1. Code and HTML forms, including HTML comments.
 2. Formula blocks, then percent-comment blocks.
 3. Quotes/callouts and list markers with optional task prefixes.
-4. Leaf, named-container, and nameless-container directives.
+4. Leaf and container directives.
 5. ATX headings, then Setext headings.
 6. Table candidates.
 7. Thematic breaks, then footnote and link reference definitions.

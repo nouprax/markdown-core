@@ -50,7 +50,6 @@ const INLINE_CONTENT = new Set([
 ]);
 
 const stateValidators = {
-    "directiveBlock.name.null": (tree) => /DirectiveBlock scope=.* name=null /.test(tree),
     "definition.compact.true": (tree) => /Definition scope=.* compact=true /.test(tree),
     "definition.compact.false": (tree) => /Definition scope=.* compact=false /.test(tree),
     "definition.bodies.multiple": (tree) => /Definition scope=.* children=(?:[2-9]|[1-9]\d+)(?:\n|$)/.test(tree),

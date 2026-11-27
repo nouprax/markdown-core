@@ -166,8 +166,6 @@ document documents/hard-table-label.md
 script documents/hard-table-label.md scripts/hard-table-label.script
 document documents/hard-footnote-definition.md
 script documents/hard-footnote-definition.md scripts/hard-footnote-definition.script
-document documents/hard-heading-label.md
-script documents/hard-heading-label.md scripts/hard-heading-label.script
 document documents/hard-automatic-anchor.md
 script documents/hard-automatic-anchor.md scripts/hard-automatic-anchor.script
 document documents/hard-split-and-join.md
@@ -368,12 +366,12 @@ stream ../canonical-ast/citations.md tokens
 stream ../canonical-ast/citations.md scalars
 stream ../canonical-ast/citations.md rows
 stream ../canonical-ast/citations.md splits
-document ../canonical-ast/nameless-directives.md
-script ../canonical-ast/nameless-directives.md scripts/nameless-directives.script
-stream ../canonical-ast/nameless-directives.md tokens
-stream ../canonical-ast/nameless-directives.md scalars
-stream ../canonical-ast/nameless-directives.md rows
-stream ../canonical-ast/nameless-directives.md splits
+document ../canonical-ast/directive-blocks.md
+script ../canonical-ast/directive-blocks.md scripts/directive-blocks.script
+stream ../canonical-ast/directive-blocks.md tokens
+stream ../canonical-ast/directive-blocks.md scalars
+stream ../canonical-ast/directive-blocks.md rows
+stream ../canonical-ast/directive-blocks.md splits
 document ../canonical-ast/definition-lists.md
 script ../canonical-ast/definition-lists.md scripts/definition-lists.script
 stream ../canonical-ast/definition-lists.md tokens

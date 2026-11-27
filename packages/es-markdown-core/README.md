@@ -137,9 +137,8 @@ whitespace. An escaped ASCII space within a completed body becomes NBSP.
 Strikethrough uses `~~text~~`. All three kinds support typed visitor callbacks, and their scopes include their authored delimiters.
 Their ES kind tags are `"span"`, `"superscript"` and `"subscript"`.
 
-Nameless fenced containers (`::: {.class}` or `::: class`) expose
-`DirectiveBlock.name` as null; named and nameless forms share closing and nesting
-rules. A term followed by `: body` or `~ body` produces `DefinitionList` with
+Every fenced container is named (`:::name`), and `DirectiveBlock.name` is
+never null. A term followed by `: body` produces `DefinitionList` with
 ordered `definitions`. Each `Definition` has an inline `term`, ordered block-body
 arrays in `content`, and `compact` determined by the blank line before its first
 body. A body can be empty. Walking visits the term and then the bodies without
@@ -359,7 +358,7 @@ targets add no scope.
 
 The always-on dialect includes inline code, heading, fenced code and link
 attributes; automatic anchors; bracketed spans; superscript and subscript;
-bibliography citations; named and nameless fenced containers; and definition
+bibliography citations; and definition
 lists. These feature groups use one immutable AST and the same behavior on
 every binding. The [dialect contract](../../docs/specs/dialect.md) specifies
 syntax, precedence and intentional differences from the pinned Pandoc reader.

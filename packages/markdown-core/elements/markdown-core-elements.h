@@ -85,11 +85,11 @@ markdown_core_formula_mode markdown_core_elements_get_formula_mode(markdown_core
 /** Sets the paragraph-internal layout mode of a formula element node. */
 void markdown_core_elements_set_formula_mode(markdown_core_node *node, markdown_core_formula_mode mode);
 
-/** Returns the directive name, or NULL for a nameless block. */
+/** Returns the directive name. */
 const char *markdown_core_elements_get_directive_name(const markdown_core_node *node);
 
 /** Sets the directive name of a directive element node, returning 0 when
- * the copy could not be allocated. NULL makes the directive nameless. */
+ * the copy could not be allocated. */
 int markdown_core_elements_set_directive_name(markdown_core_node *node, const char *name);
 
 #ifdef __cplusplus

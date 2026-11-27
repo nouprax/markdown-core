@@ -39,13 +39,7 @@ export const featureOwners = {
     "definition-lists": { elements: ["DEFINITION_LIST"], certificates: ["loose-definition"] },
     directives: {
         elements: ["DIRECTIVE"],
-        certificates: [
-            "inline-directive",
-            "empty-directive",
-            "leaf-directive",
-            "anonymous-container",
-            "named-container"
-        ]
+        certificates: ["inline-directive", "empty-directive", "leaf-directive", "named-container"]
     },
     emphasis: { elements: ["EMPHASIS", "EMPHASIS_UNDERSCORE"], certificates: [] },
     footnotes: { elements: ["FOOTNOTE"], certificates: [] },

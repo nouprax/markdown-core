@@ -210,7 +210,7 @@ internal object WireDecoder {
                 }
 
                 NodeKind.DIRECTIVE_BLOCK -> {
-                    val name = optional { string() }
+                    val name = string()
                     val label = presence()
                     val content = count()
                     take(label, content)

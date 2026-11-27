@@ -25,7 +25,6 @@ static int inspect_node(const markdown_core_node *node, ts_ast_range range, void
     int32_t level;
     bool flag;
     markdown_core_string literal;
-    markdown_core_optional_string optional;
     markdown_core_task_status task;
     const char *name;
     markdown_core_node_kind kind = markdown_core_node_get_kind(node);
@@ -51,7 +50,7 @@ static int inspect_node(const markdown_core_node *node, ts_ast_range range, void
         break;
     case MARKDOWN_CORE_KIND_DIRECTIVE:
     case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
-        status = markdown_core_node_directive_properties(node, &optional);
+        status = markdown_core_node_directive_properties(node, &literal);
         break;
     case MARKDOWN_CORE_KIND_DEFINITION:
         status = markdown_core_node_definition_compact(node, &flag);

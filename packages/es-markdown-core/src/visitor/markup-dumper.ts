@@ -205,7 +205,7 @@ class State {
                 return;
             }
             this.start();
-            this.line("DirectiveBlock", node, [`name=${optional(node.name)}`], node.content.length, [
+            this.line("DirectiveBlock", node, [`name=${escaped(node.name)}`], node.content.length, [
                 { name: null, count: node.content.length + (node.label === null ? 0 : 1) }
             ]);
         },

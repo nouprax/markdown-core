@@ -692,24 +692,6 @@ static int lay_out(markdown_core_attribute_parser *p, bufsize_t anchor, bufsize_
     return 1;
 }
 
-int markdown_core_attributes_single_class(markdown_core_attributes *value, const unsigned char *bytes,
-                                          bufsize_t length) {
-    markdown_core_chunk *class = markdown_core_realloc(NULL, sizeof(*class) + (size_t)length + 1);
-    if (!class) {
-        return 0;
-    }
-    unsigned char *text = (unsigned char *)(class + 1);
-    if (length) {
-        memcpy(text, bytes, (size_t)length);
-    }
-    text[length] = 0;
-    *class = (markdown_core_chunk){text, length, 0};
-    value->storage = class;
-    value->classes = class;
-    value->class_count = 1;
-    return 1;
-}
-
 bufsize_t markdown_core_attributes_tail(markdown_core_attribute_parser *p, bufsize_t start, bufsize_t end) {
     if (end <= start || p->data[end - 1] != '}') {
         return -1;

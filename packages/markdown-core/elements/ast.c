@@ -4497,9 +4497,8 @@ static bool formula_properties(const markdown_core_node *node, markdown_core_pla
 
 static const markdown_core_table *table_of(const markdown_core_node *node) { return node->opaque; }
 
-static markdown_core_optional_string directive_name(const markdown_core_node *node) {
-    const char *value = markdown_core_core_facet(public_kind(node))->name(node);
-    return value ? (markdown_core_optional_string){true, cstr_string(value)} : (markdown_core_optional_string){0};
+static markdown_core_string directive_name(const markdown_core_node *node) {
+    return cstr_string(markdown_core_core_facet(public_kind(node))->name(node));
 }
 
 static markdown_core_string attribute_class(const markdown_core_node *node, size_t index) {
@@ -4699,7 +4698,7 @@ markdown_core_status markdown_core_node_table_column_at(const markdown_core_node
 }
 
 markdown_core_status markdown_core_node_directive_properties(const markdown_core_node *node,
-                                                             markdown_core_optional_string *name) {
+                                                             markdown_core_string *name) {
     REQUIRE_KIND(node, DIRECTIVE_KINDS);
     *name = directive_name(node);
     return MARKDOWN_CORE_OK;
@@ -5524,7 +5523,7 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
     case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
     case MARKDOWN_CORE_KIND_DIRECTIVE:
         buffer_cstr(buffer, " name=");
-        buffer_optional_string(buffer, directive_name(node));
+        buffer_json_string(buffer, directive_name(node));
         break;
     /* A DESTINATION IS REQUIRED (Q26): `dest=` is the tagged value and is
      * never `null`. `[a]()` used to print `destination=null`, which said the

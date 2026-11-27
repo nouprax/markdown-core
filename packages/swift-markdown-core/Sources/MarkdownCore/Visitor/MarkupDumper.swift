@@ -147,7 +147,7 @@ private struct LineVisitor: MarkupVisitor {
     }
 
     mutating func visit(_ node: DirectiveBlock, phase: MarkupVisitPhase) {
-        line("DirectiveBlock", node, fields: ["name=\(dump(optional: node.name))"], children: node.content.count)
+        line("DirectiveBlock", node, fields: ["name=\(dump(escaped: node.name))"], children: node.content.count)
     }
 
     mutating func visit(_ node: DirectiveLabel, phase: MarkupVisitPhase) {

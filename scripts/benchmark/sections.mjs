@@ -153,7 +153,7 @@ export const sectionDispositions = {
         "Recognition boundaries": grammar("loose-definition", "mixed-definitions")
     },
     directives: {
-        Directives: grammar("inline-directive", "leaf-directive", "named-container", "anonymous-container"),
+        Directives: grammar("inline-directive", "leaf-directive", "named-container"),
         "Inline directives": grammar(
             "inline-directive",
             "empty-directive",
@@ -163,7 +163,6 @@ export const sectionDispositions = {
         ),
         "Leaf directives": grammar("leaf-directive", "directive-leaf-bare"),
         "Container directives": grammar("named-container", "directive-nested"),
-        "Nameless containers": grammar("anonymous-container", "directive-unbraced"),
         "Container boundaries": grammar("directive-nested", "fallback-directive")
     },
     emphasis: {

@@ -55,7 +55,6 @@
             "Reference"
         ],
         "states": [
-            "directiveBlock.name.null",
             "definition.compact.true",
             "definition.compact.false",
             "definition.bodies.multiple",
@@ -940,9 +939,9 @@
             }
         },
         {
-            "name": "nameless-directives",
-            "input": "nameless-directives.md",
-            "expected": "nameless-directives.ast",
+            "name": "directive-blocks",
+            "input": "directive-blocks.md",
+            "expected": "directive-blocks.ast",
             "coverage": {
                 "kinds": [
                     "Document",
@@ -955,9 +954,10 @@
                     "Cite",
                     "Link",
                     "DirectiveLabel",
-                    "Citation"
+                    "Citation",
+                    "SoftBreak"
                 ],
-                "states": ["directiveBlock.name.null"],
+                "states": [],
                 "orders": ["document.source-order", "definition.term-before-bodies"]
             }
         },

@@ -329,7 +329,6 @@ pub enum Name {
     ///   [`DirectiveContainerSequence`][Name::DirectiveContainerSequence],
     ///   [`DirectiveNameText`][Name::DirectiveNameText],
     ///   [`DirectiveLabel`][Name::DirectiveLabel],
-    ///   [`DirectiveClass`][Name::DirectiveClass],
     ///   [`Attributes`][Name::Attributes],
     ///   [`SpaceOrTab`][Name::SpaceOrTab]
     /// * **Construct**:
@@ -363,24 +362,6 @@ pub enum Name {
     ///     ^^^
     /// ```
     DirectiveContainerSequence,
-    /// Class word of a nameless directive (container).
-    ///
-    /// ## Info
-    ///
-    /// * **Context**:
-    ///   [`DirectiveContainerFence`][Name::DirectiveContainerFence]
-    /// * **Content model**:
-    ///   void
-    /// * **Construct**:
-    ///   [`directive_container`][crate::construct::directive_container]
-    ///
-    /// ## Example
-    ///
-    /// ```markdown
-    /// > | ::: a
-    ///         ^
-    /// ```
-    DirectiveClass,
     /// Whole bracketed span.
     ///
     /// ## Info
@@ -4134,7 +4115,6 @@ impl Name {
             | Name::DirectiveLeafSequence
             | Name::DirectiveContainerFence
             | Name::DirectiveContainerSequence
-            | Name::DirectiveClass
             | Name::DirectiveNameText
             | Name::DirectiveLabel
             | Name::DirectiveLabelMarker
@@ -4264,7 +4244,7 @@ impl Name {
 }
 
 /// List of void events, used to make sure everything is working well.
-pub const VOID_EVENTS: [Name; 95] = [
+pub const VOID_EVENTS: [Name; 94] = [
     Name::DefinitionBodyMarker,
     Name::AttributesMarker,
     Name::AttributeId,
@@ -4340,7 +4320,6 @@ pub const VOID_EVENTS: [Name; 95] = [
     Name::DirectiveTextMarker,
     Name::DirectiveLeafSequence,
     Name::DirectiveContainerSequence,
-    Name::DirectiveClass,
     Name::DirectiveNameText,
     Name::DirectiveLabelMarker,
     Name::DirectiveLabelText,

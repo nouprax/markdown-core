@@ -193,78 +193,48 @@ Document scope=1:1..1:25 anchor=null attributes={} children=1
 ::: {.warning}
 content
 :::
-.
-Document scope=1:1..3:3 anchor=null attributes={} children=1
-└── DirectiveBlock scope=1:1..3:3 anchor=null attributes={.warning} name=null children=1
-    └── Paragraph scope=2:1..2:7 anchor=null attributes={} children=1
-        └── Text scope=2:1..2:7 anchor=null attributes={} literal="content" children=0
-````````````````````````````````
 
-```````````````````````````````` example
 ::: warning
 x
 :::
-
-:::: {#id .c k=v} ::::
-y
-::::
 .
-Document scope=1:1..7:4 anchor=null attributes={} children=2
-├── DirectiveBlock scope=1:1..3:3 anchor=null attributes={.warning} name=null children=1
-│   └── Paragraph scope=2:1..2:1 anchor=null attributes={} children=1
-│       └── Text scope=2:1..2:1 anchor=null attributes={} literal="x" children=0
-└── DirectiveBlock scope=5:1..7:4 anchor="id" attributes={.c k="v"} name=null children=1
-    └── Paragraph scope=6:1..6:1 anchor=null attributes={} children=1
-        └── Text scope=6:1..6:1 anchor=null attributes={} literal="y" children=0
+Document scope=1:1..7:3 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..3:3 anchor=null attributes={} children=5
+│   ├── Text scope=1:1..1:14 anchor=null attributes={} literal="::: {.warning}" children=0
+│   ├── SoftBreak scope=1:15..2:0 anchor=null attributes={} children=0
+│   ├── Text scope=2:1..2:7 anchor=null attributes={} literal="content" children=0
+│   ├── SoftBreak scope=2:8..3:0 anchor=null attributes={} children=0
+│   └── Text scope=3:1..3:3 anchor=null attributes={} literal=":::" children=0
+└── Paragraph scope=5:1..7:3 anchor=null attributes={} children=5
+    ├── Text scope=5:1..5:11 anchor=null attributes={} literal="::: warning" children=0
+    ├── SoftBreak scope=5:12..6:0 anchor=null attributes={} children=0
+    ├── Text scope=6:1..6:1 anchor=null attributes={} literal="x" children=0
+    ├── SoftBreak scope=6:2..7:0 anchor=null attributes={} children=0
+    └── Text scope=7:1..7:3 anchor=null attributes={} literal=":::" children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
-::: -
-x
-:::
-
-::: {-}
-y
-:::
-
-::: {}
-z
-:::
-.
-Document scope=1:1..11:3 anchor=null attributes={} children=3
-├── DirectiveBlock scope=1:1..3:3 anchor=null attributes={.-} name=null children=1
-│   └── Paragraph scope=2:1..2:1 anchor=null attributes={} children=1
-│       └── Text scope=2:1..2:1 anchor=null attributes={} literal="x" children=0
-├── DirectiveBlock scope=5:1..7:3 anchor=null attributes={-="true"} name=null children=1
-│   └── Paragraph scope=6:1..6:1 anchor=null attributes={} children=1
-│       └── Text scope=6:1..6:1 anchor=null attributes={} literal="y" children=0
-└── DirectiveBlock scope=9:1..11:3 anchor=null attributes={} name=null children=1
-    └── Paragraph scope=10:1..10:1 anchor=null attributes={} children=1
-        └── Text scope=10:1..10:1 anchor=null attributes={} literal="z" children=0
-````````````````````````````````
-
-```````````````````````````````` example
-:::: {.outer}
+::::box{.outer}
 :::note
 x
 :::
 ::::
 .
 Document scope=1:1..5:4 anchor=null attributes={} children=1
-└── DirectiveBlock scope=1:1..5:4 anchor=null attributes={.outer} name=null children=1
+└── DirectiveBlock scope=1:1..5:4 anchor=null attributes={.outer} name="box" children=1
     └── DirectiveBlock scope=2:1..4:3 anchor=null attributes={} name="note" children=1
         └── Paragraph scope=3:1..3:1 anchor=null attributes={} children=1
             └── Text scope=3:1..3:1 anchor=null attributes={} literal="x" children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
-:::: {.a}
+::::box{.a}
 :::
 x
 ::::
 .
 Document scope=1:1..4:4 anchor=null attributes={} children=1
-└── DirectiveBlock scope=1:1..4:4 anchor=null attributes={.a} name=null children=1
+└── DirectiveBlock scope=1:1..4:4 anchor=null attributes={.a} name="box" children=1
     └── Paragraph scope=2:1..3:1 anchor=null attributes={} children=3
         ├── Text scope=2:1..2:3 anchor=null attributes={} literal=":::" children=0
         ├── SoftBreak scope=2:4..3:0 anchor=null attributes={} children=0
@@ -274,27 +244,27 @@ Document scope=1:1..4:4 anchor=null attributes={} children=1
 ```````````````````````````````` example
 para
 
-::: {.a}
+:::box{.a}
 text
 .
 Document scope=1:1..4:4 anchor=null attributes={} children=2
 ├── Paragraph scope=1:1..1:4 anchor=null attributes={} children=1
 │   └── Text scope=1:1..1:4 anchor=null attributes={} literal="para" children=0
-└── DirectiveBlock scope=3:1..4:4 anchor=null attributes={.a} name=null children=1
+└── DirectiveBlock scope=3:1..4:4 anchor=null attributes={.a} name="box" children=1
     └── Paragraph scope=4:1..4:4 anchor=null attributes={} children=1
         └── Text scope=4:1..4:4 anchor=null attributes={} literal="text" children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
 para
-::: {.a}
+:::box{.a}
 x
 :::
 .
 Document scope=1:1..4:3 anchor=null attributes={} children=2
 ├── Paragraph scope=1:1..1:4 anchor=null attributes={} children=1
 │   └── Text scope=1:1..1:4 anchor=null attributes={} literal="para" children=0
-└── DirectiveBlock scope=2:1..4:3 anchor=null attributes={.a} name=null children=1
+└── DirectiveBlock scope=2:1..4:3 anchor=null attributes={.a} name="box" children=1
     └── Paragraph scope=3:1..3:1 anchor=null attributes={} children=1
         └── Text scope=3:1..3:1 anchor=null attributes={} literal="x" children=0
 ````````````````````````````````
@@ -324,14 +294,14 @@ Document scope=1:1..7:3 anchor=null attributes={} children=2
 ````````````````````````````````
 
 ```````````````````````````````` example
-::: {.a}
+:::box{.a}
 # h
 
 - i
 :::
 .
 Document scope=1:1..5:3 anchor=null attributes={} children=1
-└── DirectiveBlock scope=1:1..5:3 anchor=null attributes={.a} name=null children=2
+└── DirectiveBlock scope=1:1..5:3 anchor=null attributes={.a} name="box" children=2
     ├── Heading scope=2:1..2:3 anchor="h" attributes={} level=1 children=1
     │   └── Text scope=2:3..2:3 anchor=null attributes={} literal="h" children=0
     └── List scope=4:1..4:3 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=1
@@ -362,7 +332,7 @@ Document scope=1:1..1:16 anchor=null attributes={} children=1
 ## opaque-and-nesting
 
 ```````````````````````````````` example
-::: {.outer}
+:::box{.outer}
 ```
 :::
 ```
@@ -377,7 +347,7 @@ y
 :::
 .
 Document scope=1:1..13:3 anchor=null attributes={} children=1
-└── DirectiveBlock scope=1:1..13:3 anchor=null attributes={.outer} name=null children=4
+└── DirectiveBlock scope=1:1..13:3 anchor=null attributes={.outer} name="box" children=4
     ├── CodeBlock scope=2:1..4:3 anchor=null attributes={} info=null language=null literal=":::\n" fenced=true closed=true children=0
     ├── HTMLBlock scope=5:1..7:6 anchor=null attributes={} literal="<div>\n:::\n</div>\n" children=0
     ├── DirectiveBlock scope=9:1..11:4 anchor=null attributes={} name="note" children=1
@@ -390,14 +360,14 @@ Document scope=1:1..13:3 anchor=null attributes={} children=1
 ## code-outside-list
 
 ```````````````````````````````` example
-::: {.outer}
+:::box{.outer}
 - ```
   x
 :::
 after
 .
 Document scope=1:1..5:5 anchor=null attributes={} children=2
-├── DirectiveBlock scope=1:1..4:3 anchor=null attributes={.outer} name=null children=1
+├── DirectiveBlock scope=1:1..4:3 anchor=null attributes={.outer} name="box" children=1
 │   └── List scope=2:1..3:3 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=1
 │       └── ListItem scope=2:1..3:3 anchor=null attributes={} status=null children=1
 │           └── CodeBlock scope=2:3..3:0,3:3..3:3 anchor=null attributes={} info=null language=null literal="x\n" fenced=true closed=false children=0
@@ -408,8 +378,8 @@ Document scope=1:1..5:5 anchor=null attributes={} children=2
 ## closest-container
 
 ```````````````````````````````` example
-::: {.outer}
-:::: {.inner}
+:::box{.outer}
+::::box{.inner}
 x
 :::
 y
@@ -418,8 +388,8 @@ z
 :::
 .
 Document scope=1:1..8:3 anchor=null attributes={} children=1
-└── DirectiveBlock scope=1:1..8:3 anchor=null attributes={.outer} name=null children=2
-    ├── DirectiveBlock scope=2:1..6:4 anchor=null attributes={.inner} name=null children=1
+└── DirectiveBlock scope=1:1..8:3 anchor=null attributes={.outer} name="box" children=2
+    ├── DirectiveBlock scope=2:1..6:4 anchor=null attributes={.inner} name="box" children=1
     │   └── Paragraph scope=3:1..5:1 anchor=null attributes={} children=5
     │       ├── Text scope=3:1..3:1 anchor=null attributes={} literal="x" children=0
     │       ├── SoftBreak scope=3:2..4:0 anchor=null attributes={} children=0

@@ -85,7 +85,6 @@ escapes or character references.
 | Link reference definition | After its destination and optional title. |
 | Bracketed span | Immediately after its closing bracket. |
 | Named directive | Immediately after its name or label. |
-| Nameless container | On its opening colon fence. |
 
 Every AST node has an `attributes` value, but only supported attachment rules
 populate it. Other nodes have empty classes and records. A missing container,

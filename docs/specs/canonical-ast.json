@@ -323,7 +323,7 @@
                 {
                     "name": "name",
                     "type": "String",
-                    "optional": true,
+                    "optional": false,
                     "slots": ["name"]
                 },
                 {
@@ -337,7 +337,7 @@
                     "optional": false
                 }
             ],
-            "invariants": "block content; name is null for a nameless container and required for a named leaf/container; nameless containers have no label; all container forms share the closer and nesting rules"
+            "invariants": "block content; name is required; all container forms share the closer and nesting rules"
         },
         {
             "name": "DirectiveLabel",

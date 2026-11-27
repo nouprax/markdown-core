@@ -428,7 +428,8 @@ impl<'a> Compiler<'a> {
             }
             Block::DirectiveContainer => {
                 let fence = self.child(index, Name::DirectiveContainerFence);
-                let (name, label) = fence.map_or((None, None), |fence| self.directive_head(fence));
+                let (name, label) =
+                    fence.map_or((String::new(), None), |fence| self.directive_head(fence));
                 let runs = Self::whole(self.lead(index), self.last(index).1);
                 let content = self.block_content(index);
                 let mut node = Node::new(
@@ -442,10 +443,6 @@ impl<'a> Compiler<'a> {
                 if let Some(fence) = fence {
                     if let Some(attributes) = self.child(fence, Name::Attributes) {
                         self.attributes(attributes, &mut node);
-                    }
-                    // A nameless directive’s class word is one class.
-                    if let Some(class) = self.child(fence, Name::DirectiveClass) {
-                        node.attributes.classes.push(self.text(class).to_string());
                     }
                 }
                 node
@@ -1671,10 +1668,11 @@ impl<'a> Compiler<'a> {
 
     /// The name and the label of the directive (leaf) at `index`, or of the
     /// opening fence of a directive (container).
-    fn directive_head(&mut self, index: usize) -> (Option<String>, Option<Box<Node>>) {
+    fn directive_head(&mut self, index: usize) -> (String, Option<Box<Node>>) {
         let name = self
             .child(index, Name::DirectiveNameText)
-            .map(|name| self.text(name).to_string());
+            .map(|name| self.text(name).to_string())
+            .unwrap_or_default();
         (name, self.directive_label(index))
     }
 

@@ -322,7 +322,7 @@ fn fields<'a>(line: &mut String, kind: &'a Kind) -> (usize, Vec<Row<'a>>) {
             content,
         } => {
             line.push_str(" name=");
-            opt_text(line, name.as_deref());
+            string(line, name);
             let mut entries = Vec::new();
             if let Some(label) = label {
                 entries.push(Row::Node(label));

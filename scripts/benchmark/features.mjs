@@ -414,13 +414,6 @@ pair(
     ["> ", k, "\n>\n>> ", v, "\n>>\n>> ", b, "\n\n"]
 );
 pair(
-    "directive-unbraced",
-    "directives",
-    ["nameless-unbraced", "trailing-colons"],
-    ["::: ", k, " :::\n", b, "\n:::\n\n"],
-    ["> ", k, "\n>\n> ", b, "\n\n"]
-);
-pair(
     "block-id-paragraph",
     "block-identifiers",
     ["paragraph-suffix", "anchor-declaration"],

@@ -8,20 +8,17 @@
 //! ```bnf
 //! directive_container ::= fence_open *(eol *document) [eol fence_close]
 //!
-//! fence_open ::= 0*3space_or_tab sequence (name [label] [attributes] | nameless) *space_or_tab
+//! fence_open ::= 0*3space_or_tab sequence name [label] [attributes] *space_or_tab
 //! ; Restriction: at least as many colons as in the opening sequence.
 //! fence_close ::= 0*3space_or_tab sequence *space_or_tab
 //! ; Restriction: three or more.
 //! sequence ::= 3*':'
-//! nameless ::= *space_or_tab (attributes | class) *space_or_tab *':'
-//! class ::= 1*(byte - whitespace - ':' - '{' - '}')
 //! ```
 //!
 //! See [`partial_directive`][crate::construct::partial_directive] for the
 //! name and the label, and
 //! [`partial_attributes`][crate::construct::partial_attributes] for
 //! attributes, which are on the line.
-//! A nameless directive’s class word is one class.
 //! Every line up to the closing fence is the directive’s: there is no
 //! prefix, and no lazy line.
 //!
@@ -30,7 +27,6 @@
 //! * [`DirectiveContainer`][Name::DirectiveContainer]
 //! * [`DirectiveContainerFence`][Name::DirectiveContainerFence]
 //! * [`DirectiveContainerSequence`][Name::DirectiveContainerSequence]
-//! * [`DirectiveClass`][Name::DirectiveClass]
 //!
 //! ## References
 //!
@@ -38,9 +34,8 @@
 //!
 //! [document]: crate::construct::document
 
-use crate::construct::partial_attributes;
 use crate::construct::partial_directive;
-use crate::construct::partial_space_or_tab::{space_or_tab, space_or_tab_min_max};
+use crate::construct::partial_space_or_tab::space_or_tab_min_max;
 use crate::event::Name;
 use crate::state::{Name as StateName, State};
 use crate::tokenizer::Tokenizer;
@@ -48,14 +43,6 @@ use crate::util::constant::TAB_SIZE;
 
 /// The fewest colons of a container’s fence.
 const SEQUENCE_SIZE_MIN: usize = 3;
-
-/// Whether `byte` is in a nameless directive’s class word.
-fn class_byte(byte: Option<u8>) -> bool {
-    !matches!(
-        byte,
-        None | Some(b'\t' | b'\n' | b'\x0b' | b'\x0c' | b'\r' | b' ' | b':' | b'{' | b'}')
-    )
-}
 
 /// Start of a directive (container).
 ///
@@ -109,19 +96,11 @@ fn sequence(tokenizer: &mut Tokenizer, size: usize) -> State {
     } else if size >= SEQUENCE_SIZE_MIN {
         tokenizer.exit(Name::DirectiveContainerSequence);
         tokenizer.document.stack[tokenizer.document.continued].size = size;
-        if matches!(tokenizer.current, Some(b'\t' | b' ' | b'{')) {
-            tokenizer.attempt(
-                State::Next(StateName::DirectiveContainer(Step::FenceEnd)),
-                State::Nok,
-            );
-            State::Redo(StateName::DirectiveContainer(Step::Nameless))
-        } else {
-            tokenizer.attempt(
-                State::Next(StateName::DirectiveContainer(Step::NameAfter)),
-                State::Nok,
-            );
-            State::Redo(StateName::Directive(partial_directive::Step::NameStart))
-        }
+        tokenizer.attempt(
+            State::Next(StateName::DirectiveContainer(Step::NameAfter)),
+            State::Nok,
+        );
+        State::Redo(StateName::Directive(partial_directive::Step::NameStart))
     } else {
         State::Nok
     }
@@ -139,114 +118,6 @@ fn name_after(tokenizer: &mut Tokenizer) -> State {
         State::Nok,
     );
     State::Redo(StateName::Directive(partial_directive::Step::BlockRest))
-}
-
-/// After the colons of a nameless directive.
-///
-/// ```markdown
-/// > | ::: a
-///        ^
-/// ```
-fn nameless(tokenizer: &mut Tokenizer) -> State {
-    if matches!(tokenizer.current, Some(b'\t' | b' ')) {
-        tokenizer.attempt(
-            State::Next(StateName::DirectiveContainer(Step::NamelessBefore)),
-            State::Nok,
-        );
-        State::Redo(space_or_tab())
-    } else {
-        State::Redo(StateName::DirectiveContainer(Step::NamelessBefore))
-    }
-}
-
-/// At the attributes or the class word of a nameless directive.
-///
-/// ```markdown
-/// > | ::: a
-///         ^
-/// ```
-fn nameless_before(tokenizer: &mut Tokenizer) -> State {
-    if tokenizer.current == Some(b'{') {
-        tokenizer.attempt(
-            State::Next(StateName::DirectiveContainer(Step::NamelessAfter)),
-            State::Nok,
-        );
-        State::Redo(StateName::Attributes(partial_attributes::Step::Start {
-            line: true,
-        }))
-    } else if class_byte(tokenizer.current) {
-        tokenizer.enter(Name::DirectiveClass);
-        tokenizer.consume();
-        State::Next(StateName::DirectiveContainer(Step::Class))
-    } else {
-        State::Nok
-    }
-}
-
-/// In the class word.
-///
-/// ```markdown
-/// > | ::: ab
-///          ^
-/// ```
-fn class(tokenizer: &mut Tokenizer) -> State {
-    if class_byte(tokenizer.current) {
-        tokenizer.consume();
-        State::Next(StateName::DirectiveContainer(Step::Class))
-    } else {
-        tokenizer.exit(Name::DirectiveClass);
-        State::Redo(StateName::DirectiveContainer(Step::NamelessAfter))
-    }
-}
-
-/// After the attributes or the class word, before optional whitespace and
-/// colons.
-///
-/// ```markdown
-/// > | ::: a :::
-///          ^
-/// ```
-fn nameless_after(tokenizer: &mut Tokenizer) -> State {
-    if matches!(tokenizer.current, Some(b'\t' | b' ')) {
-        tokenizer.attempt(
-            State::Next(StateName::DirectiveContainer(Step::Colons)),
-            State::Nok,
-        );
-        State::Redo(space_or_tab())
-    } else {
-        State::Redo(StateName::DirectiveContainer(Step::Colons))
-    }
-}
-
-/// At optional colons that end a nameless directive’s opening fence.
-///
-/// ```markdown
-/// > | ::: a :::
-///           ^
-/// ```
-fn colons(tokenizer: &mut Tokenizer) -> State {
-    if tokenizer.current == Some(b':') {
-        tokenizer.enter(Name::DirectiveContainerSequence);
-        State::Redo(StateName::DirectiveContainer(Step::ColonsInside))
-    } else {
-        State::Redo(StateName::Directive(partial_directive::Step::BlockEnd))
-    }
-}
-
-/// In the colons that end a nameless directive’s opening fence.
-///
-/// ```markdown
-/// > | ::: a :::
-///           ^^^
-/// ```
-fn colons_inside(tokenizer: &mut Tokenizer) -> State {
-    if tokenizer.current == Some(b':') {
-        tokenizer.consume();
-        State::Next(StateName::DirectiveContainer(Step::ColonsInside))
-    } else {
-        tokenizer.exit(Name::DirectiveContainerSequence);
-        State::Redo(StateName::Directive(partial_directive::Step::BlockEnd))
-    }
 }
 
 /// At the end of the opening fence.
@@ -375,12 +246,6 @@ pub enum Step {
     Before,
     Sequence { size: usize },
     NameAfter,
-    Nameless,
-    NamelessBefore,
-    Class,
-    NamelessAfter,
-    Colons,
-    ColonsInside,
     FenceEnd,
     ContStart,
     ContCloser,
@@ -403,12 +268,6 @@ pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
         Step::Before => before(tokenizer),
         Step::Sequence { size } => sequence(tokenizer, size),
         Step::NameAfter => name_after(tokenizer),
-        Step::Nameless => nameless(tokenizer),
-        Step::NamelessBefore => nameless_before(tokenizer),
-        Step::Class => class(tokenizer),
-        Step::NamelessAfter => nameless_after(tokenizer),
-        Step::Colons => colons(tokenizer),
-        Step::ColonsInside => colons_inside(tokenizer),
         Step::FenceEnd => fence_end(tokenizer),
         Step::ContStart => cont_start(tokenizer),
         Step::ContCloser => cont_closer(tokenizer),

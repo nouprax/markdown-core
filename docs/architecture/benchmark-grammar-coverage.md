@@ -33,15 +33,15 @@ the responsibility of the existing parity and regression pipelines.
    states. Requested unit counts are lower bounds; they cannot truncate this
    coverage. Callgrind measures these generated documents.
 
-There are **30 specification features, 127 sections, 35 registered elements,
-176 certificates and 752 generated documents**, 376 in each of two
+There are **30 specification features, 126 sections, 35 registered elements,
+174 certificates and 744 generated documents**, 372 in each of two
 [alphabets](benchmark-grammar-corpus.md#alphabets), each measured once.
-Of the 127 sections, **121 link to grammar certificates and six are explicitly
+Of the 126 sections, **120 link to grammar certificates and six are explicitly
 context-only** (automatic-anchor output, links to headings, anchor ownership,
 two navigation introductions, and topic boundaries). Cross-feature links reuse the same certificate; a documentation
 heading does not demand another benchmark. Mixed sections link their source
 productions and explicitly keep output-coordinate rules in parity/regression.
-Of these, **170 certify whole declared languages and 6 certify local boundary
+Of these, **168 certify whole declared languages and 6 certify local boundary
 languages**. This is feature coverage, not a theorem that the union of these
 restricted grammars equals every possible document of the unrestricted dialect.
 In particular a boundary's residual is not proved impossible to match against
@@ -75,7 +75,7 @@ all imaginable reference grammars. The ledger exposes that distinction.
 | Definition lists | Tight/loose, multiple/empty definitions and multiple blocks. |
 | Quotes/callouts | Same-input plain/nested/lazy quotes; variable type and all three collapse states have invertible counterparts. |
 | Tables | Same-input pipe/alignment/ragged/escaped-pipe forms. |
-| Directives | Inline label/attribute/both, Unicode names, leaf forms, named/nameless/unbraced/nested containers and fallback. |
+| Directives | Inline label/attribute/both, Unicode names, leaf forms, named and nested containers and fallback. |
 | Properties | All ten fields, text/number/bool/null/list distinctions, invalid-before-valid/duplicates, unknown fields and literal indentation in complete boundary hosts. |
 | Attributes | Quoted/unquoted/empty/bare values, ordered duplicates, escapes/entities/newline, IDs/classes and every documented owner category. |
 | Precedence | Nested block owners, literal islands, bracket/suffix and rejected-prefix cases; the declared source productions cover precedence interactions. |

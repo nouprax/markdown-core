@@ -941,19 +941,6 @@ static bool marked(const context_query *query, const markdown_core_context_field
         source[end] == '#') {
         return false;
     }
-    /* A nameless container's class word, which a space puts after its
-     * colons where a `.` puts a member's class, is one only when nothing
-     * but closing colons follows it on the line. */
-    if (field->kind == MARKDOWN_CORE_SLOT_CLASS && owner == MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK &&
-        (source[field->start - 1] == ' ' || source[field->start - 1] == '\t')) {
-        size_t at = end;
-        while (at < last && (source[at] == ' ' || source[at] == '\t' || source[at] == ':')) {
-            at++;
-        }
-        if (at < last && source[at] != '\r' && source[at] != '\n') {
-            return false;
-        }
-    }
     /* A callout's variant is one only when its marker ends the word: `]`,
      * a fold sign, then a space or the line's end. A marker the line's end
      * cuts short is still being written. */
@@ -1178,15 +1165,10 @@ static bool weigh(const context_query *query, const markdown_core_context_sink *
         if (!tail_ends(query, opener->place.start, last, owner == MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK, &kept)) {
             return false;
         }
-        /* A container's braces follow its name or label at once; only a
-         * nameless one's follow spaces after the colons. */
+        /* A container's braces follow its name or label at once. */
         if (owner == MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK && brace > 0 &&
             (query->source[brace - 1] == ' ' || query->source[brace - 1] == '\t')) {
-            size_t before = brace - 1;
-            while (before > line && (query->source[before - 1] == ' ' || query->source[before - 1] == '\t')) {
-                before--;
-            }
-            kept = kept && before > line && query->source[before - 1] == ':';
+            kept = false;
         }
         if (!kept) {
             return true;
@@ -2194,7 +2176,6 @@ static bool unfinished(const markdown_core_context *context, const context_slot 
         owner != MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK && owner != MARKDOWN_CORE_KIND_CALLOUT) {
         return false;
     }
-    /* A nameless container's class word has no braces to close. */
     return closer == ']' ? !(rest && tail[0] == ']') : opened(context, slot, '{', '}') && !memchr(tail, closer, rest);
 }
 

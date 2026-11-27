@@ -1,6 +1,6 @@
 # Reserved
 
-::: {#reserved .box role=note}
+:::box{#reserved .box role=note}
 Term
 : body with @key and [Reserved](#reserved)
 
@@ -9,9 +9,9 @@ nested
 ::::
 :::
 
-::: -
+::: box
 x
 :::
 
-::: {}
+:::empty{}
 :::

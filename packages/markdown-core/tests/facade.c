@@ -639,7 +639,7 @@ static void check_table_model(void) {
 }
 
 static void check_definition_model(void) {
-    static const uint8_t input[] = "::: box\n*T*\n: one\n:\n\nU\n\n: two\n:::\n\n:::named\n:::\n";
+    static const uint8_t input[] = ":::box\n*T*\n: one\n:\n\nU\n\n: two\n:::\n\n:::named\n:::\n";
     markdown_core_document *document = parse(input, sizeof(input) - 1);
     if (!document) {
         return;
@@ -648,11 +648,11 @@ static void check_definition_model(void) {
     const markdown_core_node *block = child_at(root, 0);
     const markdown_core_node *list = child_at(block, 0);
     const markdown_core_node *definition = child_at(list, 0);
-    markdown_core_optional_string name = {true, {NULL, 0}};
+    markdown_core_string name = {NULL, 0};
     ok(markdown_core_node_directive_properties(block, &name), "a directive block answers its name");
-    check(!name.has_value, "nameless block name is absent");
+    check(name.length == 3 && memcmp(name.data, "box", 3) == 0, "a block retains its name");
     ok(markdown_core_node_directive_properties(child_at(root, 1), &name), "a directive block answers its name");
-    check(name.has_value && name.value.length == 5, "named block retains its name");
+    check(name.length == 5, "named block retains its name");
     check(markdown_core_node_get_kind(list) == MARKDOWN_CORE_KIND_DEFINITION_LIST && child_count(list) == 2,
           "definition list has typed members");
     check(markdown_core_node_get_kind(definition) == MARKDOWN_CORE_KIND_DEFINITION, "definition kind");
@@ -719,7 +719,7 @@ static void check_kind_boundary(void) {
         markdown_core_node_formula_properties(paragraph, &placement, &string),
         markdown_core_node_table_properties(paragraph, &size, &size, &size),
         markdown_core_node_table_column_at(paragraph, 0, &column),
-        markdown_core_node_directive_properties(paragraph, &optional),
+        markdown_core_node_directive_properties(paragraph, &string),
         markdown_core_node_definition_compact(paragraph, &flag),
         markdown_core_node_definition_term(paragraph, &nodes),
         markdown_core_node_definition_body_count(paragraph, &size),

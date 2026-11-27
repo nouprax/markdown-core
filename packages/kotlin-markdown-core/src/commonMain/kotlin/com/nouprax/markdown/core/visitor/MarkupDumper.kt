@@ -225,7 +225,7 @@ private fun describe(node: Markup): Line =
         }
 
         is DirectiveBlock -> {
-            Line("DirectiveBlock", node.content.size, listOf("name=${optional(node.name)}"))
+            Line("DirectiveBlock", node.content.size, listOf("name=${escaped(node.name)}"))
         }
 
         is DirectiveLabel -> {

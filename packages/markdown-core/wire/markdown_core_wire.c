@@ -581,14 +581,11 @@ static void put_record(wire_buffer *buffer, const markdown_core_node *node) {
         break;
     case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
     case MARKDOWN_CORE_KIND_DIRECTIVE:
-        markdown_core_node_directive_properties(node, &first);
-        if (kind == MARKDOWN_CORE_KIND_DIRECTIVE) {
-            /* An inline directive's name is required and it has no content. */
-            put_string(buffer, first.value);
-            put_node_presence(buffer, &edges[0]);
-        } else {
-            put_optional_string(buffer, first);
-            put_node_presence(buffer, &edges[0]);
+        markdown_core_node_directive_properties(node, &first.value);
+        put_string(buffer, first.value);
+        put_node_presence(buffer, &edges[0]);
+        /* An inline directive has no content. */
+        if (kind == MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK) {
             put_nodes_count(buffer, &edges[1]);
         }
         break;

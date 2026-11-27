@@ -32,7 +32,7 @@ typedef struct {
     bufsize_t label_start;
     bufsize_t label_len;
     int has_label;
-    /* Borrowed authored attributes: a braced envelope or one class word. */
+    /* Borrowed authored attributes: a braced envelope. */
     bufsize_t attributes_start;
     bufsize_t attributes_len;
     /* What the attribute element recognized of a braced envelope, kept until
@@ -143,7 +143,7 @@ static int set_chunk_bytes(markdown_core_chunk *chunk, const unsigned char *data
  * (directive_opaque_view). */
 const char *markdown_core_elements_get_directive_name(const markdown_core_node *node) {
     const node_directive *directive = node->opaque;
-    return directive->name.len ? (const char *)directive->name.data : NULL;
+    return (const char *)directive->name.data;
 }
 
 int markdown_core_elements_set_directive_name(markdown_core_node *node, const char *name) {
@@ -276,21 +276,14 @@ static int apply_parsed_directive(const markdown_core_element_instance *self, ma
         return 0;
     }
 
-    if (parsed->name_len && !set_chunk_bytes(&directive->name, data + parsed->name_start, parsed->name_len)) {
+    if (!set_chunk_bytes(&directive->name, data + parsed->name_start, parsed->name_len)) {
         return 0;
     }
     if (parsed->attributes_len) {
-        const unsigned char *source = data + parsed->attributes_start;
-        if (*source == '{') {
-            /* The block's value is the attribute element's to write. */
-            if (!markdown_core_attributes_write(self->peers[DIRECTIVE_ATTRIBUTES], parser, &parsed->attributes,
-                                                parsed->attributes_start, node)) {
-                return 0;
-            }
-        } else {
-            if (!markdown_core_attributes_single_class(&node->attributes, source, parsed->attributes_len)) {
-                return 0;
-            }
+        /* The block's value is the attribute element's to write. */
+        if (!markdown_core_attributes_write(self->peers[DIRECTIVE_ATTRIBUTES], parser, &parsed->attributes,
+                                            parsed->attributes_start, node)) {
+            return 0;
         }
     }
 
@@ -522,51 +515,9 @@ static bufsize_t count_colons(const unsigned char *data, bufsize_t len, bufsize_
     return count;
 }
 
-/* Nameless containers share the named container's ownership and closer. Only
- * the opener's attribute spelling differs; a class word is one literal class. */
-static int parse_nameless_suffix(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                 unsigned char *data, bufsize_t len, bufsize_t pos, parsed_directive *parsed) {
-    while (pos < len && markdown_core_is_space_or_tab(data[pos])) {
-        pos++;
-    }
-    if (pos < len && data[pos] == '{') {
-        if (!scan_directive_attributes(self, parser, data, len, &pos, parsed)) {
-            return 0;
-        }
-    } else {
-        bufsize_t start = pos;
-        while (pos < len && !markdown_core_is_whitespace(data[pos]) && data[pos] != ':' && data[pos] != '{' &&
-               data[pos] != '}') {
-            pos++;
-        }
-        if (pos == start) {
-            return 0;
-        }
-        parsed->attributes_start = start;
-        parsed->attributes_len = pos - start;
-    }
-    while (pos < len && markdown_core_is_space_or_tab(data[pos])) {
-        pos++;
-    }
-    pos += count_colons(data, len, pos);
-    parsed->end = pos;
-    return 1;
-}
-
-/* Where a nameless container's class word ends. */
-static bufsize_t class_word_end(const unsigned char *data, bufsize_t length) {
-    bufsize_t end = 0;
-    while (end < length && !markdown_core_is_whitespace(data[end]) && data[end] != ':' && data[end] != '{' &&
-           data[end] != '}') {
-        end++;
-    }
-    return end;
-}
-
 /* The field a directive block's opening line, its colons from `first` to
  * `suffix`, leaves open at its end, to the parse's context sink: a member
- * of an open attribute block, else the name the colons begin, or the class
- * word a space puts after three or more of them. */
+ * of an open attribute block, else the name the colons begin. */
 static void S_report_block(const markdown_core_element_instance *self, markdown_core_parser *parser,
                            const unsigned char *input, bufsize_t len, bufsize_t first, bufsize_t suffix) {
     while (len > suffix && markdown_core_is_line_end(input[len - 1])) {
@@ -576,15 +527,7 @@ static void S_report_block(const markdown_core_element_instance *self, markdown_
     if (peer && markdown_core_attributes_report(peer, parser, MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK, input, suffix, len)) {
         return;
     }
-    bufsize_t word = suffix;
-    while (word < len && markdown_core_is_space_or_tab(input[word])) {
-        word++;
-    }
-    if (word > suffix && suffix - first >= 3 && word + class_word_end(input + word, len - word) == len) {
-        const markdown_core_field name = {
-            MARKDOWN_CORE_SLOT_CLASS, MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK, word, class_word_end, {{0}}, 0, false, 0};
-        markdown_core_parser_open(parser, MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK, first, suffix, &name, 1);
-    } else if (suffix + name_end(input + suffix, len - suffix) == len) {
+    if (suffix + name_end(input + suffix, len - suffix) == len) {
         const markdown_core_field name = {
             MARKDOWN_CORE_SLOT_NAME, MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK, suffix, name_end, {{0}}, 0, false, 0};
         markdown_core_parser_open(parser, MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK, first, suffix, &name, 1);
@@ -606,10 +549,7 @@ static bufsize_t scan_directive_block(const markdown_core_element_instance *self
     if (parser->sink) {
         S_report_block(self, parser, input, len, first, suffix);
     }
-    bool nameless =
-        colon_count >= 3 && suffix < len && (markdown_core_is_space_or_tab(input[suffix]) || input[suffix] == '{');
-    int matched = nameless ? parse_nameless_suffix(self, parser, input, len, suffix, parsed)
-                           : parse_directive_suffix(self, parser, input, len, suffix, parsed);
+    int matched = parse_directive_suffix(self, parser, input, len, suffix, parsed);
     return matched && markdown_core_is_blank_to_line_end(input, parsed->end, len) ? colon_count : 0;
 }
 
@@ -822,8 +762,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DIRECTIVE = {
 
 /* THE PARTS OF A DIRECTIVE (parts.h), as parse_directive_suffix reads what
  * follows its colons: its name, the label node after it, and the attribute
- * container; a nameless container's class word or container instead, as
- * parse_nameless_suffix reads them. */
+ * container. */
 void markdown_core_directive_parts(markdown_core_parts *parts) {
     const unsigned char *s = parts->text;
     const bufsize_t n = parts->length;
@@ -831,20 +770,7 @@ void markdown_core_directive_parts(markdown_core_parts *parts) {
     while (at < n && markdown_core_is_space_or_tab(s[at])) {
         at++;
     }
-    const bufsize_t colons = count_colons(s, n, at);
-    at += colons;
-    const bool block = markdown_core_node_get_kind(parts->node) == MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK;
-    if (block && colons >= 3 && at < n && (markdown_core_is_space_or_tab(s[at]) || s[at] == '{')) {
-        while (at < n && markdown_core_is_space_or_tab(s[at])) {
-            at++;
-        }
-        if (at < n && s[at] == '{') {
-            markdown_core_attributes_parts(parts, at);
-        } else {
-            markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_CLASS, at, at + class_word_end(s + at, n - at));
-        }
-        return;
-    }
+    at += count_colons(s, n, at);
     const bufsize_t name = at;
     at += name_end(s + at, n - at);
     markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_NAME, name, at);

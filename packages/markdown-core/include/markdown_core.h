@@ -783,12 +783,12 @@ MARKDOWN_CORE_API markdown_core_status markdown_core_node_table_properties(const
  * count. */
 MARKDOWN_CORE_API markdown_core_status markdown_core_node_table_column_at(const markdown_core_node *node, size_t index,
                                                                           markdown_core_table_column *column);
-/** A `Directive` or `DirectiveBlock`. A directive's name is absent only for a
- * nameless DirectiveBlock. There is no `mode`: an inline `Directive` is
+/** A `Directive` or `DirectiveBlock`. Every directive has a name. There is
+ * no `mode`: an inline `Directive` is
  * always embedded and a `DirectiveBlock` always standalone, so the value was
  * implied by the kind and four surfaces had to keep a constant in step (Q29). */
 MARKDOWN_CORE_API markdown_core_status markdown_core_node_directive_properties(const markdown_core_node *node,
-                                                                               markdown_core_optional_string *name);
+                                                                               markdown_core_string *name);
 /** A `Definition`. Definition collections preserve the term/body boundary:
  * `term` is the term's inline nodes, and the definition's bodies, `count` of
  * them in order, are each a sequence of block nodes, which

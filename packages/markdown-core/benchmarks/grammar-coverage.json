@@ -87,7 +87,7 @@
         {
             "feature": "attributes",
             "specification": "docs/specs/dialect/attributes.md",
-            "sha256": "8d07583700776d2c965d8b0444507b7d5481f9a5c9b8da52d0b60201556ec533",
+            "sha256": "b329aef36ea680862b42ecfb3b7b94fe4b7bbc48fc0d961b73d7e395b6affa28",
             "sections": [
                 {
                     "title": "Attributes",
@@ -130,7 +130,7 @@
                     "title": "Attachment sites",
                     "line": 77,
                     "level": 2,
-                    "sha256": "ab56ff010d4f8b0e94320eab776454f343235251fa82764c02b5a7dcee1ea54c",
+                    "sha256": "dcafa07f3ef60e37a409aa759ceb022414a3719139bacc63b01e0c0580cde360",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": [
@@ -146,7 +146,7 @@
                 },
                 {
                     "title": "Inline code",
-                    "line": 96,
+                    "line": 95,
                     "level": 3,
                     "sha256": "f05d16b8f45e5f9e39d3afa428aa54421994e55193138e2d75b59aecca2bc910",
                     "disposition": {
@@ -156,7 +156,7 @@
                 },
                 {
                     "title": "Headings",
-                    "line": 105,
+                    "line": 104,
                     "level": 3,
                     "sha256": "c7a0f6101803682370dd3493414734c6c81fb73f59c0df2a9275745fb5fc3cc6",
                     "disposition": {
@@ -166,7 +166,7 @@
                 },
                 {
                     "title": "Fenced code",
-                    "line": 119,
+                    "line": 118,
                     "level": 3,
                     "sha256": "98bfe640027c99bc53ee70c798cdab4ac835e50db9b62c1e154d335e758947c0",
                     "disposition": {
@@ -176,7 +176,7 @@
                 },
                 {
                     "title": "Links, images, and reference definitions",
-                    "line": 132,
+                    "line": 131,
                     "level": 3,
                     "sha256": "f950183b8b78fcbc5a57ae278bf506dec25188fe981216987900436c5175a966",
                     "disposition": {
@@ -191,7 +191,7 @@
                 },
                 {
                     "title": "Invalid containers",
-                    "line": 154,
+                    "line": 153,
                     "level": 2,
                     "sha256": "2cdacae499d86370f96a4168c5746c97d1ce5affa7e68bc60dd8dbd7fb31fac4",
                     "disposition": {
@@ -912,7 +912,7 @@
         {
             "feature": "conflicts",
             "specification": "docs/specs/dialect/conflicts.md",
-            "sha256": "fdbbe9cbbeba7bc86d950eb53275e5d24f1f18ea9e018b04c04793a8638af144",
+            "sha256": "84daa6e3f568237dba34d6c832817af74723d4a3f5c9296392ebf42dd75db176",
             "sections": [
                 {
                     "title": "Compatibility and precedence",
@@ -928,7 +928,7 @@
                     "title": "Differences to know",
                     "line": 10,
                     "level": 2,
-                    "sha256": "5e1f3908018028da451791ad49ad26bc3779fb69819d0c10979c47414a9269ed",
+                    "sha256": "a75d08cc09aea1068e3526585fdf248b541acbdc078352d2fadd676a669b5389",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": [
@@ -955,7 +955,7 @@
                     "title": "Block recognition",
                     "line": 37,
                     "level": 2,
-                    "sha256": "819f66512e103eb3647f9abb2624ccad373978a9399d0ac14beff656abdda04c",
+                    "sha256": "09a323b809da09fc530f31ea4d1763b32f5b7457c5864d088f8ed6be35514670",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": [
@@ -1239,7 +1239,7 @@
         {
             "feature": "directives",
             "specification": "docs/specs/dialect/directives.md",
-            "sha256": "11508401835aea4767bb8d63f12d37a6e06cf83ad70738c3a334e3a6ff63adc4",
+            "sha256": "c401432c60de133316b5febd3467fa5d60810403748137bd3c6ef287af00dada",
             "sections": [
                 {
                     "title": "Directives",
@@ -1248,7 +1248,7 @@
                     "sha256": "5f191c0d39add8cb97b23e8120ae00d3f8225dcd404cbb788d6a966c8cf77d00",
                     "disposition": {
                         "kind": "grammar",
-                        "certificates": ["inline-directive", "leaf-directive", "named-container", "anonymous-container"]
+                        "certificates": ["inline-directive", "leaf-directive", "named-container"]
                     }
                 },
                 {
@@ -1281,25 +1281,15 @@
                     "title": "Container directives",
                     "line": 56,
                     "level": 2,
-                    "sha256": "87807751c995f3da7b7cbe575d872905cf18af86128ede5b6e3532e72bc22f42",
+                    "sha256": "f9a404cc41d11fbe1f0ce8dbcd3412d926b65ca2a6f8ab5aae187808ad10c05b",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["named-container", "directive-nested"]
                     }
                 },
                 {
-                    "title": "Nameless containers",
-                    "line": 88,
-                    "level": 2,
-                    "sha256": "1b8732b21f06c80a200ea5d768efaa7c37d7ab28842a32929baba3bd31c44523",
-                    "disposition": {
-                        "kind": "grammar",
-                        "certificates": ["anonymous-container", "directive-unbraced"]
-                    }
-                },
-                {
                     "title": "Container boundaries",
-                    "line": 112,
+                    "line": 90,
                     "level": 2,
                     "sha256": "4ed1264483ecb64bb609baadf824a3cd92c6fa6ce2b86e362e43887084120fea",
                     "disposition": {
@@ -1310,12 +1300,6 @@
             ],
             "elements": ["DIRECTIVE"],
             "certificates": [
-                {
-                    "id": "anonymous-container",
-                    "scope": "paired-document-grammar",
-                    "identity": false,
-                    "facets": []
-                },
                 {
                     "id": "directive-attribute-only",
                     "scope": "paired-document-grammar",
@@ -1339,12 +1323,6 @@
                     "scope": "paired-document-grammar",
                     "identity": false,
                     "facets": ["nested-containers", "minimum-closer", "longer-closer"]
-                },
-                {
-                    "id": "directive-unbraced",
-                    "scope": "paired-document-grammar",
-                    "identity": false,
-                    "facets": ["nameless-unbraced", "trailing-colons"]
                 },
                 {
                     "id": "directive-unicode",

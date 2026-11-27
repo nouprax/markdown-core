@@ -1,8 +1,7 @@
 import MarkdownCoreC
 
-/// A named leaf or container directive, or a nameless fenced container.
+/// A named leaf or container directive.
 ///
-/// Nameless containers use `::: {.class}` or `::: class` and have a nil name.
 /// All container forms share the same closing-fence and block-content rules.
 public struct DirectiveBlock: Markup {
     let record: DirectiveBlockRecord
@@ -17,8 +16,8 @@ public struct DirectiveBlock: Markup {
     public var anchor: String? { record.anchor }
     /// Ordered classes and records, including duplicates.
     public var attributes: Attributes { record.attributes }
-    /// The directive's name without colons, or nil for a nameless container.
-    public var name: String? { record.name }
+    /// The directive's name without colons.
+    public var name: String { record.name }
     /// The bracketed label, or `nil` when the source wrote none.
     public var label: DirectiveLabel? {
         record.labelCount == 0
@@ -32,10 +31,10 @@ public struct DirectiveBlock: Markup {
 
 /// Children: the label, when the source wrote one, then the content.
 final class DirectiveBlockRecord: MarkupRecord, @unchecked Sendable {
-    let name: String?
+    let name: String
     let labelCount: Int
 
-    init(_ fields: InheritedFields, name: String?, label: DirectiveLabelRecord?, content: [MarkupRecord]) {
+    init(_ fields: InheritedFields, name: String, label: DirectiveLabelRecord?, content: [MarkupRecord]) {
         self.name = name
         let labels: [MarkupRecord] = label.map { [$0] } ?? []
         labelCount = labels.count
@@ -60,7 +59,7 @@ final class DirectiveBlockRecord: MarkupRecord, @unchecked Sendable {
 
 extension DirectiveBlockRecord {
     convenience init(from node: OpaquePointer, label: DirectiveLabelRecord?, content: [MarkupRecord]) {
-        let name = answer(markdown_core_optional_string()) { markdown_core_node_directive_properties(node, $0) }.string
+        let name = answer(markdown_core_string()) { markdown_core_node_directive_properties(node, $0) }.required
         self.init(InheritedFields(from: node), name: name, label: label, content: content)
     }
 }

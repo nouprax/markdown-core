@@ -21,6 +21,14 @@ promised to remain compatible between releases.
   (`markdown_core_document_specimen_*`, `markdown_core_specimen_*`),
   Swift, Kotlin, ES, the wire format and the dump.
 
+- Pandoc's nameless fenced divs are removed: every container directive is
+  named, `:::name`, and a line such as `::: {.warning}` or `::: note`, with
+  a space after the colons, is paragraph text. `DirectiveBlock.name` is
+  never null: C's `markdown_core_node_directive_properties` writes a
+  `markdown_core_string`, Swift and Kotlin expose `name: String`, ES
+  `name: string`, the wire format writes a plain string and the dump never
+  writes `name=null`.
+
 - Pandoc's implicit heading references are removed: a heading declares no
   reference label, so `[Heading]`, `[Heading][]` and `[text][Heading]` are
   bracket text unless a link reference definition declares the label; link

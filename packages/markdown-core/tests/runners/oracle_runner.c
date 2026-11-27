@@ -1559,10 +1559,6 @@ static bool refusable(const char *kind, const char *owner, const char *value, bo
                                 !strcmp(owner, "Callout") || !strcmp(owner, "Table"))) {
         return !ascii_word(value, "-") || holds(value, "\xc3\xe4");
     }
-    if (!strcmp(kind, "class") && !strcmp(owner, "DirectiveBlock") && holds(value, ":{")) {
-        /* A nameless container's class word is a word. */
-        return true;
-    }
     if (!strcmp(kind, "id") || !strcmp(kind, "class") || !strcmp(kind, "record")) {
         /* A shorthand or a name keeps its bytes, so a final backslash
          * would escape the closer after it. */

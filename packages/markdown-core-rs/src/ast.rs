@@ -276,7 +276,7 @@ pub enum Kind {
         content: Vec<Node>,
     },
     DirectiveBlock {
-        name: Option<String>,
+        name: String,
         label: Option<Box<Node>>,
         content: Vec<Node>,
     },

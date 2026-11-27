@@ -2,9 +2,9 @@
 
 The deliverable is the corpus, its generative grammars, and the proofs below.
 [The checked-in corpus catalog](../../packages/markdown-core/benchmarks/grammar-corpus.json)
-contains all 176 certificates, their concrete grammars, normal forms and two
-complete examples per family. The run emits 752 documents, each measured once:
-in each of [two alphabets](#alphabets), 170 whole declared-language pairs, 6
+contains all 174 certificates, their concrete grammars, normal forms and two
+complete examples per family. The run emits 744 documents, each measured once:
+in each of [two alphabets](#alphabets), 168 whole declared-language pairs, 6
 local boundary pairs with complete hosts, and 12 controls for
 [rejection certificates](#rejection-certificates). The [feature acceptance ledger](benchmark-grammar-coverage.md) covers all
 30 syntax-guide features, 127 sections and 35 registered elements. Its explicit
@@ -202,7 +202,6 @@ catalog's `grammars` entries and in `productGrammar`. In the table `B=Body`,
 | inline-directive | body:B, key:W | directive label / link label and destination |
 | empty-directive | body:E, key:W | empty directive / empty link label |
 | leaf-directive | body:B, key:W | directive block / link paragraph |
-| anonymous-container | body:B, tail:B | anonymous fence / quoted paragraphs |
 | named-container | body:B, key:W, tail:B | named fence / quoted name and paragraphs |
 | loose-definition | body:B, literal:P | definition term and body / loose list paragraphs |
 | anchor | body:B, key:W | quote and anchor declaration / quote and reference declaration |
@@ -302,8 +301,8 @@ T3 and T7 now provide whole declared-language counterparts for formerly split
 families, among them the default lists, all three callout states, citation
 affixes and mixed definitions. Prefix/key/suffix fields all survive
 independently.
-Named containers use the `:::name` production; `::: name` belongs to the
-nameless grammar. The source encoding preserves that normative distinction.
+Named containers use the `:::name` production; `::: name` opens no
+container.
 
 ## Boundary corpus and its limits (T5)
 

@@ -581,7 +581,7 @@ markdown_core_add_test(
     --corpus
     "${MARKDOWN_CORE_CANONICAL_AST_DIR}/task-markers.md"
     --corpus
-    "${MARKDOWN_CORE_CANONICAL_AST_DIR}/nameless-directives.md"
+    "${MARKDOWN_CORE_CANONICAL_AST_DIR}/directive-blocks.md"
     --corpus
     "${MARKDOWN_CORE_CANONICAL_AST_DIR}/definition-lists.md"
     --corpus
