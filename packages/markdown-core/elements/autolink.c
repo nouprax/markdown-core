@@ -114,24 +114,6 @@ static inline int hostchar_width(const uint8_t *link, size_t link_len) {
     return width;
 }
 
-static int sd_autolink_issafe(const uint8_t *link, size_t link_len) {
-    static const size_t valid_uris_count = 3;
-    static const char *const valid_uris[] = {"http://", "https://", "ftp://"};
-
-    size_t i;
-
-    for (i = 0; i < valid_uris_count; ++i) {
-        size_t len = strlen(valid_uris[i]);
-
-        if (link_len > len && strncasecmp((char *)link, valid_uris[i], len) == 0 &&
-            hostchar_width(link + len, link_len - len)) {
-            return 1;
-        }
-    }
-
-    return 0;
-}
-
 static size_t autolink_delim(const uint8_t *data, size_t link_end) {
     size_t i;
     size_t closing = 0;
@@ -212,103 +194,13 @@ static size_t autolink_delim(const uint8_t *data, size_t link_end) {
     return link_end;
 }
 
-/* THE AUTOLINK SCANNER'S STATE. Its run record: where a shared domain suffix
- * was rejected, so that the starts before its underscore reject it without
- * rescanning. Its parse record (autolink.h): the domain bytes scanned, for
- * the scanner's complexity gate. */
+/* THE LITERAL AUTOLINKS' RECORD, per reading: where a shared domain
+ * suffix was rejected, so that the starts before its underscore reject it
+ * without reading it again, and where the last reach ended (S_reach_end). */
 typedef struct {
-    bufsize_t rejected_until;
+    uint32_t rejected_until;
+    uint32_t end;
 } autolink_run;
-
-/* What an autolink scan reads: the run's bytes from `base`, its record and
- * the element's counts, the byte that closes the innermost label (0 for
- * none), and whether it read the end. */
-typedef struct {
-    const uint8_t *base;
-    autolink_run *run;
-    markdown_core_autolink_work *counts;
-    unsigned char closer;
-    bool end;
-} S_scan;
-
-static size_t S_domain(S_scan *scan, const uint8_t *data, size_t size, int allow_short) {
-    size_t i, np = 0, uscore1 = 0, uscore2 = 0, last_underscore = 0;
-    bufsize_t start = (bufsize_t)(data - scan->base);
-    autolink_run *run = scan->run;
-    markdown_core_autolink_work *counts = scan->counts;
-    counts->domains++;
-    if (start < run->rejected_until) {
-        return 0;
-    }
-
-    /* The purpose of this code is to reject urls that contain an underscore
-     * in one of the last two segments. Examples:
-     *
-     *   www.xxx.yyy.zzz     autolinked
-     *   www.xxx.yyy._zzz    not autolinked
-     *   www.xxx._yyy.zzz    not autolinked
-     *   www._xxx.yyy.zzz    autolinked
-     *
-     * The reason is that domain names are allowed to include underscores,
-     * but host names are not. See: https://stackoverflow.com/a/2183140
-     *
-     * The walk starts after the first character, which the caller has
-     * matched, and steps a whole host character at a time. Stepping a byte
-     * reached the second byte of a multi-byte character, which is no
-     * character at all, and ended the domain there: an underscore after
-     * any non-ASCII letter escaped the rule the same underscore after an
-     * ASCII letter obeys. The first character's width is decoded within
-     * `size`, which both callers make at least one byte: a lead byte's own
-     * width could claim bytes past the end of the range. */
-    int32_t first;
-    for (i = (size_t)markdown_core_utf8proc_decode(data, (bufsize_t)size, &first); i < size - 1;) {
-        counts->domains++;
-        if (data[i] == '\\' && i < size - 2) {
-            i++;
-        }
-        if (data[i] == '_') {
-            uscore2++;
-            last_underscore = i;
-        } else if (data[i] == '.') {
-            uscore1 = uscore2;
-            uscore2 = 0;
-            np++;
-        } else if (data[i] != '-') {
-            int width = hostchar_width(data + i, size - i);
-            if (!width) {
-                break;
-            }
-            i += (size_t)width;
-            continue;
-        }
-        i++;
-    }
-
-    /* The domain may go on with the input. */
-    if (i >= size - 1) {
-        scan->end = true;
-    }
-    if (uscore1 > 0 || uscore2 > 0) {
-        /* Every later candidate before this underscore still has it in its
-         * last two segments. Keep that rejection frontier, not the whole
-         * host end: a candidate after the underscore may be valid. A shared
-         * suffix is scanned once, with no segment-count change in grammar. */
-        run->rejected_until = start + (bufsize_t)last_underscore;
-        return 0;
-    }
-
-    if (allow_short) {
-        /* We don't need a valid domain in the strict sense (with
-         * least one dot; so just make sure it's composed of valid
-         * domain characters and return the length of the the valid
-         * sequence. */
-        return i;
-    } else {
-        /* a valid domain needs to have at least a dot.
-         * that's as far as we get */
-        return np ? i : 0;
-    }
-}
 
 static void set_sourcepos_from_range(markdown_core_parser *parser, markdown_core_node *node,
                                      const markdown_core_content_map *source, size_t start, size_t len) {
@@ -320,27 +212,6 @@ static void set_sourcepos_from_range(markdown_core_parser *parser, markdown_core
     if (node->kind == MARKDOWN_CORE_NODE_TEXT) {
         markdown_core_text_share(parser, source, &node->content_map, (bufsize_t)start, (bufsize_t)len);
     }
-}
-
-/* URL and www candidates use the same extent rule. Bracket bodies supply
- * their delimiter; escaped punctuation stays in the opaque token. Each byte
- * is visited once, including tokens that end at a footnote's closing ]. */
-static size_t S_extent(S_scan *scan, const uint8_t *data, size_t size, size_t offset) {
-    const unsigned char closer = scan->closer;
-    while (offset < size && !markdown_core_is_whitespace(data[offset]) && data[offset] != '<') {
-        if (closer && data[offset] == closer) {
-            break;
-        }
-        if (data[offset] == '\\' && offset + 1 < size && markdown_core_ispunct(data[offset + 1]) &&
-            data[offset + 1] != '<') {
-            offset++;
-        }
-        offset++;
-    }
-    if (offset >= size) {
-        scan->end = true;
-    }
-    return offset;
 }
 
 static bool validate_protocol(const char protocol[], uint8_t *data, size_t rewind, size_t max_rewind) {
@@ -622,11 +493,10 @@ static const markdown_core_finish_ops AUTOLINK_FINISH = {
 };
 
 /* THE AUTOLINKS (plan symbols-cleanroom.md 23): `<` and a URI or an
- * address and `>`, one token (`data` 1 for an address); at a `:`, a URL
- * whose scheme is the letters before the colon (`data`, which the
- * construct's resolve takes off the data before it), and otherwise the
- * colon of a bare address fenced off as text; at a `w`, a `www.` link.
- * Inside a label's body neither a URL nor a `www.` link forms. */
+ * address and `>`, one token (`data` 1 for an address); at a `:`, the
+ * colon of a bare address fenced off as text; at a `w`, a `www.` link; at
+ * an `h` or `f`, a URL. Inside a label's body neither a URL nor a `www.`
+ * link forms. */
 enum { AUTOLINK_ANGLE, AUTOLINK_URL, AUTOLINK_WWW, AUTOLINK_COLON, AUTOLINK_KINDS };
 
 static markdown_core_state S_token(markdown_core_tokenizer *tokenizer, unsigned kind, uint32_t end, uint32_t data) {
@@ -638,13 +508,6 @@ static markdown_core_state S_token(markdown_core_tokenizer *tokenizer, unsigned 
     markdown_core_consume_to(tokenizer, end);
     markdown_core_exit(tokenizer, (uint16_t)(self->token_base + kind));
     return markdown_core_ok(tokenizer);
-}
-
-static S_scan S_scan_of(markdown_core_tokenizer *tokenizer) {
-    const markdown_core_element_instance *self = markdown_core_self(tokenizer);
-    S_scan scan = {tokenizer->data, markdown_core_read_record(tokenizer, self->run_offset), self->state,
-                   markdown_core_label_closer(tokenizer), false};
-    return scan;
 }
 
 /* THE ANGLE AUTOLINK, code by code (micromark's autolink): `<`, then a
@@ -794,154 +657,455 @@ static markdown_core_state S_angle(markdown_core_tokenizer *tokenizer, int code)
     return markdown_core_state_of(S_angle_open);
 }
 
-static markdown_core_state S_url(markdown_core_tokenizer *tokenizer) {
+/* THE LITERAL AUTOLINKS, code by code (micromark's gfm autolink literal,
+ * with cmark-gfm's rules, which are the oracle's). A `www.` link at a `w`
+ * after a space, `*`, `_`, `~` or `(`, or where a label's body starts; a
+ * URL at the `h` of `http://` or `https://` or the `f` of `ftp://`, in any
+ * case, after no letter. Neither forms inside a label's body.
+ *
+ * The link is read in one check, the reach, and then taken whole: its end
+ * is known only once its path is (trailing punctuation is no part of it
+ * unless something that is follows), so the reach keeps, code by code,
+ * where the link ends if the path ended there (S_keep), and leaves it in
+ * the reading's record for the link to consume to.
+ *
+ * The reach's words: flags (the domain's state, a character's bytes still
+ * to read), the end so far, the `(` and `)` counts, the end before the
+ * last `&` (an entity's `&name;` at the end is no part of the link), and
+ * the last underscore of the domain. */
+enum { REACH_FLAGS, REACH_KEEP, REACH_OPEN, REACH_CLOSE, REACH_AMP, REACH_UNDER };
+enum {
+    /* A domain without a dot is one (a URL's). */
+    REACH_SHORT = 1u << 0,
+    REACH_DOT = 1u << 1,
+    /* An underscore in the segment before the last, and in the last. */
+    REACH_BEFORE = 1u << 2,
+    REACH_LAST = 1u << 3,
+    /* A `&`, and a `&` and letters, are the last bytes read. */
+    REACH_AMPED = 1u << 4,
+    REACH_NAMED = 1u << 5,
+    /* A URL's scheme is `ftp`; its `s` was read. */
+    REACH_FTP = 1u << 6,
+    REACH_SECURE = 1u << 7
+};
+enum { REACH_REST = 8, REACH_REST_MASK = 7u << REACH_REST };
+
+static autolink_run *S_run_of(markdown_core_tokenizer *tokenizer) {
+    const markdown_core_element_instance *self = markdown_core_self(tokenizer);
+    return markdown_core_read_record(tokenizer, self->run_offset);
+}
+
+static markdown_core_autolink_work *S_counts(markdown_core_tokenizer *tokenizer) {
+    const markdown_core_element_instance *self = markdown_core_self(tokenizer);
+    return self->state;
+}
+
+/* Reads the code: where the link ends if the path ends after it. A
+ * trailing `?`, `!`, `.`, `,`, `:`, `*`, `_`, `~`, `'` or `"` is not the
+ * link's, nor a `)` with no `(` left open for it, nor `&`, letters and `;`;
+ * every other byte keeps what is before it. */
+static void S_keep(markdown_core_tokenizer *tokenizer, int code) {
+    uint32_t *words = markdown_core_frame_local(tokenizer);
     const uint32_t at = tokenizer->position;
-    const uint8_t *data = tokenizer->data + at;
-    const size_t size = tokenizer->size - at;
-    if (size < 4 || data[1] != '/' || data[2] != '/') {
-        if (size < 4 && (size < 2 || data[1] == '/') && (size < 3 || data[2] == '/')) {
+    const uint32_t amp = words[REACH_FLAGS] & (REACH_AMPED | REACH_NAMED);
+    words[REACH_FLAGS] &= ~(REACH_AMPED | REACH_NAMED);
+    switch (code) {
+    case '(':
+        words[REACH_OPEN]++;
+        words[REACH_KEEP] = at + 1;
+        break;
+    case ')':
+        words[REACH_CLOSE]++;
+        if (words[REACH_CLOSE] <= words[REACH_OPEN]) {
+            words[REACH_KEEP] = at + 1;
+        }
+        break;
+    case '?':
+    case '!':
+    case '.':
+    case ',':
+    case ':':
+    case '*':
+    case '_':
+    case '~':
+    case '\'':
+    case '"':
+        break;
+    case ';':
+        if (amp & REACH_NAMED) {
+            words[REACH_KEEP] = words[REACH_AMP];
+        }
+        break;
+    case '&':
+        words[REACH_AMP] = words[REACH_KEEP];
+        words[REACH_KEEP] = at + 1;
+        words[REACH_FLAGS] |= REACH_AMPED;
+        break;
+    default:
+        words[REACH_KEEP] = at + 1;
+        if (amp && code < 0x80 && markdown_core_isalpha((char)code)) {
+            words[REACH_FLAGS] |= REACH_NAMED;
+        }
+        break;
+    }
+    markdown_core_consume(tokenizer);
+}
+
+/* The link reaches as far as its end so far. */
+static markdown_core_state S_reach_end(markdown_core_tokenizer *tokenizer) {
+    S_run_of(tokenizer)->end = markdown_core_frame_local(tokenizer)[REACH_KEEP];
+    return markdown_core_ok(tokenizer);
+}
+
+/* THE PATH: every byte up to a space, a `<`, the closing byte of the
+ * label the link is in, or the end; a backslash takes the punctuation
+ * after it, but for `<`. */
+static markdown_core_state S_path(markdown_core_tokenizer *tokenizer, int code);
+
+static markdown_core_state S_path_escape(markdown_core_tokenizer *tokenizer, int code) {
+    if (code >= 0 && code < 0x80 && markdown_core_ispunct((char)code) && code != '<') {
+        S_keep(tokenizer, code);
+        return markdown_core_state_of(S_path);
+    }
+    return S_path(tokenizer, code);
+}
+
+static markdown_core_state S_path(markdown_core_tokenizer *tokenizer, int code) {
+    if (code == MARKDOWN_CORE_EOF) {
+        markdown_core_met_end(tokenizer);
+        return S_reach_end(tokenizer);
+    }
+    const unsigned char closer = markdown_core_label_closer(tokenizer);
+    if (markdown_core_is_whitespace((unsigned char)code) || code == '<' || (closer && code == closer)) {
+        return S_reach_end(tokenizer);
+    }
+    S_keep(tokenizer, code);
+    return markdown_core_state_of(code == '\\' ? S_path_escape : S_path);
+}
+
+/* THE DOMAIN: host characters (neither space nor punctuation), `_`, `-`
+ * and `.`, a backslash taking the byte after it. It is no domain with an
+ * underscore in its last two segments, and a `www.` one has a dot. The
+ * byte the content ends with is never the domain's: the path reads it. */
+static markdown_core_state S_site(markdown_core_tokenizer *tokenizer, int code);
+
+/* Where the domain ends, at `code`, which the path reads. */
+static markdown_core_state S_site_end(markdown_core_tokenizer *tokenizer, int code) {
+    const uint32_t *words = markdown_core_frame_local(tokenizer);
+    if (words[REACH_FLAGS] & (REACH_BEFORE | REACH_LAST)) {
+        /* Every later start before this underscore still has it in its last
+         * two segments: they reject it without reading it. */
+        S_run_of(tokenizer)->rejected_until = words[REACH_UNDER];
+        return markdown_core_nok(tokenizer);
+    }
+    if (!(words[REACH_FLAGS] & (REACH_SHORT | REACH_DOT))) {
+        return markdown_core_nok(tokenizer);
+    }
+    return S_path(tokenizer, code);
+}
+
+/* The bytes of a host character after its first. */
+static markdown_core_state S_site_rest(markdown_core_tokenizer *tokenizer, int code) {
+    uint32_t *words = markdown_core_frame_local(tokenizer);
+    if (!(words[REACH_FLAGS] & REACH_REST_MASK)) {
+        return S_site(tokenizer, code);
+    }
+    words[REACH_FLAGS] -= 1u << REACH_REST;
+    S_keep(tokenizer, code);
+    return markdown_core_state_of(S_site_rest);
+}
+
+/* A host character of `width` bytes, its first read. */
+static markdown_core_state S_site_wide(markdown_core_tokenizer *tokenizer, int code, int width) {
+    uint32_t *words = markdown_core_frame_local(tokenizer);
+    words[REACH_FLAGS] = (words[REACH_FLAGS] & ~REACH_REST_MASK) | ((uint32_t)(width - 1) << REACH_REST);
+    S_keep(tokenizer, code);
+    return markdown_core_state_of(S_site_rest);
+}
+
+/* The width of the host character at the code, 0 for none. */
+static int S_host_width(markdown_core_tokenizer *tokenizer) {
+    const uint32_t at = tokenizer->position;
+    return hostchar_width(tokenizer->data + at, tokenizer->size - at);
+}
+
+static markdown_core_state S_site_char(markdown_core_tokenizer *tokenizer, int code) {
+    uint32_t *words = markdown_core_frame_local(tokenizer);
+    if (code == '_') {
+        words[REACH_FLAGS] |= REACH_LAST;
+        words[REACH_UNDER] = tokenizer->position;
+    } else if (code == '.') {
+        words[REACH_FLAGS] = (words[REACH_FLAGS] & ~(REACH_BEFORE | REACH_LAST)) |
+                             (words[REACH_FLAGS] & REACH_LAST ? REACH_BEFORE : 0) | REACH_DOT;
+    } else if (code != '-') {
+        const int width = S_host_width(tokenizer);
+        if (!width) {
+            return S_site_end(tokenizer, code);
+        }
+        return S_site_wide(tokenizer, code, width);
+    }
+    S_keep(tokenizer, code);
+    return markdown_core_state_of(S_site);
+}
+
+static markdown_core_state S_site(markdown_core_tokenizer *tokenizer, int code) {
+    const uint32_t at = tokenizer->position;
+    if (at + 1 >= tokenizer->size) {
+        markdown_core_met_end(tokenizer);
+        return S_site_end(tokenizer, code);
+    }
+    S_counts(tokenizer)->domains++;
+    if (code == '\\' && at + 2 < tokenizer->size) {
+        S_keep(tokenizer, code);
+        return markdown_core_state_of(S_site_char);
+    }
+    return S_site_char(tokenizer, code);
+}
+
+/* The domain starts at the code, which the caller has matched. */
+static bool S_site_open(markdown_core_tokenizer *tokenizer) {
+    S_counts(tokenizer)->domains++;
+    return tokenizer->position >= S_run_of(tokenizer)->rejected_until;
+}
+
+/* THE `www.` REACH: `www.` is the start of its domain. */
+static markdown_core_state S_www_next(markdown_core_tokenizer *tokenizer, int code) {
+    uint32_t *words = markdown_core_frame_local(tokenizer);
+    const uint32_t index = words[REACH_UNDER];
+    if (code != "www."[index]) {
+        if (code == MARKDOWN_CORE_EOF) {
             markdown_core_met_end(tokenizer);
         }
         return markdown_core_nok(tokenizer);
     }
-    uint32_t rewind = 0;
-    while (rewind < at && markdown_core_isalpha(data[-(ptrdiff_t)rewind - 1])) {
-        rewind++;
-    }
-    if (!sd_autolink_issafe(data - rewind, size + rewind)) {
-        return markdown_core_nok(tokenizer);
-    }
-    S_scan scan = S_scan_of(tokenizer);
-    size_t link_end = strlen("://");
-    const size_t domain = S_domain(&scan, data + link_end, size - link_end, 1);
-    if (domain) {
-        link_end = autolink_delim(data, S_extent(&scan, data, size, link_end + domain));
-    }
-    if (scan.end) {
+    if (tokenizer->position + 1 >= tokenizer->size) {
         markdown_core_met_end(tokenizer);
-    }
-    if (!domain || !link_end) {
         return markdown_core_nok(tokenizer);
     }
-    return S_token(tokenizer, AUTOLINK_URL, at + (uint32_t)link_end, rewind);
+    S_counts(tokenizer)->domains++;
+    words[REACH_UNDER] = index + 1;
+    if (code == '.') {
+        words[REACH_FLAGS] |= REACH_DOT;
+    }
+    S_keep(tokenizer, code);
+    return markdown_core_state_of(index + 1 == 4 ? S_site : S_www_next);
 }
 
-/* The colon of a bare address, `x:a@b.c`, which the autolink takes as one
- * opaque byte of text (address_match). */
-static markdown_core_state S_address(markdown_core_tokenizer *tokenizer) {
-    const uint8_t *data = tokenizer->data + tokenizer->position;
-    const size_t size = tokenizer->size - tokenizer->position;
-    size_t at, end, np = 0;
-    for (at = 1; at < size && (markdown_core_isalnum(data[at]) || (data[at] && strchr(".+-_", data[at]) != NULL));
-         at++) {
-    }
-    if (at >= size) {
-        markdown_core_met_end(tokenizer);
-    }
-    if (at == 1 || at >= size || data[at] != '@') {
+static markdown_core_state S_www_reach(markdown_core_tokenizer *tokenizer, int code) {
+    if (!S_site_open(tokenizer)) {
         return markdown_core_nok(tokenizer);
     }
-    for (end = at + 1; end < size; end++) {
-        uint8_t c = data[end];
-        if (markdown_core_isalnum(c)) {
-            continue;
-        }
-        if (c == '.' && end + 1 < size && markdown_core_isalnum(data[end + 1])) {
-            np++;
-            continue;
-        }
-        if (c != '-' && c != '_') {
-            break;
-        }
-    }
-    if (end + 1 >= size) {
+    uint32_t *words = markdown_core_frame_local(tokenizer);
+    words[REACH_KEEP] = tokenizer->position;
+    words[REACH_UNDER] = 1;
+    S_keep(tokenizer, code);
+    return markdown_core_state_of(S_www_next);
+}
+
+static const markdown_core_construct REACH_WWW = {.start = S_www_reach};
+
+/* THE URL REACH: a scheme, `://` and a host character, which starts a
+ * domain that may have no dot. */
+static markdown_core_state S_url_first(markdown_core_tokenizer *tokenizer, int code) {
+    if (code == MARKDOWN_CORE_EOF) {
         markdown_core_met_end(tokenizer);
-    }
-    if (end - at < 2 || np == 0 || (!markdown_core_isalpha(data[end - 1]) && data[end - 1] != '.')) {
         return markdown_core_nok(tokenizer);
     }
-    return S_token(tokenizer, AUTOLINK_COLON, tokenizer->position + 1, 0);
+    const int width = S_host_width(tokenizer);
+    if (!width || !S_site_open(tokenizer)) {
+        return markdown_core_nok(tokenizer);
+    }
+    uint32_t *words = markdown_core_frame_local(tokenizer);
+    words[REACH_FLAGS] = (words[REACH_FLAGS] & ~(REACH_FTP | REACH_SECURE)) | REACH_SHORT;
+    return S_site_wide(tokenizer, code, width);
 }
 
-static markdown_core_state S_after_url(markdown_core_tokenizer *tokenizer, int code) {
-    (void)code;
-    return markdown_core_ok(tokenizer);
-}
-static markdown_core_state S_no_url(markdown_core_tokenizer *tokenizer, int code) {
-    (void)code;
-    return S_address(tokenizer);
-}
-static markdown_core_state S_url_start(markdown_core_tokenizer *tokenizer, int code) {
-    (void)code;
-    return S_url(tokenizer);
-}
-/* The scheme's letters, already data, are the URL's. */
-static void S_url_resolve(markdown_core_tokenizer *tokenizer, size_t from) {
-    markdown_core_events *events = &tokenizer->events;
-    markdown_core_token *link = markdown_core_event_token(events, from);
-    uint32_t rewind = link->data;
-    link->start -= rewind;
-    for (size_t at = from; rewind && at >= 2;) {
-        markdown_core_token *before = markdown_core_event_token(events, at - 1);
-        if (before->kind != MARKDOWN_CORE_TOKEN_DATA || events->items[at - 1].phase != MARKDOWN_CORE_EXIT) {
-            break;
+static markdown_core_state S_url_mark(markdown_core_tokenizer *tokenizer, int code) {
+    uint32_t *words = markdown_core_frame_local(tokenizer);
+    const uint32_t index = words[REACH_UNDER];
+    if (code != "://"[index]) {
+        if (code == MARKDOWN_CORE_EOF) {
+            markdown_core_met_end(tokenizer);
         }
-        const uint32_t take = before->end - before->start < rewind ? before->end - before->start : rewind;
-        before->end -= take;
-        rewind -= take;
-        if (before->end == before->start) {
-            /* The data is gone: its two events go with it. */
-            markdown_core_events_splice(events, at - 2, 2, NULL, 0);
-            at -= 2;
-        } else {
-            break;
-        }
+        return markdown_core_nok(tokenizer);
     }
+    words[REACH_UNDER] = index + 1;
+    S_keep(tokenizer, code);
+    return markdown_core_state_of(index + 1 == 3 ? S_url_first : S_url_mark);
 }
-static const markdown_core_construct S_URL = {.start = S_url_start, .resolve = S_url_resolve};
 
-static markdown_core_state S_colon(markdown_core_tokenizer *tokenizer, int code) {
-    if (markdown_core_label_in(tokenizer, 0) || markdown_core_label_in(tokenizer, 1)) {
-        return S_address(tokenizer);
+static markdown_core_state S_url_name(markdown_core_tokenizer *tokenizer, int code) {
+    uint32_t *words = markdown_core_frame_local(tokenizer);
+    const uint32_t flags = words[REACH_FLAGS];
+    const char *name = flags & REACH_FTP ? "ftp" : "http";
+    const uint32_t index = words[REACH_UNDER];
+    const int lower = code >= 'A' && code <= 'Z' ? code + ('a' - 'A') : code;
+    if (name[index] && lower == name[index]) {
+        words[REACH_UNDER] = index + 1;
+        S_keep(tokenizer, code);
+        return markdown_core_state_of(S_url_name);
     }
-    return markdown_core_attempt(tokenizer, &S_URL, markdown_core_state_of(S_after_url),
-                                 markdown_core_state_of(S_no_url), code);
+    if (!name[index] && lower == 's' && !(flags & (REACH_FTP | REACH_SECURE))) {
+        words[REACH_FLAGS] |= REACH_SECURE;
+        S_keep(tokenizer, code);
+        return markdown_core_state_of(S_url_name);
+    }
+    if (!name[index]) {
+        words[REACH_UNDER] = 0;
+        return S_url_mark(tokenizer, code);
+    }
+    if (code == MARKDOWN_CORE_EOF) {
+        markdown_core_met_end(tokenizer);
+    }
+    return markdown_core_nok(tokenizer);
+}
+
+static markdown_core_state S_url_reach(markdown_core_tokenizer *tokenizer, int code) {
+    uint32_t *words = markdown_core_frame_local(tokenizer);
+    words[REACH_KEEP] = tokenizer->position;
+    words[REACH_FLAGS] = code == 'f' || code == 'F' ? REACH_FTP : 0;
+    words[REACH_UNDER] = 0;
+    return S_url_name(tokenizer, code);
+}
+
+static const markdown_core_construct REACH_URL = {.start = S_url_reach};
+
+/* The link, as far as its reach went. */
+static markdown_core_state S_www_made(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    return S_token(tokenizer, AUTOLINK_WWW, S_run_of(tokenizer)->end, 0);
+}
+
+static markdown_core_state S_url_made(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    return S_token(tokenizer, AUTOLINK_URL, S_run_of(tokenizer)->end, 0);
+}
+
+static markdown_core_state S_fail(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    return markdown_core_nok(tokenizer);
+}
+
+static markdown_core_state S_url(markdown_core_tokenizer *tokenizer, int code) {
+    const int before = markdown_core_code_at(tokenizer, -1);
+    if (markdown_core_label_in(tokenizer, 0) || markdown_core_label_in(tokenizer, 1) ||
+        (before >= 0 && before < 0x80 && markdown_core_isalpha((char)before))) {
+        return markdown_core_nok(tokenizer);
+    }
+    return markdown_core_check(tokenizer, &REACH_URL, markdown_core_state_of(S_url_made),
+                               markdown_core_state_of(S_fail), code);
 }
 
 static markdown_core_state S_www(markdown_core_tokenizer *tokenizer, int code) {
-    (void)code;
     if (markdown_core_label_in(tokenizer, 0) || markdown_core_label_in(tokenizer, 1)) {
         return markdown_core_nok(tokenizer);
     }
-    const uint32_t at = tokenizer->position;
-    const uint8_t *data = tokenizer->data + at;
-    const size_t size = tokenizer->size - at;
-    if (at > markdown_core_label_body(tokenizer) && (!data[-1] || strchr("*_~(", data[-1]) == NULL) &&
-        !markdown_core_is_whitespace(data[-1])) {
-        return markdown_core_nok(tokenizer);
-    }
-    if (size < 4 || memcmp(data, "www.", strlen("www.")) != 0) {
-        if (size < 4 && memcmp(data, "www.", size) == 0) {
-            markdown_core_met_end(tokenizer);
+    if (tokenizer->position > markdown_core_label_body(tokenizer)) {
+        const int before = markdown_core_code_at(tokenizer, -1);
+        if ((!before || strchr("*_~(", before) == NULL) && !markdown_core_is_whitespace((unsigned char)before)) {
+            return markdown_core_nok(tokenizer);
         }
+    }
+    return markdown_core_check(tokenizer, &REACH_WWW, markdown_core_state_of(S_www_made),
+                               markdown_core_state_of(S_fail), code);
+}
+
+/* THE COLON OF A BARE ADDRESS, `x:a@b.c`, which the autolink takes as one
+ * opaque byte of text, so that the address after it stays text for the
+ * email step to link: letters, digits, `.`, `+`, `-` and `_`, then `@`,
+ * then letters, digits, `-`, `_` and dots before a letter or digit, at
+ * least one dot, ending in a letter. The words: the local part's length,
+ * the domain's, whether it has a dot, and its last byte. */
+enum { MAIL_LOCAL, MAIL_LENGTH, MAIL_DOT, MAIL_LAST };
+
+/* The domain ended before the code. */
+static markdown_core_state S_mail_judge(markdown_core_tokenizer *tokenizer) {
+    const uint32_t *words = markdown_core_frame_local(tokenizer);
+    const char last = (char)words[MAIL_LAST];
+    if (!words[MAIL_LENGTH] || !words[MAIL_DOT] || (!markdown_core_isalpha(last) && last != '.')) {
         return markdown_core_nok(tokenizer);
     }
-    S_scan scan = S_scan_of(tokenizer);
-    size_t link_end = S_domain(&scan, data, size, 0);
-    if (link_end) {
-        link_end = autolink_delim(data, S_extent(&scan, data, size, link_end));
-    }
-    if (scan.end) {
+    return markdown_core_ok(tokenizer);
+}
+
+/* The domain ended at the code: the end is near if it is the last. */
+static markdown_core_state S_mail_end(markdown_core_tokenizer *tokenizer, int code) {
+    if (code == MARKDOWN_CORE_EOF || tokenizer->position + 1 >= tokenizer->size) {
         markdown_core_met_end(tokenizer);
     }
-    if (!link_end) {
+    return S_mail_judge(tokenizer);
+}
+
+static markdown_core_state S_mail_host(markdown_core_tokenizer *tokenizer, int code);
+
+/* A dot is the domain's when a letter or digit follows it. */
+static markdown_core_state S_mail_dot(markdown_core_tokenizer *tokenizer, int code) {
+    uint32_t *words = markdown_core_frame_local(tokenizer);
+    if (S_alnum(code)) {
+        words[MAIL_DOT] = 1;
+        words[MAIL_LENGTH]++;
+        return S_mail_host(tokenizer, code);
+    }
+    /* It ended at the dot. */
+    if (code == MARKDOWN_CORE_EOF) {
+        markdown_core_met_end(tokenizer);
+    }
+    return S_mail_judge(tokenizer);
+}
+
+static markdown_core_state S_mail_host(markdown_core_tokenizer *tokenizer, int code) {
+    uint32_t *words = markdown_core_frame_local(tokenizer);
+    if (S_alnum(code) || code == '-' || code == '_') {
+        words[MAIL_LENGTH]++;
+        words[MAIL_LAST] = (uint32_t)code;
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_mail_host);
+    }
+    if (code == '.') {
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_mail_dot);
+    }
+    return S_mail_end(tokenizer, code);
+}
+
+static markdown_core_state S_mail_local(markdown_core_tokenizer *tokenizer, int code) {
+    uint32_t *words = markdown_core_frame_local(tokenizer);
+    if (S_alnum(code) || (code > 0 && code < 0x80 && strchr(".+-_", code))) {
+        words[MAIL_LOCAL]++;
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_mail_local);
+    }
+    if (code == MARKDOWN_CORE_EOF) {
+        markdown_core_met_end(tokenizer);
         return markdown_core_nok(tokenizer);
     }
-    return S_token(tokenizer, AUTOLINK_WWW, at + (uint32_t)link_end, 0);
+    if (code != '@' || !words[MAIL_LOCAL]) {
+        return markdown_core_nok(tokenizer);
+    }
+    markdown_core_consume(tokenizer);
+    return markdown_core_state_of(S_mail_host);
+}
+
+static markdown_core_state S_mail(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    markdown_core_consume(tokenizer);
+    return markdown_core_state_of(S_mail_local);
+}
+
+static const markdown_core_construct MAIL = {.start = S_mail};
+
+static markdown_core_state S_colon_made(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    return S_token(tokenizer, AUTOLINK_COLON, tokenizer->position + 1, 0);
+}
+
+static markdown_core_state S_colon(markdown_core_tokenizer *tokenizer, int code) {
+    return markdown_core_check(tokenizer, &MAIL, markdown_core_state_of(S_colon_made), markdown_core_state_of(S_fail),
+                               code);
 }
 
 static const markdown_core_text_construct AUTOLINK_CONSTRUCTS[] = {
-    {"<", {.start = S_angle}}, {":", {.start = S_colon}}, {"w", {.start = S_www}}};
+    {"<", {.start = S_angle}}, {":", {.start = S_colon}}, {"w", {.start = S_www}}, {"hHfF", {.start = S_url}}};
 
 /* A literal link's Link and its Text, of the content bytes `from` up to
  * `to`, its destination `url`. */
@@ -1018,7 +1182,7 @@ static const markdown_core_compile_ops AUTOLINK_TOKENS[AUTOLINK_KINDS] = {
 
 static const markdown_core_inline_ops AUTOLINK_INLINES = {
     .constructs = AUTOLINK_CONSTRUCTS,
-    .construct_count = 3,
+    .construct_count = 4,
     .tokens = AUTOLINK_TOKENS,
     .token_count = AUTOLINK_KINDS,
 };
