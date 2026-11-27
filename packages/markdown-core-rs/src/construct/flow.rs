@@ -20,7 +20,7 @@
 
 use crate::choice::{self, Choice, Item, List};
 use crate::construct::{
-    blank_line, code_indented, comment, content, heading_atx, heading_setext, html_flow, raw_flow, table,
+    blank_line, callout, code_indented, comment, content, heading_atx, heading_setext, html_flow, raw_flow, table,
     thematic_break,
 };
 use crate::event::Name;
@@ -36,6 +36,10 @@ pub const CHOICE: Choice = Choice::new(
         Item {
             starts: code_indented::STARTS,
             step: StateName::CodeIndented(code_indented::Step::Start),
+        },
+        Item {
+            starts: callout::STARTS,
+            step: StateName::Callout(callout::Step::Start),
         },
         Item {
             starts: raw_flow::STARTS,

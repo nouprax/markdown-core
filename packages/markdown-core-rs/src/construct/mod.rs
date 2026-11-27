@@ -146,6 +146,7 @@ pub mod autolink;
 pub mod autolink_literal;
 pub mod blank_line;
 pub mod block_quote;
+pub mod callout;
 pub mod character_escape;
 pub mod character_reference;
 pub mod code_indented;

@@ -356,11 +356,15 @@ impl<'a> Compiler<'a> {
             Block::Quote => {
                 let runs = Self::whole(self.lead(index), self.end(index));
                 let content = self.contained(index);
+                let (variant, collapsed, title) = match self.child(index, Name::Callout) {
+                    Some(header) => self.callout(header),
+                    None => (None, None, None),
+                };
                 Node::new(
                     Kind::Callout {
-                        variant: None,
-                        collapsed: None,
-                        title: None,
+                        variant,
+                        collapsed,
+                        title,
                         content,
                     },
                     runs,
@@ -418,6 +422,21 @@ impl<'a> Compiler<'a> {
 
     /// The lines of the token at `index`: the `data` on each, every line
     /// with a line feed, and no line after a final line ending.
+    /// The variant, fold, and title of the callout header at `index`.
+    fn callout(&mut self, index: usize) -> (Option<String>, Option<bool>, Option<Vec<Node>>) {
+        let variant = self
+            .child(index, Name::CalloutVariant)
+            .map(|part| self.text(part).to_string());
+        let collapsed = self
+            .child(index, Name::CalloutFold)
+            .map(|part| self.text(part) == "-");
+        let title = self
+            .child(index, Name::CalloutTitle)
+            .map(|part| self.inlines(part))
+            .filter(|nodes| !nodes.is_empty());
+        (variant, collapsed, title)
+    }
+
     fn lines(&self, index: usize, data: Name) -> String {
         let mut literal = String::new();
         let mut line = String::new();
@@ -719,7 +738,7 @@ impl<'a> Compiler<'a> {
                 head,
                 content,
             },
-            self.runs(self.lead(index), self.end(index)),
+            Self::whole(self.lead(index), self.end(index)),
         )
     }
 

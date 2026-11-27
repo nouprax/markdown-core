@@ -342,7 +342,7 @@ fn element_name(tokenizer: &mut Tokenizer, start: usize, shut: bool) -> State {
                 }
             } else {
                 // Do not support complete HTML when interrupting.
-                if tokenizer.interrupt && !tokenizer.lax {
+                if tokenizer.interrupt {
                     State::Nok
                 } else if shut_element {
                     State::Redo(StateName::HtmlFlow(Step::CompleteShutElementAfter))

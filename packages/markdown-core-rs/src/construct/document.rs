@@ -278,6 +278,11 @@ fn containers_after(tokenizer: &mut Tokenizer) -> State {
     let child = tokenizer.document.child.as_mut().unwrap();
 
     child.lax = tokenizer.document.continued != tokenizer.document.stack.len();
+    // A lax line after flow that takes one (a paragraph, a callout header)
+    // is read as if it interrupts that flow.
+    if child.lax && tokenizer.document.open {
+        child.interrupt = true;
+    }
     child.define_skip(tokenizer.point.clone());
 
     if tokenizer.current.is_none() {
@@ -412,7 +417,9 @@ fn flow_end(tokenizer: &mut Tokenizer) -> State {
     if !document_lax_continuation_current && !child.events.is_empty() {
         let before = skip::opt_back(&child.events, child.events.len() - 1, &[Name::LineEnd]);
         let name = &child.events[before].name;
-        if name == &Name::Content || name == &Name::HeadingSetextUnderline {
+        // A callout header takes a lax line as the start of its body.
+        if name == &Name::Content || name == &Name::HeadingSetextUnderline || name == &Name::Callout
+        {
             document_lax_continuation_current = true;
         }
     }

@@ -172,6 +172,100 @@ pub enum Name {
     /// * **Construct**:
     ///   [`document`][crate::construct::document]
     Bom,
+    /// Callout header.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [flow content][crate::construct::flow]
+    /// * **Content model**:
+    ///   [`CalloutFold`][Name::CalloutFold],
+    ///   [`CalloutMarker`][Name::CalloutMarker],
+    ///   [`CalloutTitle`][Name::CalloutTitle],
+    ///   [`CalloutVariant`][Name::CalloutVariant],
+    ///   [`SpaceOrTab`][Name::SpaceOrTab]
+    /// * **Construct**:
+    ///   [`callout`][crate::construct::callout]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | > [!note]- a
+    ///       ^^^^^^^^^^
+    /// ```
+    Callout,
+    /// Callout fold.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`Callout`][Name::Callout]
+    /// * **Content model**:
+    ///   void
+    /// * **Construct**:
+    ///   [`callout`][crate::construct::callout]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | > [!note]- a
+    ///              ^
+    /// ```
+    CalloutFold,
+    /// Callout marker.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`Callout`][Name::Callout]
+    /// * **Content model**:
+    ///   void
+    /// * **Construct**:
+    ///   [`callout`][crate::construct::callout]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | > [!note] a
+    ///       ^^    ^
+    /// ```
+    CalloutMarker,
+    /// Callout title.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`Callout`][Name::Callout]
+    /// * **Content model**:
+    ///   [text content][crate::construct::text]
+    /// * **Construct**:
+    ///   [`callout`][crate::construct::callout]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | > [!note] a
+    ///               ^
+    /// ```
+    CalloutTitle,
+    /// Callout variant.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`Callout`][Name::Callout]
+    /// * **Content model**:
+    ///   void
+    /// * **Construct**:
+    ///   [`callout`][crate::construct::callout]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | > [!note] a
+    ///         ^^^^
+    /// ```
+    CalloutVariant,
     /// Whole character escape.
     ///
     /// ## Info
@@ -3074,6 +3168,11 @@ impl Name {
             | Name::CodeFlowChunk
             | Name::CodeTextData
             | Name::CodeTextSequence
+            | Name::Callout
+            | Name::CalloutFold
+            | Name::CalloutMarker
+            | Name::CalloutTitle
+            | Name::CalloutVariant
             | Name::CommentChunk
             | Name::CommentFence
             | Name::CommentSequence
@@ -3175,7 +3274,7 @@ impl Name {
 }
 
 /// List of void events, used to make sure everything is working well.
-pub const VOID_EVENTS: [Name; 69] = [
+pub const VOID_EVENTS: [Name; 72] = [
     Name::AttentionSequence,
     Name::AutolinkEmail,
     Name::AutolinkMarker,
@@ -3234,6 +3333,9 @@ pub const VOID_EVENTS: [Name; 69] = [
     Name::MathFlowChunk,
     Name::MathTextData,
     Name::MathTextSequence,
+    Name::CalloutFold,
+    Name::CalloutMarker,
+    Name::CalloutVariant,
     Name::CommentChunk,
     Name::CommentSequence,
     Name::CommentText,
