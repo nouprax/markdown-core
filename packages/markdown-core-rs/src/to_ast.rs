@@ -6,7 +6,8 @@
 //! less the prefixes of the containers around it.
 
 use crate::ast::{
-    Delimiter, Destination, Flavor, Kind, Node, Note, Placement, Referent, Span, Variant,
+    Delimiter, Destination, Dimensions, Flavor, Kind, Node, Note, Placement, Referent, Span,
+    Variant,
 };
 use crate::event::{Block, Event, Inline, Kind as EventKind, Name, Role, Space};
 use crate::util::{
@@ -974,7 +975,11 @@ impl<'a> Compiler<'a> {
                 literal: self.code(index, Name::CodeTextData),
             },
             Inline::MathText => Kind::Formula {
-                mode: Placement::Embedded,
+                // `$$x$$` stands alone; `$x$` is embedded in its text.
+                mode: match self.child(index, Name::MathTextSequence) {
+                    Some(sequence) if self.text(sequence).len() > 1 => Placement::Standalone,
+                    _ => Placement::Embedded,
+                },
                 literal: self.code(index, Name::MathTextData),
             },
             Inline::HtmlText => {
@@ -1044,6 +1049,7 @@ impl<'a> Compiler<'a> {
                 }
             }
             Inline::Media => self.media(index),
+            Inline::CrossLink => self.cross_link(index),
             Inline::FootnoteCall => {
                 let label = self
                     .child(index, Name::Label)
@@ -1116,6 +1122,60 @@ impl<'a> Compiler<'a> {
         literal
     }
 
+    /// A cross link or a cross embed.
+    fn cross_link(&self, index: usize) -> Kind {
+        let mut embed = false;
+        let mut whole = String::new();
+        let mut label: Option<String> = None;
+        for child in self.inside(index) {
+            match self.name(child) {
+                Name::CrossLinkMarker if self.text(child).starts_with('!') => embed = true,
+                Name::CrossLinkDest => whole.push_str(self.text(child)),
+                Name::CrossLinkSeparator => label = Some(String::new()),
+                Name::CrossLinkLabel => {
+                    label.get_or_insert_with(String::new).push_str(self.text(child));
+                }
+                _ => {}
+            }
+        }
+        let dest = match whole.find('#') {
+            Some(hash) => {
+                let anchor = &whole[hash + 1..];
+                // A block identifier: `^` and one part of letters, digits,
+                // and dashes.
+                let id = anchor.strip_prefix('^').filter(|id| {
+                    !id.is_empty()
+                        && id
+                            .bytes()
+                            .all(|code| code.is_ascii_alphanumeric() || code == b'-')
+                });
+                Destination::Cross {
+                    path: whole[..hash].to_string(),
+                    anchor: Some(id.unwrap_or(anchor).to_string()),
+                }
+            }
+            None => Destination::Cross {
+                path: whole,
+                anchor: None,
+            },
+        };
+        if !embed {
+            return Kind::CrossLink { dest, label };
+        }
+        let mut dimensions = None;
+        if let Some(text) = &label {
+            if let Some((rest, found)) = label_dimensions(text) {
+                dimensions = Some(found);
+                label = Some(rest.to_string());
+            }
+        }
+        Kind::CrossEmbedded {
+            dest,
+            label,
+            dimensions,
+        }
+    }
+
     /// A link or an image.
     fn media(&mut self, index: usize) -> Kind {
         let label = self.child(index, Name::Label);
@@ -1166,6 +1226,45 @@ impl<'a> Compiler<'a> {
 }
 
 /// Add text to the pending text.
+/// The dimensions at the end of the embed label `label`, after its last
+/// separator (`|` or `\|`) or as all of it, and the label before them.
+fn label_dimensions(label: &str) -> Option<(&str, Dimensions)> {
+    let source = label.as_bytes();
+    let mut cut = None;
+    let mut index = 0;
+    while index < source.len() {
+        if source[index] == b'|' {
+            cut = Some((index, index + 1));
+        } else if source[index] == b'\\' && source.get(index + 1) == Some(&b'|') {
+            cut = Some((index, index + 2));
+            index += 1;
+        }
+        index += 1;
+    }
+    let (rest, tail) = match cut {
+        Some((before, after)) => (&label[..before], &label[after..]),
+        None => ("", label),
+    };
+    if rest.ends_with(|c: char| c.is_ascii_whitespace()) {
+        return None;
+    }
+    let (width, depth) = match tail.split_once('x') {
+        Some((width, depth)) => (dimension(width)?, Some(dimension(depth)?)),
+        None => (dimension(tail)?, None),
+    };
+    Some((rest, Dimensions { width, depth }))
+}
+
+/// A dimension: digits without a leading zero, at most `i32::MAX`.
+fn dimension(text: &str) -> Option<u32> {
+    if !text.starts_with(|c: char| ('1'..='9').contains(&c))
+        || !text.bytes().all(|code| code.is_ascii_digit())
+    {
+        return None;
+    }
+    text.parse::<i32>().ok().and_then(|value| u32::try_from(value).ok())
+}
+
 /// The body of the HTML comment `html`, if it is one: the bytes between
 /// `<!--` and `-->`, where `<!-->` and `<!--->` are empty.
 fn html_comment(html: &str) -> Option<&str> {

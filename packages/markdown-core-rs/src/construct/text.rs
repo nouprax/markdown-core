@@ -11,6 +11,7 @@
 //! * [Character escape][crate::construct::character_escape]
 //! * [Character reference][crate::construct::character_reference]
 //! * [Comment][crate::construct::comment]
+//! * [Cross link][crate::construct::cross_link]
 //! * [Raw (text)][crate::construct::raw_text] (code (text), math (text))
 //! * [GFM: Label start (footnote)][crate::construct::label_start_footnote]
 //! * [GFM: Task list item check][crate::construct::task_list_item_check]
@@ -28,6 +29,7 @@ use crate::construct::autolink_literal::resolve as resolve_autolink_literal;
 use crate::construct::partial_whitespace::resolve_whitespace;
 use crate::construct::{
     attention, autolink, autolink_literal, character_escape, character_reference, comment,
+    cross_link,
     hard_break_escape, html_text, label_end, label_start_footnote, label_start_link,
     label_start_image, partial_data, raw_text, task_list_item_check,
 };
@@ -41,6 +43,10 @@ use crate::tokenizer::Tokenizer;
 /// Data when none of these matched.
 pub const CHOICE: Choice = Choice::new(
     &[
+        Item {
+            starts: cross_link::STARTS,
+            step: StateName::CrossLink(cross_link::Step::Start),
+        },
         Item {
             starts: label_start_image::STARTS,
             step: StateName::LabelStartImage(label_start_image::Step::Start),

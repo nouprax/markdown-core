@@ -169,6 +169,8 @@ fn protocol_start(tokenizer: &mut Tokenizer) -> State {
     if matches!(tokenizer.current, Some(b'H' | b'h'))
             // Source: <https://github.com/github/cmark-gfm/blob/ef1cfcb/extensions/autolink.c#L214>.
             && !matches!(tokenizer.previous, Some(b'A'..=b'Z' | b'a'..=b'z'))
+            // No literal inside an open label.
+            && tokenizer.labels.starts.is_empty()
     {
         tokenizer.enter(Name::AutolinkLiteralProtocol);
         tokenizer.attempt(
@@ -266,7 +268,9 @@ fn protocol_slashes_inside(tokenizer: &mut Tokenizer, size: usize) -> State {
 fn www_start(tokenizer: &mut Tokenizer) -> State {
     if matches!(tokenizer.current, Some(b'W' | b'w'))
             // Source: <https://github.com/github/cmark-gfm/blob/ef1cfcb/extensions/autolink.c#L156>.
-            && matches!(tokenizer.previous, None | Some(b'\t' | b'\n' | b' ' | b'(' | b'*' | b'_' | b'[' | b']' | b'~'))
+            && matches!(tokenizer.previous, None | Some(b'\t' | b'\n' | b' ' | b'(' | b'*' | b'_' | b'~'))
+            // No literal inside an open label.
+            && tokenizer.labels.starts.is_empty()
     {
         tokenizer.enter(Name::AutolinkLiteralWww);
         tokenizer.attempt(
@@ -448,7 +452,7 @@ fn path_inside(tokenizer: &mut Tokenizer, mut path: Path) -> State {
         // *continue* if we saw less closing parens than opening parens.
         Some(
             b'!' | b'"' | b'&' | b'\'' | b')' | b'*' | b',' | b'.' | b':' | b';' | b'<' | b'?'
-            | b']' | b'_' | b'~',
+            | b'_' | b'~',
         ) => {
             let next = if tokenizer.current == Some(b')') && path.close < path.open {
                 State::Next(StateName::AutolinkLiteral(Step::PathAtPunctuation { path }))
@@ -516,13 +520,6 @@ fn trail(tokenizer: &mut Tokenizer) -> State {
         }
         // `<` is an end.
         Some(b'<') => State::Ok,
-        // Needed because we allow literals after `[`, as we fix:
-        // <https://github.com/github/cmark-gfm/issues/278>.
-        // Check that it is not followed by `(` or `[`.
-        Some(b']') => {
-            tokenizer.consume();
-            State::Next(StateName::AutolinkLiteral(Step::TrailBracketAfter))
-        }
         _ => {
             // Whitespace is the end of the URL, anything else is continuation.
             if kind_after_index(tokenizer.parse_state.source, tokenizer.point.index)
@@ -533,28 +530,6 @@ fn trail(tokenizer: &mut Tokenizer) -> State {
                 State::Nok
             }
         }
-    }
-}
-
-/// In trail, after `]`.
-///
-/// > 👉 **Note**: this deviates from `cmark-gfm` to fix a bug.
-/// > See end of <https://github.com/github/cmark-gfm/issues/278> for more.
-///
-/// ```markdown
-/// > | https://example.com](
-///                         ^
-/// ```
-fn trail_bracket_after(tokenizer: &mut Tokenizer) -> State {
-    // Whitespace or something that could start a resource or reference is the end.
-    // Switch back to trail otherwise.
-    if matches!(
-        tokenizer.current,
-        None | Some(b'\t' | b'\n' | b' ' | b'(' | b'[')
-    ) {
-        State::Ok
-    } else {
-        State::Redo(StateName::AutolinkLiteral(Step::Trail))
     }
 }
 
@@ -868,7 +843,6 @@ pub enum Step {
     Trail,
     TrailCharRefStart,
     TrailCharRefInside,
-    TrailBracketAfter,
 }
 
 impl From<Step> for StateName {
@@ -896,6 +870,5 @@ pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
         Step::Trail => trail(tokenizer),
         Step::TrailCharRefStart => trail_char_ref_start(tokenizer),
         Step::TrailCharRefInside => trail_char_ref_inside(tokenizer),
-        Step::TrailBracketAfter => trail_bracket_after(tokenizer),
     }
 }

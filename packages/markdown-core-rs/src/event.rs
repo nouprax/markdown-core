@@ -266,6 +266,99 @@ pub enum Name {
     ///         ^^^^
     /// ```
     CalloutVariant,
+    /// Whole cross link or cross embed.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [text content][crate::construct::text]
+    /// * **Content model**:
+    ///   [`CrossLinkLabel`][Name::CrossLinkLabel],
+    ///   [`CrossLinkMarker`][Name::CrossLinkMarker],
+    ///   [`CrossLinkSeparator`][Name::CrossLinkSeparator],
+    ///   [`CrossLinkDest`][Name::CrossLinkDest]
+    /// * **Construct**:
+    ///   [`cross_link`][crate::construct::cross_link]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | a [[b|c]] d
+    ///       ^^^^^^^
+    /// ```
+    CrossLink,
+    /// Cross link label.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`CrossLink`][Name::CrossLink]
+    /// * **Content model**:
+    ///   void
+    /// * **Construct**:
+    ///   [`cross_link`][crate::construct::cross_link]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | a [[b|c]] d
+    ///            ^
+    /// ```
+    CrossLinkLabel,
+    /// Cross link marker.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`CrossLink`][Name::CrossLink]
+    /// * **Content model**:
+    ///   void
+    /// * **Construct**:
+    ///   [`cross_link`][crate::construct::cross_link]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | a ![[b]] d
+    ///       ^^^ ^^
+    /// ```
+    CrossLinkMarker,
+    /// Cross link separator.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`CrossLink`][Name::CrossLink]
+    /// * **Content model**:
+    ///   void
+    /// * **Construct**:
+    ///   [`cross_link`][crate::construct::cross_link]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | a [[b|c]] d
+    ///          ^
+    /// ```
+    CrossLinkSeparator,
+    /// Cross link destination.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`CrossLink`][Name::CrossLink]
+    /// * **Content model**:
+    ///   void
+    /// * **Construct**:
+    ///   [`cross_link`][crate::construct::cross_link]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | a [[b#c]] d
+    ///         ^^^
+    /// ```
+    CrossLinkDest,
     /// Whole character escape.
     ///
     /// ## Info
@@ -3086,6 +3179,7 @@ pub enum Inline {
     MathText,
     HtmlText,
     Comment,
+    CrossLink,
     Autolink,
     Literal,
     Media,
@@ -3135,6 +3229,7 @@ impl Name {
             Name::MathText => Role::Inline(Inline::MathText),
             Name::HtmlText => Role::Inline(Inline::HtmlText),
             Name::Comment => Role::Inline(Inline::Comment),
+            Name::CrossLink => Role::Inline(Inline::CrossLink),
             Name::CommentFlow => Role::Block(Block::Comment),
             Name::Autolink => Role::Inline(Inline::Autolink),
             Name::AutolinkLiteralProtocol
@@ -3174,6 +3269,10 @@ impl Name {
             | Name::CalloutTitle
             | Name::CalloutVariant
             | Name::CommentChunk
+            | Name::CrossLinkLabel
+            | Name::CrossLinkMarker
+            | Name::CrossLinkSeparator
+            | Name::CrossLinkDest
             | Name::CommentFence
             | Name::CommentSequence
             | Name::CommentText
@@ -3274,7 +3373,7 @@ impl Name {
 }
 
 /// List of void events, used to make sure everything is working well.
-pub const VOID_EVENTS: [Name; 72] = [
+pub const VOID_EVENTS: [Name; 76] = [
     Name::AttentionSequence,
     Name::AutolinkEmail,
     Name::AutolinkMarker,
@@ -3337,6 +3436,10 @@ pub const VOID_EVENTS: [Name; 72] = [
     Name::CalloutMarker,
     Name::CalloutVariant,
     Name::CommentChunk,
+    Name::CrossLinkLabel,
+    Name::CrossLinkMarker,
+    Name::CrossLinkSeparator,
+    Name::CrossLinkDest,
     Name::CommentSequence,
     Name::CommentText,
     Name::ReferenceMarker,

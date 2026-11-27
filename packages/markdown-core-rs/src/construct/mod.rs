@@ -151,6 +151,7 @@ pub mod character_escape;
 pub mod character_reference;
 pub mod code_indented;
 pub mod comment;
+pub mod cross_link;
 pub mod content;
 pub mod definition;
 pub mod document;
