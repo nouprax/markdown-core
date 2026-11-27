@@ -8,7 +8,7 @@
 
 /* THE PROPERTIES GRAMMAR'S WORK: the value bytes decoded, each
  * source range once at its owning boundary; the key bytes classified; and the
- * bytes the allocation-free closing-fence search examined. Physical line
+ * bytes the closing-fence search examined. Physical line
  * geometry is the engine's (`input_line_work`). The grammar is the document
  * prefix's, so the document element's parse record holds it (document.h). */
 typedef struct {
@@ -20,11 +20,8 @@ typedef struct {
  * `work`. `closed` answers whether the
  * input opens with one that closes, with where the closing fence starts in
  * `*fence`; `parse` reads the envelope that closes at `fence` and answers
- * the bytes it takes. `fence` answers how far the line `data`, through its
- * line ending, is a fence: 3 for "---", the dashes it begins with for a
- * line whose bytes could still become one, and -1 for any other line. An
- * envelope its text leaves open notes its opener for `owner` (blocks.c,
- * AN OPENER READ TO THE END). */
+ * the bytes it takes. An envelope its text leaves open notes its opener
+ * for `owner` (blocks.c, AN OPENER READ TO THE END). */
 bool markdown_core_properties_closed(markdown_core_properties_work *work, markdown_core_parser *parser,
                                      markdown_core_reader *reader, const markdown_core_element_instance *owner,
                                      size_t *fence);
@@ -34,7 +31,6 @@ bool markdown_core_properties_stops(const markdown_core_element_instance *self, 
                                     size_t length);
 size_t markdown_core_properties_parse(markdown_core_properties_work *work, markdown_core_parser *parser,
                                       markdown_core_reader *reader, size_t fence);
-int markdown_core_properties_fence(const unsigned char *data);
 
 /* A PLACE of an envelope's payload, as the places' reader finds it: a
  * member's name, of slot kind FIELD, or one of its values, of slot kind
