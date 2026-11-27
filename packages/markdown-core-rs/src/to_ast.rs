@@ -8,7 +8,7 @@
 use crate::ast::{
     Delimiter, Destination, Flavor, Kind, Node, Note, Placement, Referent, Span, Variant,
 };
-use crate::event::{Event, Kind as EventKind, Name};
+use crate::event::{Block, Event, Inline, Kind as EventKind, Name, Role, Space};
 use crate::util::{
     character_reference::decode as decode_character_reference,
     classes::{anchor, normalize_label},
@@ -290,10 +290,13 @@ impl<'a> Compiler<'a> {
     }
 
     fn block(&mut self, index: usize) -> Option<Node> {
-        let name = self.name(index);
-        let node = match name {
-            Name::Paragraph => self.paragraph(index),
-            Name::HeadingAtx => {
+        let block = match self.name(index).role() {
+            Role::Block(block) => block,
+            Role::Inline(_) | Role::Space(_) | Role::Part => return None,
+        };
+        let node = match block {
+            Block::Paragraph => self.paragraph(index),
+            Block::HeadingAtx => {
                 let level = self
                     .child(index, Name::HeadingAtxSequence)
                     .map_or(1, |sequence| self.text(sequence).len());
@@ -309,7 +312,7 @@ impl<'a> Compiler<'a> {
                     self.runs(self.lead(index), self.end(index)),
                 )
             }
-            Name::HeadingSetext => {
+            Block::HeadingSetext => {
                 let level = match self.child(index, Name::HeadingSetextUnderline) {
                     Some(underline) if self.text(underline).contains('-') => 2,
                     _ => 1,
@@ -323,22 +326,22 @@ impl<'a> Compiler<'a> {
                     self.runs(self.lead(index), self.end(index)),
                 )
             }
-            Name::ThematicBreak => {
+            Block::ThematicBreak => {
                 let end = self
                     .blank_tail(self.exits[index])
                     .unwrap_or_else(|| self.end(index));
                 Node::new(Kind::ThematicBreak, self.runs(self.lead(index), end))
             }
-            Name::CodeIndented => self.code_indented(index),
-            Name::CodeFenced => self.code_fenced(index),
-            Name::HtmlFlow => {
+            Block::CodeIndented => self.code_indented(index),
+            Block::CodeFenced => self.code_fenced(index),
+            Block::HtmlFlow => {
                 let literal = self.lines(index, Name::HtmlFlowData);
                 Node::new(
                     Kind::HtmlBlock { literal },
                     self.runs(self.lead(index), self.last(index).1),
                 )
             }
-            Name::BlockQuote => {
+            Block::BlockQuote => {
                 let runs = Self::whole(self.lead(index), self.end(index));
                 let content = self.contained(index);
                 Node::new(
@@ -351,10 +354,10 @@ impl<'a> Compiler<'a> {
                     runs,
                 )
             }
-            Name::ListOrdered | Name::ListUnordered => self.list(index),
-            Name::Definition => self.definition(index),
-            Name::GfmTable => self.table(index),
-            Name::GfmFootnoteDefinition => {
+            Block::List => self.list(index),
+            Block::Definition => self.definition(index),
+            Block::Table => self.table(index),
+            Block::Footnote => {
                 let label = self
                     .child(index, Name::GfmFootnoteDefinitionPrefix)
                     .and_then(|prefix| self.child(prefix, Name::GfmFootnoteDefinitionLabel))
@@ -366,14 +369,15 @@ impl<'a> Compiler<'a> {
                 let content = self.contained(index);
                 Node::new(Kind::Footnote { label, content }, runs)
             }
-            Name::MathFlow => {
+            Block::MathFlow => {
                 let literal = self.fenced_literal(index, Name::MathFlowFence, Name::MathFlowChunk);
                 Node::new(
                     Kind::FormulaBlock { literal },
                     self.runs(self.lead(index), self.end(index)),
                 )
             }
-            _ => return None,
+            // Compiled with the dialect’s properties, which are not ported yet.
+            Block::Frontmatter => return None,
         };
         Some(node)
     }
@@ -810,25 +814,25 @@ impl<'a> Compiler<'a> {
             let name = self.name(index);
             let at_line_start = line_start;
             line_start = false;
-            match name {
-                Name::SpaceOrTab if at_line_start => {}
-                Name::Data | Name::SpaceOrTab => {
+            match name.role() {
+                Role::Space(Space::SpaceOrTab) if at_line_start => {}
+                Role::Inline(Inline::Data) | Role::Space(Space::SpaceOrTab) => {
                     let literal = self.value(index);
                     push_text(&mut pending, self.start(index), self.end(index), &literal);
                 }
-                Name::CharacterEscape => {
+                Role::Inline(Inline::CharacterEscape) => {
                     let literal = self.text(index)[1..].to_string();
                     push_text(&mut pending, self.start(index), self.end(index), &literal);
                 }
-                Name::CharacterReference => {
+                Role::Inline(Inline::CharacterReference) => {
                     let literal = self.reference(index);
                     push_text(&mut pending, self.start(index), self.end(index), &literal);
                 }
-                Name::HardBreakTrailing => {
+                Role::Inline(Inline::HardBreakTrailing) => {
                     push_text(&mut pending, self.start(index), self.end(index), "");
                     hard = true;
                 }
-                Name::LineEnding => {
+                Role::Space(Space::LineEnding) => {
                     line_start = true;
                     if skip_ending {
                         skip_ending = false;
@@ -850,7 +854,7 @@ impl<'a> Compiler<'a> {
                         self.runs(self.start(index), self.end(index)),
                     ));
                 }
-                Name::HardBreakEscape => {
+                Role::Inline(Inline::HardBreakEscape) => {
                     self.flush(&mut nodes, &mut pending);
                     // The break covers the backslash and the line ending.
                     let end = line_end(self.bytes, self.end(index));
@@ -860,7 +864,10 @@ impl<'a> Compiler<'a> {
                     ));
                     skip_ending = true;
                 }
-                _ => {
+                Role::Inline(_)
+                | Role::Space(Space::BlankLineEnding)
+                | Role::Part
+                | Role::Block(_) => {
                     self.flush(&mut nodes, &mut pending);
                     if let Some(node) = self.inline(index) {
                         nodes.push(node);
@@ -906,24 +913,28 @@ impl<'a> Compiler<'a> {
     fn inline(&mut self, index: usize) -> Option<Node> {
         let name = self.name(index);
         let runs = self.runs(self.start(index), self.end(index));
-        let kind = match name {
-            Name::Emphasis => Kind::Emphasis {
+        let inline = match name.role() {
+            Role::Inline(inline) => inline,
+            Role::Block(_) | Role::Space(_) | Role::Part => return None,
+        };
+        let kind = match inline {
+            Inline::Emphasis => Kind::Emphasis {
                 content: self.part(index, Name::EmphasisText),
             },
-            Name::Strong => Kind::Strong {
+            Inline::Strong => Kind::Strong {
                 content: self.part(index, Name::StrongText),
             },
-            Name::GfmStrikethrough => Kind::Strikethrough {
+            Inline::Strikethrough => Kind::Strikethrough {
                 content: self.part(index, Name::GfmStrikethroughText),
             },
-            Name::CodeText => Kind::Code {
+            Inline::CodeText => Kind::Code {
                 literal: self.code(index, Name::CodeTextData),
             },
-            Name::MathText => Kind::Formula {
+            Inline::MathText => Kind::Formula {
                 mode: Placement::Embedded,
                 literal: self.code(index, Name::MathTextData),
             },
-            Name::HtmlText => {
+            Inline::HtmlText => {
                 let mut literal = String::new();
                 for child in self.inside(index) {
                     match self.name(child) {
@@ -935,7 +946,7 @@ impl<'a> Compiler<'a> {
                 }
                 Kind::Html { literal }
             }
-            Name::Autolink => {
+            Inline::Autolink => {
                 let mut dest = String::new();
                 let mut text = None;
                 for child in self.inside(index) {
@@ -968,11 +979,7 @@ impl<'a> Compiler<'a> {
                     content,
                 }
             }
-            Name::GfmAutolinkLiteralProtocol
-            | Name::GfmAutolinkLiteralWww
-            | Name::GfmAutolinkLiteralEmail
-            | Name::GfmAutolinkLiteralMailto
-            | Name::GfmAutolinkLiteralXmpp => {
+            Inline::Literal => {
                 let literal = self.text(index).to_string();
                 let dest = match name {
                     Name::GfmAutolinkLiteralWww => format!("http://{}", literal),
@@ -985,8 +992,8 @@ impl<'a> Compiler<'a> {
                     content: vec![Node::new(Kind::Text { literal }, runs.clone())],
                 }
             }
-            Name::Link | Name::Image => self.media(index),
-            Name::GfmFootnoteCall => {
+            Inline::Media => self.media(index),
+            Inline::FootnoteCall => {
                 let label = self
                     .child(index, Name::Label)
                     .and_then(|label| self.child(label, Name::LabelText))
@@ -1004,7 +1011,12 @@ impl<'a> Compiler<'a> {
                     citations: vec![citation],
                 }
             }
-            _ => return None,
+            // Text, compiled by `inline_range`.
+            Inline::Data
+            | Inline::CharacterEscape
+            | Inline::CharacterReference
+            | Inline::HardBreakTrailing
+            | Inline::HardBreakEscape => return None,
         };
         Some(Node::new(kind, runs))
     }

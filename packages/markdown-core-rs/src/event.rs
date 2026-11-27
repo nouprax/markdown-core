@@ -2778,6 +2778,219 @@ pub enum Name {
     ThematicBreakSequence,
 }
 
+/// What an event is to the AST compiler.
+///
+/// Every [`Name`][] has exactly one role, so a new name has to be placed
+/// here, and a new block or inline has to be compiled.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Role {
+    /// A block node.
+    Block(Block),
+    /// An inline node, or text in one.
+    Inline(Inline),
+    /// Whitespace and line endings between or inside nodes.
+    Space(Space),
+    /// Read by the node it is in, or not compiled.
+    Part,
+}
+
+/// Blocks.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Block {
+    Paragraph,
+    HeadingAtx,
+    HeadingSetext,
+    ThematicBreak,
+    CodeIndented,
+    CodeFenced,
+    HtmlFlow,
+    BlockQuote,
+    List,
+    Definition,
+    Table,
+    Footnote,
+    MathFlow,
+    Frontmatter,
+}
+
+/// Inlines.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Inline {
+    Data,
+    CharacterEscape,
+    CharacterReference,
+    HardBreakTrailing,
+    HardBreakEscape,
+    Emphasis,
+    Strong,
+    Strikethrough,
+    CodeText,
+    MathText,
+    HtmlText,
+    Autolink,
+    Literal,
+    Media,
+    FootnoteCall,
+}
+
+/// Whitespace and line endings.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Space {
+    SpaceOrTab,
+    LineEnding,
+    BlankLineEnding,
+}
+
+impl Name {
+    /// The role of this name.
+    #[allow(clippy::too_many_lines)]
+    pub fn role(self) -> Role {
+        match self {
+            Name::Paragraph => Role::Block(Block::Paragraph),
+            Name::HeadingAtx => Role::Block(Block::HeadingAtx),
+            Name::HeadingSetext => Role::Block(Block::HeadingSetext),
+            Name::ThematicBreak => Role::Block(Block::ThematicBreak),
+            Name::CodeIndented => Role::Block(Block::CodeIndented),
+            Name::CodeFenced => Role::Block(Block::CodeFenced),
+            Name::HtmlFlow => Role::Block(Block::HtmlFlow),
+            Name::BlockQuote => Role::Block(Block::BlockQuote),
+            Name::ListOrdered | Name::ListUnordered => Role::Block(Block::List),
+            Name::Definition => Role::Block(Block::Definition),
+            Name::GfmTable => Role::Block(Block::Table),
+            Name::GfmFootnoteDefinition => Role::Block(Block::Footnote),
+            Name::MathFlow => Role::Block(Block::MathFlow),
+            Name::Frontmatter => Role::Block(Block::Frontmatter),
+            Name::Data => Role::Inline(Inline::Data),
+            Name::CharacterEscape => Role::Inline(Inline::CharacterEscape),
+            Name::CharacterReference => Role::Inline(Inline::CharacterReference),
+            Name::HardBreakTrailing => Role::Inline(Inline::HardBreakTrailing),
+            Name::HardBreakEscape => Role::Inline(Inline::HardBreakEscape),
+            Name::Emphasis => Role::Inline(Inline::Emphasis),
+            Name::Strong => Role::Inline(Inline::Strong),
+            Name::GfmStrikethrough => Role::Inline(Inline::Strikethrough),
+            Name::CodeText => Role::Inline(Inline::CodeText),
+            Name::MathText => Role::Inline(Inline::MathText),
+            Name::HtmlText => Role::Inline(Inline::HtmlText),
+            Name::Autolink => Role::Inline(Inline::Autolink),
+            Name::GfmAutolinkLiteralProtocol
+            | Name::GfmAutolinkLiteralWww
+            | Name::GfmAutolinkLiteralEmail
+            | Name::GfmAutolinkLiteralMailto
+            | Name::GfmAutolinkLiteralXmpp => Role::Inline(Inline::Literal),
+            Name::Link | Name::Image => Role::Inline(Inline::Media),
+            Name::GfmFootnoteCall => Role::Inline(Inline::FootnoteCall),
+            Name::SpaceOrTab => Role::Space(Space::SpaceOrTab),
+            Name::LineEnding => Role::Space(Space::LineEnding),
+            Name::BlankLineEnding => Role::Space(Space::BlankLineEnding),
+            Name::AttentionSequence
+            | Name::AutolinkEmail
+            | Name::AutolinkMarker
+            | Name::AutolinkProtocol
+            | Name::BlockQuoteMarker
+            | Name::BlockQuotePrefix
+            | Name::ByteOrderMark
+            | Name::CharacterEscapeMarker
+            | Name::CharacterEscapeValue
+            | Name::CharacterReferenceMarker
+            | Name::CharacterReferenceMarkerHexadecimal
+            | Name::CharacterReferenceMarkerNumeric
+            | Name::CharacterReferenceMarkerSemi
+            | Name::CharacterReferenceValue
+            | Name::CodeFencedFence
+            | Name::CodeFencedFenceInfo
+            | Name::CodeFencedFenceMeta
+            | Name::CodeFencedFenceSequence
+            | Name::CodeFlowChunk
+            | Name::CodeTextData
+            | Name::CodeTextSequence
+            | Name::Content
+            | Name::DefinitionDestination
+            | Name::DefinitionDestinationLiteral
+            | Name::DefinitionDestinationLiteralMarker
+            | Name::DefinitionDestinationRaw
+            | Name::DefinitionDestinationString
+            | Name::DefinitionLabel
+            | Name::DefinitionLabelMarker
+            | Name::DefinitionLabelString
+            | Name::DefinitionMarker
+            | Name::DefinitionTitle
+            | Name::DefinitionTitleMarker
+            | Name::DefinitionTitleString
+            | Name::EmphasisSequence
+            | Name::EmphasisText
+            | Name::FrontmatterChunk
+            | Name::FrontmatterFence
+            | Name::FrontmatterSequence
+            | Name::GfmFootnoteCallLabel
+            | Name::GfmFootnoteCallMarker
+            | Name::GfmFootnoteDefinitionPrefix
+            | Name::GfmFootnoteDefinitionLabel
+            | Name::GfmFootnoteDefinitionLabelMarker
+            | Name::GfmFootnoteDefinitionLabelString
+            | Name::GfmFootnoteDefinitionMarker
+            | Name::GfmStrikethroughSequence
+            | Name::GfmStrikethroughText
+            | Name::GfmTableBody
+            | Name::GfmTableCell
+            | Name::GfmTableCellText
+            | Name::GfmTableCellDivider
+            | Name::GfmTableDelimiterRow
+            | Name::GfmTableDelimiterMarker
+            | Name::GfmTableDelimiterCell
+            | Name::GfmTableDelimiterCellValue
+            | Name::GfmTableDelimiterFiller
+            | Name::GfmTableHead
+            | Name::GfmTableRow
+            | Name::GfmTaskListItemCheck
+            | Name::GfmTaskListItemMarker
+            | Name::GfmTaskListItemValueChecked
+            | Name::GfmTaskListItemValueUnchecked
+            | Name::HeadingAtxSequence
+            | Name::HeadingAtxText
+            | Name::HeadingSetextText
+            | Name::HeadingSetextUnderline
+            | Name::HeadingSetextUnderlineSequence
+            | Name::HtmlFlowData
+            | Name::HtmlTextData
+            | Name::Label
+            | Name::LabelEnd
+            | Name::LabelImage
+            | Name::LabelImageMarker
+            | Name::LabelLink
+            | Name::LabelMarker
+            | Name::LabelText
+            | Name::ListItem
+            | Name::ListItemMarker
+            | Name::ListItemPrefix
+            | Name::ListItemValue
+            | Name::MathFlowFence
+            | Name::MathFlowFenceMeta
+            | Name::MathFlowFenceSequence
+            | Name::MathFlowChunk
+            | Name::MathTextData
+            | Name::MathTextSequence
+            | Name::Reference
+            | Name::ReferenceMarker
+            | Name::ReferenceString
+            | Name::Resource
+            | Name::ResourceDestination
+            | Name::ResourceDestinationLiteral
+            | Name::ResourceDestinationLiteralMarker
+            | Name::ResourceDestinationRaw
+            | Name::ResourceDestinationString
+            | Name::ResourceMarker
+            | Name::ResourceTitle
+            | Name::ResourceTitleMarker
+            | Name::ResourceTitleString
+            | Name::ListItemIndent
+            | Name::GfmFootnoteDefinitionIndent
+            | Name::StrongSequence
+            | Name::StrongText
+            | Name::ThematicBreakSequence => Role::Part,
+        }
+    }
+}
+
 /// List of void events, used to make sure everything is working well.
 pub const VOID_EVENTS: [Name; 62] = [
     Name::AttentionSequence,
