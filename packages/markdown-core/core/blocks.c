@@ -8107,6 +8107,53 @@ static bool S_cut_read(markdown_core_parser *parser, S_cutting *cutting) {
     return read_ok;
 }
 
+/* A READING OF ITS OWN (micromark's subtokenize, one chunk): a construct
+ * read over a chunk from its first byte, whose tokens the asker reads once
+ * it is found (markdown_core_alone_read). */
+static markdown_core_state S_alone_done(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    markdown_core_move_to(tokenizer, tokenizer->size);
+    return markdown_core_pause(tokenizer, markdown_core_state_of(S_alone_done));
+}
+
+static markdown_core_state S_alone_found(markdown_core_tokenizer *tokenizer, int code) {
+    ((markdown_core_alone *)tokenizer->reader)->found = true;
+    return S_alone_done(tokenizer, code);
+}
+
+static markdown_core_state S_alone_start(markdown_core_tokenizer *tokenizer, int code) {
+    const markdown_core_alone *alone = tokenizer->reader;
+    return markdown_core_attempt(tokenizer, alone->construct, markdown_core_state_of(S_alone_found),
+                                 markdown_core_state_of(S_alone_done), code);
+}
+
+bool markdown_core_alone_read(markdown_core_parser *parser, markdown_core_alone *alone,
+                              const markdown_core_construct *construct, const unsigned char *data, uint32_t size) {
+    *alone = (markdown_core_alone){.construct = construct};
+    alone->pass = markdown_core_pass_take(parser);
+    if (!alone->pass) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return false;
+    }
+    const markdown_core_read read = {.cut = UINT32_MAX, .reader = alone};
+    markdown_core_tokenizer *tokenizer = &alone->pass->tokenizer;
+    markdown_core_tokenizer_begin(tokenizer, &read, markdown_core_state_of(S_alone_start));
+    if (!(markdown_core_tokenizer_feed(tokenizer, data, size, 0) && markdown_core_tokenizer_end(tokenizer))) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        alone->found = false;
+        return false;
+    }
+    alone->events = &tokenizer->events;
+    return true;
+}
+
+void markdown_core_alone_end(markdown_core_parser *parser, markdown_core_alone *alone) {
+    if (alone->pass) {
+        markdown_core_pass_back(parser, alone->pass);
+    }
+    *alone = (markdown_core_alone){0};
+}
+
 /* WHAT AN ITEM READ (blocks.c, THE REACH): an item cut in a block of the
  * root, `length` bytes from `at` of the block's text, was decided by its own
  * bytes and the first after them, or, `wide`, by those through the line

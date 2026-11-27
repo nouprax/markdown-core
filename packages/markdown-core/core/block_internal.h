@@ -151,6 +151,21 @@ static inline uint16_t markdown_core_block_token(const markdown_core_tokenizer *
  * the line reads from where the cursor stands. */
 markdown_core_state markdown_core_block_span(markdown_core_tokenizer *tokenizer, uint16_t kind, bufsize_t end);
 
+/* A READING OF ITS OWN (micromark's subtokenize, one chunk): `construct`,
+ * its context the asker's, read over the `size` bytes at `data` from their
+ * first. `found` says whether it was, and `events` holds its tokens until
+ * markdown_core_alone_end. False, with the parse failed, when storage could
+ * not be had. */
+typedef struct {
+    const markdown_core_construct *construct;
+    struct markdown_core_pass *pass;
+    const markdown_core_events *events;
+    bool found;
+} markdown_core_alone;
+bool markdown_core_alone_read(markdown_core_parser *parser, markdown_core_alone *alone,
+                              const markdown_core_construct *construct, const unsigned char *data, uint32_t size);
+void markdown_core_alone_end(markdown_core_parser *parser, markdown_core_alone *alone);
+
 int markdown_core_block_consume_item_marker(markdown_core_reader *reader, int marker_width);
 /* Adds the rest of the line in hand, from the reader's offset, to `node`'s content. */
 void markdown_core_block_add_line(markdown_core_parser *parser, markdown_core_node *node);

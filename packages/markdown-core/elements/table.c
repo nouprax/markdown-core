@@ -1,5 +1,4 @@
 #include "alloc.h"
-#include "table_scanners.h"
 #include <markdown-core-element-api.h>
 #include "element.h"
 #include <inlines.h>
@@ -31,13 +30,6 @@ typedef struct {
     markdown_core_chunk content;
     int start_offset, end_offset, internal_offset;
 } node_cell;
-
-/* A recognized final row borrows its source; no cell array is retained. */
-typedef struct {
-    unsigned char *source;
-    int length, paragraph_offset;
-    uint16_t n_columns;
-} pipe_row;
 
 static void free_node_table(markdown_core_table *table) {
     if (!table) {
@@ -122,83 +114,225 @@ static void set_cell_content(markdown_core_parser *parser, markdown_core_reader 
     }
 }
 
-/* A pipe-row cursor borrows source bytes. Recognition and materialization
- * use the same cell iterator; failed candidates never allocate row geometry. */
+/* THE ROW (micromark-extension-gfm-table, code by code): a line of cells
+ * between pipes, from its first byte that is no space to its ending, as a
+ * row token holding a token for each pipe that divides it. A pipe a
+ * backslash escapes is a cell's byte, and a row has a cell. The delimiter row is a row whose cells are each a
+ * dash run, a colon at either end of it, and spaces around it.
+ *
+ * The frame's words: the cells counted, whether a cell is open and holds a
+ * byte that is no space, the row token's kind and, in a delimiter row,
+ * where its cell is. */
+enum { TABLE_HEAD, TABLE_ROW, TABLE_PIPE, TABLE_BLOCKS };
+
+/* What a table's start found: the cells of its delimiter row, and where
+ * the header row starts in the paragraph's text. */
 typedef struct {
-    unsigned char *source;
-    int length, offset, row_start;
     uint32_t columns;
-    bool finished, valid;
-} pipe_row_cursor;
+    bufsize_t header;
+} table_found;
+MARKDOWN_CORE_BLOCK_FOUND_FITS(table_found, table_found_fits);
+enum { ROW_CELLS, ROW_OPEN, ROW_FILLED, ROW_KIND, ROW_PHASE };
+/* Where a delimiter cell is: before its marker, past its opening colon, in
+ * its dashes, past them. */
+enum { MARK_BEFORE, MARK_COLON, MARK_DASHES, MARK_AFTER };
 
-static pipe_row_cursor pipe_row_begin(unsigned char *source, int length, int start) {
-    return (pipe_row_cursor){.source = source,
-                             .length = length,
-                             .offset = start + scan_table_cell_end(source, length, start),
-                             .row_start = start};
+static markdown_core_state S_head_yes(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    return markdown_core_ok(tokenizer);
 }
 
-static bool pipe_row_next(pipe_row_cursor *cursor, node_cell *cell) {
-    while (!cursor->finished && cursor->offset < cursor->length) {
-        int offset = cursor->offset;
-        int content = scan_table_cell(cursor->source, cursor->length, offset);
-        int separator = scan_table_cell_end(cursor->source, cursor->length, offset + content);
-        bool present = content || separator;
-        if (present) {
-            if (++cursor->columns > UINT16_MAX) {
-                cursor->finished = true;
-                return false;
-            }
-            *cell = (node_cell){.content = {cursor->source + offset, content, 0},
-                                .start_offset = offset,
-                                .end_offset = offset + content - 1};
-            markdown_core_chunk_trim(&cell->content);
-            while (cell->start_offset > cursor->row_start && cursor->source[cell->start_offset - 1] != '|') {
-                --cell->start_offset;
-                ++cell->internal_offset;
-            }
-            if (!content && cell->start_offset == offset) {
-                cell->end_offset = offset;
-            }
-        }
-        cursor->offset += content + separator;
-        if (!separator) {
-            int ending = scan_table_row_end(cursor->source, cursor->length, cursor->offset);
-            cursor->offset += ending;
-            if (ending && cursor->offset != cursor->length) {
-                cursor->row_start = cursor->offset;
-                cursor->columns = 0;
-                cursor->offset += scan_table_cell_end(cursor->source, cursor->length, cursor->offset);
-            } else {
-                cursor->finished = true;
-            }
-        }
-        if (present) {
-            return true;
-        }
-    }
-    cursor->finished = true;
-    cursor->valid = cursor->offset == cursor->length && cursor->columns != 0;
-    return false;
+static markdown_core_state S_head_no(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    return markdown_core_nok(tokenizer);
 }
 
-static bool recognize_pipe_row(unsigned char *source, int length, pipe_row *row) {
-    pipe_row_cursor cursor = pipe_row_begin(source, length, 0);
-    node_cell cell;
-    while (pipe_row_next(&cursor, &cell)) {
+static markdown_core_state S_row_cell(markdown_core_tokenizer *tokenizer, int code);
+static markdown_core_state S_mark_cell(markdown_core_tokenizer *tokenizer, int code);
+
+static markdown_core_state S_row_end(markdown_core_tokenizer *tokenizer) {
+    uint32_t *words = markdown_core_frame_local(tokenizer);
+    if (!words[ROW_CELLS] || words[ROW_CELLS] > UINT16_MAX) {
+        return markdown_core_nok(tokenizer);
     }
-    if (!cursor.valid) {
+    /* A delimiter row's count outlives its frame in the start's record. */
+    if (words[ROW_KIND] == markdown_core_block_token(tokenizer, TABLE_HEAD)) {
+        MARKDOWN_CORE_BLOCK_FOUND(markdown_core_block_turn_of(tokenizer)->start, table_found)->columns =
+            words[ROW_CELLS];
+    }
+    markdown_core_exit(tokenizer, (uint16_t)words[ROW_KIND]);
+    return markdown_core_ok(tokenizer);
+}
+
+/* A pipe ends the cell open before it and opens the next. */
+static void S_row_pipe(markdown_core_tokenizer *tokenizer) {
+    uint32_t *words = markdown_core_frame_local(tokenizer);
+    words[ROW_CELLS] += words[ROW_OPEN];
+    words[ROW_OPEN] = 1;
+    words[ROW_FILLED] = 0;
+    const uint16_t pipe = markdown_core_block_token(tokenizer, TABLE_PIPE);
+    markdown_core_enter(tokenizer, pipe);
+    markdown_core_consume(tokenizer);
+    markdown_core_exit(tokenizer, pipe);
+}
+
+/* A pipe right after a backslash is the cell's, whatever is before it. */
+static markdown_core_state S_row_escape(markdown_core_tokenizer *tokenizer, int code) {
+    if (code == '|') {
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_row_cell);
+    }
+    return S_row_cell(tokenizer, code);
+}
+
+static markdown_core_state S_row_cell(markdown_core_tokenizer *tokenizer, int code) {
+    uint32_t *words = markdown_core_frame_local(tokenizer);
+    if (markdown_core_code_ending(code)) {
+        words[ROW_CELLS] += words[ROW_OPEN] && words[ROW_FILLED];
+        return S_row_end(tokenizer);
+    }
+    if (code == '|') {
+        S_row_pipe(tokenizer);
+        return markdown_core_state_of(S_row_cell);
+    }
+    words[ROW_FILLED] |= !markdown_core_code_space(code);
+    markdown_core_consume(tokenizer);
+    return code == '\\' ? markdown_core_state_of(S_row_escape) : markdown_core_state_of(S_row_cell);
+}
+
+static markdown_core_state S_row_first(markdown_core_tokenizer *tokenizer, int code) {
+    uint32_t *words = markdown_core_frame_local(tokenizer);
+    if (markdown_core_code_ending(code)) {
+        return markdown_core_nok(tokenizer);
+    }
+    markdown_core_enter(tokenizer, (uint16_t)words[ROW_KIND]);
+    if (code == '|') {
+        S_row_pipe(tokenizer);
+        return markdown_core_state_of(S_row_cell);
+    }
+    words[ROW_OPEN] = 1;
+    return S_row_cell(tokenizer, code);
+}
+
+static markdown_core_state S_row(markdown_core_tokenizer *tokenizer, int code) {
+    markdown_core_frame_local(tokenizer)[ROW_KIND] = markdown_core_block_token(tokenizer, TABLE_ROW);
+    return markdown_core_spaces(tokenizer, markdown_core_state_of(S_row_first), 0, UINT32_MAX, code);
+}
+
+static const markdown_core_construct TABLE_ROW_READ = {.start = S_row};
+
+static markdown_core_state S_mark_cell(markdown_core_tokenizer *tokenizer, int code) {
+    uint32_t *words = markdown_core_frame_local(tokenizer);
+    const uint32_t phase = words[ROW_PHASE];
+    const bool marked = phase == MARK_DASHES || phase == MARK_AFTER;
+    if (markdown_core_code_ending(code)) {
+        if (!marked && phase != MARK_BEFORE) {
+            return markdown_core_nok(tokenizer);
+        }
+        words[ROW_CELLS] += marked;
+        return S_row_end(tokenizer);
+    }
+    if (code == '|') {
+        if (!marked) {
+            return markdown_core_nok(tokenizer);
+        }
+        words[ROW_OPEN] = 1;
+        S_row_pipe(tokenizer);
+        words[ROW_PHASE] = MARK_BEFORE;
+        return markdown_core_state_of(S_mark_cell);
+    }
+    if (markdown_core_code_space(code)) {
+        if (phase == MARK_COLON) {
+            return markdown_core_nok(tokenizer);
+        }
+        words[ROW_PHASE] = phase == MARK_BEFORE ? MARK_BEFORE : MARK_AFTER;
+    } else if (code == ':' && (phase == MARK_BEFORE || phase == MARK_DASHES)) {
+        words[ROW_PHASE] = phase == MARK_BEFORE ? MARK_COLON : MARK_AFTER;
+    } else if (code == '-' && phase != MARK_AFTER) {
+        words[ROW_PHASE] = MARK_DASHES;
+    } else {
+        return markdown_core_nok(tokenizer);
+    }
+    markdown_core_consume(tokenizer);
+    return markdown_core_state_of(S_mark_cell);
+}
+
+static markdown_core_state S_mark_first(markdown_core_tokenizer *tokenizer, int code) {
+    uint32_t *words = markdown_core_frame_local(tokenizer);
+    markdown_core_enter(tokenizer, (uint16_t)words[ROW_KIND]);
+    words[ROW_PHASE] = MARK_BEFORE;
+    if (code == '|') {
+        S_row_pipe(tokenizer);
+        return markdown_core_state_of(S_mark_cell);
+    }
+    return S_mark_cell(tokenizer, code);
+}
+
+/* THE CELLS OF A ROW, from the row token at `row` of `events` and the
+ * pipe tokens after it, over the bytes `data` its offsets index: the bytes
+ * between two pipes are a cell, those before the first one when the row
+ * does not start with it, and those after the last one when they hold a
+ * byte that is no space. A cell starts past the pipe before it, its
+ * content past the spaces after that pipe; its content is trimmed. */
+typedef struct {
+    const unsigned char *data;
+    const markdown_core_token *tokens;
+    size_t next, count;
+    uint16_t pipe;
+    uint32_t at, end;
+} S_cells;
+
+static S_cells S_cells_of(const markdown_core_events *events, size_t row, uint16_t pipe, const unsigned char *data) {
+    S_cells cells = {.data = data,
+                     .tokens = events->tokens,
+                     .next = row + 1,
+                     .count = events->token_count,
+                     .pipe = pipe,
+                     .at = events->tokens[row].start,
+                     .end = events->tokens[row].end};
+    if (cells.next < cells.count && cells.tokens[cells.next].kind == pipe &&
+        cells.tokens[cells.next].start == cells.at) {
+        cells.at = cells.tokens[cells.next++].end;
+    }
+    return cells;
+}
+
+/* The next cell, its offsets `base` before the data's. */
+static bool S_cells_next(S_cells *cells, node_cell *cell, uint32_t base) {
+    const bool piped = cells->next < cells->count && cells->tokens[cells->next].kind == cells->pipe &&
+                       cells->tokens[cells->next].start < cells->end;
+    const uint32_t from = cells->at, to = piped ? cells->tokens[cells->next].start : cells->end;
+    if (!piped && from >= cells->end) {
         return false;
     }
-    *row = (pipe_row){.source = source,
-                      .length = length,
-                      .paragraph_offset = cursor.row_start,
-                      .n_columns = (uint16_t)cursor.columns};
+    uint32_t inner = from;
+    while (inner < to && markdown_core_is_space_or_tab(cells->data[inner])) {
+        inner++;
+    }
+    if (!piped && inner == to) {
+        cells->at = cells->end;
+        return false;
+    }
+    *cell = (node_cell){.content = {(unsigned char *)cells->data + inner, (bufsize_t)(to - inner), 0},
+                        .start_offset = (int)(from - base),
+                        .end_offset = (int)((to > from ? to - 1 : from) - base),
+                        .internal_offset = (int)(inner - from)};
+    markdown_core_chunk_trim(&cell->content);
+    cells->at = piped ? cells->tokens[cells->next++].end : cells->end;
     return true;
 }
 
-static pipe_row_cursor pipe_row_cells(const pipe_row *row) {
-    return pipe_row_begin(row->source, row->length, row->paragraph_offset);
+/* The row the `size` bytes at `data` start with, read alone (THE ROW):
+ * false when they are none, the reading `alone` then ended. */
+static bool S_row_alone(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                        markdown_core_alone *alone, const unsigned char *data, bufsize_t size) {
+    markdown_core_construct row = TABLE_ROW_READ;
+    row.context = self;
+    if (!markdown_core_alone_read(parser, alone, &row, data, (uint32_t)size) || !alone->found) {
+        markdown_core_alone_end(parser, alone);
+        return false;
+    }
+    return true;
 }
 
 /* Give `node` the source span of [start_offset, end_offset] in `owner`'s
@@ -312,57 +446,94 @@ static markdown_core_node *S_open_table(markdown_core_parser *parser, markdown_c
     return markdown_core_parser_open_child(parser, parent, table);
 }
 
-/* Return NULL when the syntax does not match or the parent rejects the table
- * kind, so later elements can try the same line. A pipe table opens at its
- * delimiter row, and its header row is the last line of the paragraph above
- * it (S_open_table). Once the table has opened, return it even if a later
- * allocation fails; parser->error then aborts the parse and destruction
- * releases the partially built table. */
-/* What a table's start found: the rows of its line, and of the paragraph
- * line before it when the line is a delimiter row. */
-typedef struct {
-    pipe_row header_row, row;
-} table_found;
-MARKDOWN_CORE_BLOCK_FOUND_FITS(table_found, table_found_fits);
-
-/* A delimiter row whose header, the last line of the paragraph's text,
- * is as wide as it. A header of another width marks the paragraph, which
- * no later line makes a table then. */
-static bool S_head_found(markdown_core_node *paragraph, markdown_core_reader *reader, table_found *found) {
-    if (paragraph->flags & MARKDOWN_CORE_NODE__TABLE_VISITED) {
-        return false;
+/* Where the last line of `text` starts. */
+static bufsize_t S_last_line(markdown_core_chunk text) {
+    bufsize_t end = text.len;
+    if (end && text.data[end - 1] == '\n') {
+        end--;
     }
-
-    if (!scan_table_start(markdown_core_reader_rest(reader, 0), markdown_core_reader_length(reader),
-                          reader->nonspace)) {
-        return false;
+    if (end && text.data[end - 1] == '\r') {
+        end--;
     }
-    if (!recognize_pipe_row((unsigned char *)markdown_core_reader_rest(reader, reader->nonspace),
-                            markdown_core_reader_length(reader) - reader->nonspace, &found->row)) {
-        return false;
+    while (end && text.data[end - 1] != '\n' && text.data[end - 1] != '\r') {
+        end--;
     }
+    return end;
+}
 
-    // Select the final header row and verify width before committing a table.
-    /* The header row is the last line of the paragraph's text. */
-    markdown_core_chunk text = markdown_core_node_text(paragraph);
-    if (!recognize_pipe_row(text.data, text.len, &found->header_row) ||
-        found->header_row.n_columns != found->row.n_columns) {
+/* The cells of the row the `size` bytes at `data` start with, 0 when they
+ * are none. */
+static uint32_t S_row_width(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                            const unsigned char *data, bufsize_t size) {
+    markdown_core_alone alone;
+    if (!S_row_alone(self, parser, &alone, data, size)) {
+        return 0;
+    }
+    uint32_t columns = 0;
+    S_cells cells = S_cells_of(alone.events, 0, (uint16_t)(self->block_base + TABLE_PIPE), data);
+    node_cell cell;
+    while (S_cells_next(&cells, &cell, 0)) {
+        columns++;
+    }
+    markdown_core_alone_end(parser, &alone);
+    return columns;
+}
+
+/* A delimiter row as wide as its header, the last line of the paragraph's
+ * text, opens the table. A header of another width marks the paragraph,
+ * which no later line makes a table then. */
+static markdown_core_state S_head_read(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
+    markdown_core_node *paragraph = turn->context->container;
+    table_found *found = MARKDOWN_CORE_BLOCK_FOUND(turn->start, table_found);
+    const markdown_core_chunk text = markdown_core_node_text(paragraph);
+    found->header = S_last_line(text);
+    const uint32_t width =
+        S_row_width(markdown_core_self(tokenizer), turn->parser, text.data + found->header, text.len - found->header);
+    if (turn->parser->error) {
+        return markdown_core_nok(tokenizer);
+    }
+    if (width != found->columns) {
         paragraph->flags |= MARKDOWN_CORE_NODE__TABLE_VISITED;
-        return false;
+        return markdown_core_nok(tokenizer);
     }
-    return true;
+    return markdown_core_ok(tokenizer);
+}
+
+static markdown_core_state S_head_row(markdown_core_tokenizer *tokenizer, int code) {
+    markdown_core_frame_local(tokenizer)[ROW_KIND] = markdown_core_block_token(tokenizer, TABLE_HEAD);
+    return markdown_core_spaces(tokenizer, markdown_core_state_of(S_mark_first), 0, UINT32_MAX, code);
+}
+
+static const markdown_core_construct TABLE_MARKS = {.start = S_head_row};
+
+/* The marks counted, the header is read: the frame of the delimiter row
+ * is gone, so its count is handed on in the start's record. */
+static markdown_core_state S_head_marked(markdown_core_tokenizer *tokenizer, int code) {
+    return S_head_read(tokenizer, code);
+}
+
+/* A delimiter row under a paragraph's last line opens the table. */
+static markdown_core_state S_head_start(markdown_core_tokenizer *tokenizer, int code) {
+    markdown_core_node *container = markdown_core_block_turn_of(tokenizer)->context->container;
+    if (container->kind != MARKDOWN_CORE_NODE_PARAGRAPH || (container->flags & MARKDOWN_CORE_NODE__TABLE_VISITED)) {
+        return markdown_core_nok(tokenizer);
+    }
+    return markdown_core_attempt(tokenizer, &TABLE_MARKS, markdown_core_state_of(S_head_marked),
+                                 markdown_core_state_of(S_head_no), code);
 }
 
 static markdown_core_node *S_head_open(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                        markdown_core_node *paragraph, markdown_core_reader *reader,
+                                       const markdown_core_compiler *compiler, uint32_t index,
                                        const table_found *found) {
     markdown_core_node *table_header;
-    pipe_row header_row = found->header_row, delimiter_row = found->row;
     markdown_core_chunk text = markdown_core_node_text(paragraph);
-    uint16_t i;
+    const uint16_t pipe = (uint16_t)(self->block_base + TABLE_PIPE);
 
-    markdown_core_node *node = S_open_table(parser, paragraph, markdown_core_parser_parent(parser, paragraph), text,
-                                            header_row.paragraph_offset);
+    markdown_core_node *node =
+        S_open_table(parser, paragraph, markdown_core_parser_parent(parser, paragraph), text, found->header);
     if (!node) {
         return NULL;
     }
@@ -373,9 +544,6 @@ static markdown_core_node *S_head_open(const markdown_core_element_instance *sel
      * on line three was reported at 1:10, a column that is not on line one.
      * The map turns each offset back into the place it was written. */
     text = markdown_core_node_text(node);
-    header_row.source = text.data;
-    header_row.length = text.len;
-    header_row.paragraph_offset = 0;
 
     /* Table data belongs to the element. Its cleanup accepts partial
      * initialization when an allocation fails. */
@@ -387,16 +555,16 @@ static markdown_core_node *S_head_open(const markdown_core_element_instance *sel
         return node;
     }
     markdown_core_table *table = node->opaque;
-    table->column_count = header_row.n_columns;
+    table->column_count = (uint16_t)found->columns;
     table->columns = markdown_core_alloc(table->column_count, sizeof(*table->columns));
     if (!table->columns) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
 
         return node;
     }
-    pipe_row_cursor markers = pipe_row_cells(&delimiter_row);
+    S_cells markers = S_cells_of(compiler->events, index, pipe, compiler->data);
     node_cell geometry;
-    for (i = 0; pipe_row_next(&markers, &geometry); ++i) {
+    for (uint16_t i = 0; i < table->column_count && S_cells_next(&markers, &geometry, 0); ++i) {
         const markdown_core_chunk *cell = &geometry.content;
         bool left = cell->data[0] == ':', right = cell->data[cell->len - 1] == ':';
         table->columns[i].flow = left ? (right ? MARKDOWN_CORE_FLOW_CENTER : MARKDOWN_CORE_FLOW_LEFT)
@@ -410,20 +578,24 @@ static markdown_core_node *S_head_open(const markdown_core_element_instance *sel
 
         return node;
     }
-    S_place_content_span(parser, node, table_header, 0, header_row.length - 2);
+    S_place_content_span(parser, node, table_header, 0, text.len - 2);
 
     table->head_count = 1;
 
-    pipe_row_cursor header = pipe_row_cells(&header_row);
-    while (pipe_row_next(&header, &geometry)) {
-        const node_cell *cell = &geometry;
-        markdown_core_node *header_cell = new_cell(parser, reader, 0);
-        if (!header_cell) {
-            break;
+    markdown_core_alone alone;
+    if (S_row_alone(self, parser, &alone, text.data, text.len)) {
+        S_cells header = S_cells_of(alone.events, 0, pipe, text.data);
+        while (S_cells_next(&header, &geometry, 0)) {
+            const node_cell *cell = &geometry;
+            markdown_core_node *header_cell = new_cell(parser, reader, 0);
+            if (!header_cell) {
+                break;
+            }
+            S_place_content_span(parser, node, header_cell, cell->start_offset, cell->end_offset);
+            set_cell_content(parser, reader, header_cell, cell, node, (bufsize_t)(cell->content.data - text.data));
+            markdown_core_block_settle(parser, header_cell, table_header);
         }
-        S_place_content_span(parser, node, header_cell, cell->start_offset, cell->end_offset);
-        set_cell_content(parser, reader, header_cell, cell, node, (bufsize_t)(cell->content.data - header_row.source));
-        markdown_core_block_settle(parser, header_cell, table_header);
+        markdown_core_alone_end(parser, &alone);
     }
     markdown_core_block_settle(parser, table_header, node);
 
@@ -462,39 +634,21 @@ static void S_extra_field(markdown_core_parser *parser, markdown_core_reader *re
     markdown_core_field_add(&fields, MARKDOWN_CORE_SLOT_NONE, start, end);
 }
 
-/* A pipe row on a line of a table that takes more rows. */
-static bool S_row_found(markdown_core_node *parent_container, markdown_core_reader *reader, table_found *found) {
-    if (reader->blank) {
-        return false;
-    }
-
-    markdown_core_table *table = parent_container->opaque;
-    if (!table || table->autocompleted_cells > MAX_AUTOCOMPLETED_CELLS) {
-        return false;
-    }
-
-    return recognize_pipe_row((unsigned char *)markdown_core_reader_rest(reader, reader->nonspace),
-                              markdown_core_reader_length(reader) - reader->nonspace, &found->row);
-}
-
-static markdown_core_node *S_row_open(markdown_core_parser *parser, markdown_core_node *parent_container,
-                                      markdown_core_reader *reader, const table_found *found) {
+static markdown_core_node *S_row_open(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                      markdown_core_node *parent_container, markdown_core_reader *reader,
+                                      const markdown_core_compiler *compiler, uint32_t index, uint32_t base) {
     markdown_core_node *table_row_block;
-    pipe_row row = found->row;
     markdown_core_table *table = parent_container->opaque;
+    const markdown_core_token *token = &compiler->events->tokens[index];
     /* A pipe row begins at its own first non-space byte, as its header does:
      * `reader->offset` is the container's content, which holds the row's
      * indentation or the tail of a tab its container prefix shares. */
     /* The row is whole once its line is read: it settles into the table,
      * which stays the current block, and a reopen at the next row finds
      * none open inside it. */
-    bufsize_t completed_at = markdown_core_reader_length(reader);
-    while (completed_at > 0 && (markdown_core_reader_peek(reader, completed_at - 1) == '\n' ||
-                                markdown_core_reader_peek(reader, completed_at - 1) == '\r')) {
-        completed_at--;
-    }
+    const bufsize_t first = (bufsize_t)(token->start - base), completed_at = (bufsize_t)(token->end - base);
     table_row_block = table_child(parser, MARKDOWN_CORE_NODE_TABLE_ROW,
-                                  markdown_core_reader_span(reader, parser, reader->nonspace, completed_at));
+                                  markdown_core_reader_span(reader, parser, first, completed_at));
     if (!table_row_block) {
         return NULL;
     }
@@ -505,20 +659,19 @@ static markdown_core_node *S_row_open(markdown_core_parser *parser, markdown_cor
     {
         int i, table_columns = (int)table->column_count;
 
-        pipe_row_cursor cells = pipe_row_cells(&row);
+        S_cells cells = S_cells_of(compiler->events, index, (uint16_t)(self->block_base + TABLE_PIPE), compiler->data);
         node_cell geometry;
         bufsize_t past = -1;
-        for (i = 0; i < table_columns && pipe_row_next(&cells, &geometry); ++i) {
+        for (i = 0; i < table_columns && S_cells_next(&cells, &geometry, base); ++i) {
             const node_cell *cell = &geometry;
-            const bufsize_t from = reader->nonspace + cell->start_offset, to = reader->nonspace + cell->end_offset;
+            const bufsize_t from = cell->start_offset, to = cell->end_offset;
             past = to + 1;
             markdown_core_node *node = table_child(parser, MARKDOWN_CORE_NODE_TABLE_CELL,
                                                    markdown_core_reader_span(reader, parser, from, to + 1));
             if (!node) {
                 break;
             }
-            set_cell_content(parser, reader, node, cell, NULL,
-                             (bufsize_t)(cell->content.data - markdown_core_reader_bytes(reader, 0)));
+            set_cell_content(parser, reader, node, cell, NULL, (bufsize_t)(cell->content.data - compiler->data - base));
             markdown_core_block_settle(parser, node, table_row_block);
         }
 
@@ -555,68 +708,39 @@ static markdown_core_node *S_row_open(markdown_core_parser *parser, markdown_cor
     return parent_container;
 }
 
-/* A pipe table opens at its delimiter row, whose header is the last line of
- * the paragraph above it, and takes a row on each later line it matches. */
-enum { TABLE_HEAD, TABLE_ROW, TABLE_BLOCKS };
-
-/* A delimiter row under a paragraph's last line opens the table. */
-static markdown_core_state S_head_start(markdown_core_tokenizer *tokenizer, int code) {
-    (void)code;
-    markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
-    markdown_core_node *container = turn->context->container;
-    if (container->kind == MARKDOWN_CORE_NODE_PARAGRAPH &&
-        S_head_found(container, turn->context->reader, MARKDOWN_CORE_BLOCK_FOUND(turn->start, table_found))) {
-        return markdown_core_block_found(tokenizer, TABLE_HEAD);
-    }
-    return markdown_core_nok(tokenizer);
-}
-
-/* A pipe row in an open table is its next row. */
+/* A pipe row in an open table that takes more rows is its next row. */
 static markdown_core_state S_row_start(markdown_core_tokenizer *tokenizer, int code) {
-    (void)code;
-    markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
-    if (S_row_found(turn->context->container, turn->context->reader,
-                    MARKDOWN_CORE_BLOCK_FOUND(turn->start, table_found))) {
-        return markdown_core_block_found(tokenizer, TABLE_ROW);
+    const markdown_core_table *table = markdown_core_block_turn_of(tokenizer)->context->container->opaque;
+    if (!table || table->autocompleted_cells > MAX_AUTOCOMPLETED_CELLS) {
+        return markdown_core_nok(tokenizer);
     }
-    return markdown_core_nok(tokenizer);
+    return markdown_core_attempt(tokenizer, &TABLE_ROW_READ, markdown_core_state_of(S_head_yes),
+                                 markdown_core_state_of(S_head_no), code);
 }
 
+/* The delimiter row opens the table, or, refused, is the line's text. */
 static void S_head(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
-    (void)token;
-    (void)index;
     markdown_core_block_turn *turn = markdown_core_block_turned(compiler);
-    markdown_core_node *node = S_head_open(markdown_core_compile_self(compiler), turn->parser, *turn->container,
-                                           turn->context->reader, MARKDOWN_CORE_BLOCK_FOUND(turn->start, table_found));
+    markdown_core_node *node =
+        S_head_open(markdown_core_compile_self(compiler), turn->parser, *turn->container, turn->context->reader,
+                    compiler, index, MARKDOWN_CORE_BLOCK_FOUND(turn->start, table_found));
+    if (node) {
+        *turn->container = node;
+        turn->opened = true;
+    } else if (!turn->parser->error) {
+        turn->gives = token->start;
+    }
+}
+
+static void S_row_made(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
+    (void)token;
+    markdown_core_block_turn *turn = markdown_core_block_turned(compiler);
+    markdown_core_node *node = S_row_open(markdown_core_compile_self(compiler), turn->parser, *turn->container,
+                                          turn->context->reader, compiler, index, turn->base);
     if (node) {
         *turn->container = node;
         turn->opened = true;
     }
-}
-
-static void S_row(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
-    (void)token;
-    (void)index;
-    markdown_core_block_turn *turn = markdown_core_block_turned(compiler);
-    markdown_core_node *node = S_row_open(turn->parser, *turn->container, turn->context->reader,
-                                          MARKDOWN_CORE_BLOCK_FOUND(turn->start, table_found));
-    if (node) {
-        *turn->container = node;
-        turn->opened = true;
-    }
-}
-
-/* A table goes on at any line a pipe row reads: a blank line or a block
- * start that interrupts it ends it. */
-static int matches(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                   markdown_core_reader *reader, markdown_core_node *parent_container) {
-    (void)self;
-    if (parent_container->kind != MARKDOWN_CORE_NODE_TABLE) {
-        return 0;
-    }
-    pipe_row row;
-    return recognize_pipe_row((unsigned char *)markdown_core_reader_rest(reader, reader->nonspace),
-                              markdown_core_reader_length(reader) - reader->nonspace, &row);
 }
 
 static const markdown_core_node_type containment_kinds[] = {MARKDOWN_CORE_NODE_TABLE, MARKDOWN_CORE_NODE_TABLE_ROW,
@@ -700,15 +824,15 @@ static const markdown_core_content_ops TABLE_CONTENT = {
     .holds_inlines = contains_inlines,
 };
 
-/* A delimiter row begins with a pipe, a colon or a dash (scan_table_start). */
+/* A delimiter row begins with a pipe, a colon or a dash. */
 static const markdown_core_block_construct TABLE_STARTS[] = {
     {.bytes = "|:-", .indent = 3, .precedence = 1, .construct = {.start = S_head_start}},
     {.indent = 3, .precedence = 1, .within = MARKDOWN_CORE_NODE_TABLE, .construct = {.start = S_row_start}},
 };
 
 static const markdown_core_compile_ops TABLE_BLOCK_TOKENS[TABLE_BLOCKS] = {
-    [TABLE_HEAD] = {.enter = S_head},
-    [TABLE_ROW] = {.enter = S_row},
+    [TABLE_HEAD] = {.exit = S_head},
+    [TABLE_ROW] = {.exit = S_row_made},
 };
 
 static const markdown_core_open_ops TABLE_OPENS = {
@@ -718,14 +842,22 @@ static const markdown_core_open_ops TABLE_OPENS = {
     .token_count = TABLE_BLOCKS,
 };
 
-/* THE CONTINUATION (element.h, markdown_core_line_ops `continuation`). */
-static markdown_core_state S_continue(markdown_core_tokenizer *tokenizer, int code) {
+/* THE CONTINUATION (element.h, markdown_core_line_ops `continuation`): a
+ * table goes on at any line a pipe row reads; a blank line or a block
+ * start that interrupts it ends it. A block of its kind holds no block a
+ * lookahead adds. */
+static markdown_core_state S_goes(markdown_core_tokenizer *tokenizer, int code) {
     (void)code;
+    return markdown_core_block_continued(tokenizer, MARKDOWN_CORE_TOKEN_PREFIX);
+}
+
+static markdown_core_state S_continue(markdown_core_tokenizer *tokenizer, int code) {
     markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
-    /* A block of its kind holds no block a lookahead adds. */
-    return markdown_core_block_verdict(
-        tokenizer, turn->look ? MARKDOWN_CORE_LINE_OFF
-                              : matches(markdown_core_self(tokenizer), turn->parser, turn->reader, turn->node));
+    if (turn->look || turn->node->kind != MARKDOWN_CORE_NODE_TABLE) {
+        return markdown_core_nok(tokenizer);
+    }
+    return markdown_core_check(tokenizer, &TABLE_ROW_READ, markdown_core_state_of(S_goes),
+                               markdown_core_state_of(S_head_no), code);
 }
 
 static const markdown_core_line_ops TABLE_LINES = {

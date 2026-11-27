@@ -48,7 +48,6 @@ set(LIBRARY_SOURCES
     subscript.c
     superscript.c
     table.c
-    table_scanners.c
     tasklist.c
     text.c
     text_scanners.c
@@ -71,7 +70,6 @@ if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
         formula_scanners.c
         html_scanners.c
         link_scanners.c
-        table_scanners.c
         text_scanners.c
         PROPERTIES COMPILE_FLAGS "-Wno-unused-variable")
 endif()

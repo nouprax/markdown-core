@@ -4,7 +4,6 @@
 #include "formula_scanners.h"
 #include "html_scanners.h"
 #include "link_scanners.h"
-#include "table_scanners.h"
 #include "text_scanners.h"
 #include <stdio.h>
 #include "table.h"
@@ -6192,6 +6191,12 @@ static void speculative_probe_allocations(test_batch_runner *runner) {
         unsigned char prose[] = "prose\n";
         markdown_core_reader warm = {.line = {prose, sizeof(prose) - 1, 0}};
         (void)try_block_start(&table_instance, 0, &parser, paragraph, &warm, true);
+        /* And the room of the reading of a header row of its own. */
+        markdown_core_node *other = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
+        markdown_core_strbuf_sets(&other->content, "| a | b |\n");
+        markdown_core_reader again = {.line = {delimiter, sizeof(delimiter) - 1, 0}};
+        (void)try_block_start(&table_instance, 0, &parser, other, &again, true);
+        markdown_core_node_free(other);
         text_allocation_calls = 0;
         markdown_core_reader reader = {.line = {delimiter, sizeof(delimiter) - 1, 0}};
         markdown_core_node *table = try_block_start(&table_instance, 0, &parser, paragraph, &reader, true);
@@ -8032,12 +8037,6 @@ static void bounded_scanners(test_batch_runner *runner) {
                  {scan_entity, "&amp;", -1},
                  {scan_dangerous_url, "javascript:", -1},
                  {scan_footnote_definition, "[^note]: ", -1},
-                 {scan_table_start, "| - | :--: |\n", -1},
-                 {scan_table_cell, "x\\|y", -1},
-                 {scan_table_cell_end, "| \t", -1},
-                 {scan_table_row_end, " \r\n", -1},
-                 {scan_table_horizontal, "+---+", '-'},
-                 {scan_table_horizontal, "+===+", '='},
                  {scan_formula_dollar_inline_open, "$", -1},
                  {scan_formula_dollar_backtick_open, "$`", -1},
                  {scan_formula_dollar_display_open, "$$", -1},
@@ -8069,9 +8068,6 @@ static void bounded_scanners(test_batch_runner *runner) {
             free(exact);
         }
     }
-    const unsigned char embedded[] = {'+', '-', '+', 0, '+', '-', '+'};
-    INT_EQ(runner, scan_table_horizontal(embedded, (bufsize_t)sizeof(embedded), 0), 0,
-           "embedded NUL cannot terminate a grid boundary");
 }
 
 /* Oracle-confirmed simple-body ownership is invariant under line ending,

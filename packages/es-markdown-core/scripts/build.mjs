@@ -45,7 +45,6 @@ const elements = [
     "formula_scanners.c",
     "html_scanners.c",
     "link_scanners.c",
-    "table_scanners.c",
     "text_scanners.c",
     "anchor.c",
     "entities.c",

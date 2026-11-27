@@ -23,10 +23,6 @@ static void close_paragraph(markdown_core_compiler *compiler, const markdown_cor
     markdown_core_block_attach_paragraph_identifier(self->state, parser, paragraph, parent, reader);
 }
 
-static int continue_paragraph(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                              markdown_core_reader *reader, markdown_core_node *container) {
-    return !reader->blank;
-}
 static bool accepts_lazy(const markdown_core_element_instance *self, markdown_core_parser *parser,
                          markdown_core_node *node, markdown_core_reader *reader) {
     (void)reader;
@@ -178,15 +174,25 @@ static const markdown_core_open_ops PARAGRAPH_OPENS = {
     .content = &PARAGRAPH_CONTENT_START,
 };
 
-/* THE CONTINUATION (element.h, markdown_core_line_ops `continuation`). */
-static markdown_core_state S_continue(markdown_core_tokenizer *tokenizer, int code) {
+/* THE CONTINUATION (element.h, markdown_core_line_ops `continuation`): a
+ * line that is not blank goes on with the paragraph. A block of its kind
+ * holds no block a lookahead adds. */
+static markdown_core_state S_blank(markdown_core_tokenizer *tokenizer, int code) {
     (void)code;
-    markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
-    /* A block of its kind holds no block a lookahead adds. */
-    return markdown_core_block_verdict(
-        tokenizer, turn->look
-                       ? MARKDOWN_CORE_LINE_OFF
-                       : continue_paragraph(markdown_core_self(tokenizer), turn->parser, turn->reader, turn->node));
+    return markdown_core_nok(tokenizer);
+}
+
+static markdown_core_state S_goes(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    return markdown_core_block_continued(tokenizer, MARKDOWN_CORE_TOKEN_PREFIX);
+}
+
+static markdown_core_state S_continue(markdown_core_tokenizer *tokenizer, int code) {
+    if (markdown_core_block_turn_of(tokenizer)->look) {
+        return markdown_core_nok(tokenizer);
+    }
+    return markdown_core_check(tokenizer, &markdown_core_blank_line, markdown_core_state_of(S_blank),
+                               markdown_core_state_of(S_goes), code);
 }
 
 static const markdown_core_line_ops PARAGRAPH_LINES = {
