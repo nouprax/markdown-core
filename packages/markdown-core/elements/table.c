@@ -565,7 +565,7 @@ static markdown_core_node *S_head_open(const markdown_core_element_instance *sel
     }
     S_cells markers = S_cells_of(compiler->events, index, pipe, compiler->data);
     node_cell geometry;
-    for (uint16_t i = 0; i < table->column_count && S_cells_next(&markers, &geometry, 0); ++i) {
+    for (size_t i = 0; i < table->column_count && S_cells_next(&markers, &geometry, 0); ++i) {
         const markdown_core_chunk *cell = &geometry.content;
         bool left = cell->data[0] == ':', right = cell->data[cell->len - 1] == ':';
         table->columns[i].flow = left ? (right ? MARKDOWN_CORE_FLOW_CENTER : MARKDOWN_CORE_FLOW_LEFT)
