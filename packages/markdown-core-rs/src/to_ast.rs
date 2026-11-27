@@ -947,17 +947,17 @@ impl<'a> Compiler<'a> {
                 literal: self.code(index, Name::MathTextData),
             },
             Inline::HtmlText => {
-                let mut literal = String::new();
-                for child in self.inside(index) {
-                    match self.name(child) {
-                        Name::HtmlTextData | Name::LineEnd => {
-                            literal.push_str(&self.value(child));
-                        }
-                        _ => {}
-                    }
+                let literal = self.fused(index, Name::HtmlTextData);
+                match html_comment(&literal) {
+                    Some(inner) => Kind::Comment {
+                        literal: inner.to_string(),
+                    },
+                    None => Kind::Html { literal },
                 }
-                Kind::Html { literal }
             }
+            Inline::Comment => Kind::Comment {
+                literal: self.fused(index, Name::CommentText),
+            },
             Inline::Autolink => {
                 let mut dest = String::new();
                 let mut text = None;
@@ -1031,6 +1031,18 @@ impl<'a> Compiler<'a> {
             | Inline::HardBreakEscape => return None,
         };
         Some(Node::new(kind, runs))
+    }
+
+    /// The `data` and line endings inside the token at `index`, in order.
+    fn fused(&self, index: usize, data: Name) -> String {
+        let mut literal = String::new();
+        for child in self.inside(index) {
+            let name = self.name(child);
+            if name == data || name == Name::LineEnd {
+                literal.push_str(&self.value(child));
+            }
+        }
+        literal
     }
 
     /// The inline content of the part `name` of the token at `index`.
@@ -1115,6 +1127,17 @@ impl<'a> Compiler<'a> {
 }
 
 /// Add text to the pending text.
+/// The body of the HTML comment `html`, if it is one: the bytes between
+/// `<!--` and `-->`, where `<!-->` and `<!--->` are empty.
+fn html_comment(html: &str) -> Option<&str> {
+    let rest = html.strip_prefix("<!--")?;
+    if rest == ">" || rest == "->" {
+        Some("")
+    } else {
+        rest.strip_suffix("-->")
+    }
+}
+
 fn push_text(draft: &mut Option<Draft>, start: usize, end: usize, literal: &str) {
     match draft {
         Some(text) => {

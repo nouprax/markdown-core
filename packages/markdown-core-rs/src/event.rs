@@ -553,6 +553,63 @@ pub enum Name {
     /// > | a `b` c
     ///       ^ ^
     /// ```
+    /// Whole comment.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [text content][crate::construct::text]
+    /// * **Content model**:
+    ///   [`CommentSequence`][Name::CommentSequence],
+    ///   [`CommentText`][Name::CommentText],
+    ///   [`LineEnd`][Name::LineEnd],
+    ///   [`SpaceOrTab`][Name::SpaceOrTab]
+    /// * **Construct**:
+    ///   [`comment`][crate::construct::comment]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | a %%b%% c
+    ///       ^^^^^
+    /// ```
+    Comment,
+    /// Comment sequence.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`Comment`][Name::Comment]
+    /// * **Content model**:
+    ///   void
+    /// * **Construct**:
+    ///   [`comment`][crate::construct::comment]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | a %%b%% c
+    ///       ^^ ^^
+    /// ```
+    CommentSequence,
+    /// Comment text.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`Comment`][Name::Comment]
+    /// * **Content model**:
+    ///   void
+    /// * **Construct**:
+    ///   [`comment`][crate::construct::comment]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | a %%b%% c
+    ///         ^
+    /// ```
+    CommentText,
     CodeTextSequence,
     /// Content.
     ///
@@ -2867,6 +2924,7 @@ pub enum Inline {
     CodeText,
     MathText,
     HtmlText,
+    Comment,
     Autolink,
     Literal,
     Media,
@@ -2915,6 +2973,7 @@ impl Name {
             Name::CodeText => Role::Inline(Inline::CodeText),
             Name::MathText => Role::Inline(Inline::MathText),
             Name::HtmlText => Role::Inline(Inline::HtmlText),
+            Name::Comment => Role::Inline(Inline::Comment),
             Name::Autolink => Role::Inline(Inline::Autolink),
             Name::AutolinkLiteralProtocol
             | Name::AutolinkLiteralWww
@@ -2947,6 +3006,8 @@ impl Name {
             | Name::CodeFlowChunk
             | Name::CodeTextData
             | Name::CodeTextSequence
+            | Name::CommentSequence
+            | Name::CommentText
             | Name::Content
             | Name::DefinitionDestination
             | Name::DefinitionDestinationLiteral
@@ -3044,7 +3105,7 @@ impl Name {
 }
 
 /// List of void events, used to make sure everything is working well.
-pub const VOID_EVENTS: [Name; 66] = [
+pub const VOID_EVENTS: [Name; 68] = [
     Name::AttentionSequence,
     Name::AutolinkEmail,
     Name::AutolinkMarker,
@@ -3103,6 +3164,8 @@ pub const VOID_EVENTS: [Name; 66] = [
     Name::MathFlowChunk,
     Name::MathTextData,
     Name::MathTextSequence,
+    Name::CommentSequence,
+    Name::CommentText,
     Name::ReferenceMarker,
     Name::ResourceMarker,
     Name::ResourceTitleMarker,

@@ -10,6 +10,7 @@
 //! * [Autolink][crate::construct::autolink]
 //! * [Character escape][crate::construct::character_escape]
 //! * [Character reference][crate::construct::character_reference]
+//! * [Comment][crate::construct::comment]
 //! * [Raw (text)][crate::construct::raw_text] (code (text), math (text))
 //! * [GFM: Label start (footnote)][crate::construct::label_start_footnote]
 //! * [GFM: Task list item check][crate::construct::task_list_item_check]
@@ -26,7 +27,7 @@ use crate::choice::{self, Choice, Item, List};
 use crate::construct::autolink_literal::resolve as resolve_autolink_literal;
 use crate::construct::partial_whitespace::resolve_whitespace;
 use crate::construct::{
-    attention, autolink, autolink_literal, character_escape, character_reference,
+    attention, autolink, autolink_literal, character_escape, character_reference, comment,
     hard_break_escape, html_text, label_end, label_start_footnote, label_start_link,
     label_start_picture, partial_data, raw_text, task_list_item_check,
 };
@@ -51,6 +52,10 @@ pub const CHOICE: Choice = Choice::new(
         Item {
             starts: character_reference::STARTS,
             step: StateName::CharacterReference(character_reference::Step::Start),
+        },
+        Item {
+            starts: comment::STARTS,
+            step: StateName::Comment(comment::Step::Start),
         },
         Item {
             starts: attention::STARTS,
