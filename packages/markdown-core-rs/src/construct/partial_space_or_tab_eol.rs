@@ -129,7 +129,7 @@ pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
             if let Some(b'\n') = tokenizer.current {
                 if let Some(content) = options.content {
                     tokenizer.enter_link(
-                        Name::LineEnd,
+                        Name::LineEnding,
                         Link {
                             previous: None,
                             next: None,
@@ -137,7 +137,7 @@ pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
                         },
                     );
                 } else {
-                    tokenizer.enter(Name::LineEnd);
+                    tokenizer.enter(Name::LineEnding);
                 }
 
                 if options.connect {
@@ -148,7 +148,7 @@ pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
                 }
 
                 tokenizer.consume();
-                tokenizer.exit(Name::LineEnd);
+                tokenizer.exit(Name::LineEnding);
                 State::Next(StateName::SpaceOrTabEol(Step::AfterEol(options)))
             } else if ok {
                 State::Ok

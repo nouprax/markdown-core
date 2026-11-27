@@ -80,7 +80,7 @@
 //! * [`DefinitionTitle`][Name::DefinitionTitle]
 //! * [`DefinitionTitleMarker`][Name::DefinitionTitleMarker]
 //! * [`DefinitionTitleText`][Name::DefinitionTitleText]
-//! * [`LineEnd`][Name::LineEnd]
+//! * [`LineEnding`][Name::LineEnding]
 //! * [`SpaceOrTab`][Name::SpaceOrTab]
 //!
 //! ## References
@@ -125,7 +125,7 @@ fn start(tokenizer: &mut Tokenizer) -> State {
             && tokenizer.events[skip::opt_back(
                 &tokenizer.events,
                 tokenizer.events.len() - 1,
-                &[Name::LineEnd, Name::SpaceOrTab],
+                &[Name::LineEnding, Name::SpaceOrTab],
             )]
             .name
                 == Name::Definition)
@@ -286,7 +286,7 @@ fn after_whitespace(tokenizer: &mut Tokenizer, end: usize) -> State {
                 // Note: we don’t care about virtual spaces, so `as_str` is fine.
                 normalize_identifier(
                     Slice::from_position(
-                        tokenizer.parse_state.source,
+                        tokenizer.parse_state.bytes,
                         &Position::from_exit_event(&tokenizer.events, end),
                     )
                     .as_str(),

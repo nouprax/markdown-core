@@ -44,7 +44,7 @@
 //! * [`FrontmatterFence`][Name::FrontmatterFence]
 //! * [`FrontmatterSequence`][Name::FrontmatterSequence]
 //! * [`FrontmatterChunk`][Name::FrontmatterChunk]
-//! * [`LineEnd`][Name::LineEnd]
+//! * [`LineEnding`][Name::LineEnding]
 //! * [`SpaceOrTab`][Name::SpaceOrTab]
 //!
 //! ## References
@@ -125,9 +125,9 @@ fn open_sequence(tokenizer: &mut Tokenizer, marker: u8, size: usize) -> State {
 fn open_after(tokenizer: &mut Tokenizer, marker: u8) -> State {
     if let Some(b'\n') = tokenizer.current {
         tokenizer.exit(Name::FrontmatterFence);
-        tokenizer.enter(Name::LineEnd);
+        tokenizer.enter(Name::LineEnding);
         tokenizer.consume();
-        tokenizer.exit(Name::LineEnd);
+        tokenizer.exit(Name::LineEnding);
         tokenizer.attempt(
             State::Next(StateName::Frontmatter(Step::After)),
             State::Next(StateName::Frontmatter(Step::ContentStart { marker })),
@@ -260,9 +260,9 @@ fn content_end(tokenizer: &mut Tokenizer, marker: u8) -> State {
     match tokenizer.current {
         None => State::Nok,
         Some(b'\n') => {
-            tokenizer.enter(Name::LineEnd);
+            tokenizer.enter(Name::LineEnding);
             tokenizer.consume();
-            tokenizer.exit(Name::LineEnd);
+            tokenizer.exit(Name::LineEnding);
             tokenizer.attempt(
                 State::Next(StateName::Frontmatter(Step::After)),
                 State::Next(StateName::Frontmatter(Step::ContentStart { marker })),

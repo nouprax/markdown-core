@@ -78,7 +78,7 @@ use crate::util::{
 };
 
 /// Bytes this construct can start at.
-pub const STARTS: Starts = Starts::Codes(b"&");
+pub const STARTS: Starts = Starts::Bytes(b"&");
 
 /// Start of character reference.
 ///
@@ -174,7 +174,7 @@ fn value(tokenizer: &mut Tokenizer, marker: u8, size: usize) -> State {
         if marker == b'&' {
             // Guaranteed to be valid ASCII bytes.
             let slice = Slice::from_indices(
-                tokenizer.parse_state.source,
+                tokenizer.parse_state.bytes,
                 tokenizer.point.index - size,
                 tokenizer.point.index,
             );
@@ -192,8 +192,8 @@ fn value(tokenizer: &mut Tokenizer, marker: u8, size: usize) -> State {
         return State::Ok;
     }
 
-    if let Some(code) = tokenizer.current {
-        if size < value_max(marker) && value_test(marker)(&code) {
+    if let Some(byte) = tokenizer.current {
+        if size < value_max(marker) && value_test(marker)(&byte) {
             tokenizer.consume();
             return State::Next(StateName::CharacterReference(Step::Value {
                 marker,

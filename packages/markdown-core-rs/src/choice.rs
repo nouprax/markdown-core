@@ -23,25 +23,25 @@ use crate::tokenizer::Tokenizer;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Starts {
     /// Any byte, and the end of the input.
-    All,
+    Any,
     /// One of these bytes.
-    Codes(&'static [u8]),
+    Bytes(&'static [u8]),
 }
 
 impl Starts {
-    /// Whether `code` (`None` is the end of the input) can start the
+    /// Whether `byte` (`None` is the end of the input) can start the
     /// construct.
-    fn matches(self, code: Option<u8>) -> bool {
+    fn matches(self, byte: Option<u8>) -> bool {
         match self {
-            Starts::All => true,
-            Starts::Codes(source) => matches!(code, Some(code) if source.contains(&code)),
+            Starts::Any => true,
+            Starts::Bytes(bytes) => matches!(byte, Some(byte) if bytes.contains(&byte)),
         }
     }
 }
 
 /// One construct in a list.
 #[derive(Debug)]
-pub struct Item {
+pub struct Entry {
     /// Bytes the construct can start at.
     pub starts: Starts,
     /// Start state of the construct.
@@ -52,7 +52,7 @@ pub struct Item {
 #[derive(Debug)]
 pub struct Choice {
     /// Constructs, in the order they are tried.
-    entries: &'static [Item],
+    entries: &'static [Entry],
     /// State after a construct succeeded.
     ok: StateName,
     /// State when no construct succeeded.
@@ -63,22 +63,22 @@ pub struct Choice {
 
 impl Choice {
     /// Make a list.
-    pub const fn new(entries: &'static [Item], ok: StateName, fallback: StateName) -> Choice {
+    pub const fn new(entries: &'static [Entry], ok: StateName, fallback: StateName) -> Choice {
         let mut marks = [false; 256];
         let mut index = 0;
         while index < entries.len() {
             match entries[index].starts {
-                Starts::All => {
-                    let mut code = 0;
-                    while code < 256 {
-                        marks[code] = true;
-                        code += 1;
+                Starts::Any => {
+                    let mut byte = 0;
+                    while byte < 256 {
+                        marks[byte] = true;
+                        byte += 1;
                     }
                 }
-                Starts::Codes(source) => {
+                Starts::Bytes(bytes) => {
                     let mut at = 0;
-                    while at < source.len() {
-                        marks[source[at] as usize] = true;
+                    while at < bytes.len() {
+                        marks[bytes[at] as usize] = true;
                         at += 1;
                     }
                 }
@@ -93,9 +93,9 @@ impl Choice {
         }
     }
 
-    /// Whether `code` can start some construct in this list.
-    pub fn marks(&self, code: u8) -> bool {
-        self.marks[code as usize]
+    /// Whether `byte` can start some construct in this list.
+    pub fn marks(&self, byte: u8) -> bool {
+        self.marks[byte as usize]
     }
 }
 

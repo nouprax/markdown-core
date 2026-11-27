@@ -127,7 +127,7 @@ use crate::tokenizer::Tokenizer;
 use crate::util::constant::{AUTOLINK_DOMAIN_SIZE_MAX, AUTOLINK_SCHEME_SIZE_MAX};
 
 /// Bytes this construct can start at.
-pub const STARTS: Starts = Starts::Codes(b"<");
+pub const STARTS: Starts = Starts::Bytes(b"<");
 
 /// Start of an autolink.
 ///

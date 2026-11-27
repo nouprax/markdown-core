@@ -73,7 +73,7 @@ use crate::util::constant::{HEADING_ATX_OPEN_FENCE_SIZE_MAX, TAB_SIZE};
 use alloc::vec;
 
 /// Bytes this construct can start at.
-pub const STARTS: Starts = Starts::Codes(b"\t #");
+pub const STARTS: Starts = Starts::Bytes(b"\t #");
 
 /// Start of a heading (atx).
 ///
@@ -136,7 +136,7 @@ fn at_break(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         None | Some(b'\n') => {
             tokenizer.exit(Name::HeadingAtx);
-            tokenizer.add_resolver(ResolveName::HeadingAtx);
+            tokenizer.register_resolver(ResolveName::HeadingAtx);
             // Feel free to interrupt.
             tokenizer.interrupt = false;
             State::Ok

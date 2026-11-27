@@ -134,7 +134,7 @@
 //! * [`LabelEnd`][Name::LabelEnd]
 //! * [`LabelMarker`][Name::LabelMarker]
 //! * [`LabelText`][Name::LabelText]
-//! * [`LineEnd`][Name::LineEnd]
+//! * [`LineEnding`][Name::LineEnding]
 //! * [`Link`][Name::Link]
 //! * [`Reference`][Name::Reference]
 //! * [`ReferenceMarker`][Name::ReferenceMarker]
@@ -195,7 +195,7 @@ use crate::util::{
 use alloc::{string::String, vec};
 
 /// Bytes this construct can start at.
-pub const STARTS: Starts = Starts::Codes(b"]");
+pub const STARTS: Starts = Starts::Bytes(b"]");
 
 /// Start of label end.
 ///
@@ -263,7 +263,7 @@ fn after(tokenizer: &mut Tokenizer, end: usize) -> State {
 
     // We don’t care about virtual spaces, so `indices` and `as_str` are fine.
     let mut id = normalize_identifier(
-        Slice::from_indices(tokenizer.parse_state.source, indices.0, indices.1).as_str(),
+        Slice::from_indices(tokenizer.parse_state.bytes, indices.0, indices.1).as_str(),
     );
 
     // See if this matches a footnote definition.
@@ -370,7 +370,7 @@ fn ok(tokenizer: &mut Tokenizer, end: usize) -> State {
         start: label_start.start,
         end: (end, tokenizer.events.len() - 1),
     });
-    tokenizer.add_resolver_before(ResolveName::Label);
+    tokenizer.register_resolver_before(ResolveName::Label);
     State::Ok
 }
 
@@ -577,7 +577,7 @@ fn reference_full_after(tokenizer: &mut Tokenizer) -> State {
         // We don’t care about virtual spaces, so `as_str` is fine.
         .contains(&normalize_identifier(
             Slice::from_position(
-                tokenizer.parse_state.source,
+                tokenizer.parse_state.bytes,
                 &Position::from_exit_event(
                     &tokenizer.events,
                     skip::to_back(
@@ -659,7 +659,7 @@ fn insert_labels(tokenizer: &mut Tokenizer, labels: &[Label]) {
     let mut index = 0;
     while index < labels.len() {
         let label = &labels[index];
-        let whole_name = if label.kind == LabelKind::Footnote {
+        let group_name = if label.kind == LabelKind::Footnote {
             Name::FootnoteCall
         } else if label.kind == LabelKind::Image {
             Name::Image
@@ -703,7 +703,7 @@ fn insert_labels(tokenizer: &mut Tokenizer, labels: &[Label]) {
             vec![
                 Event {
                     kind: Kind::Enter,
-                    name: whole_name,
+                    name: group_name,
                     point: tokenizer.events[label.start.0].point.clone(),
                     link: None,
                 },
@@ -764,7 +764,7 @@ fn insert_labels(tokenizer: &mut Tokenizer, labels: &[Label]) {
             0,
             vec![Event {
                 kind: Kind::Exit,
-                name: whole_name,
+                name: group_name,
                 point: tokenizer.events[label.end.1].point.clone(),
                 link: None,
             }],

@@ -44,13 +44,13 @@ use alloc::string::String;
 pub fn normalize_identifier(value: &str) -> String {
     // Note: it’ll grow a bit smaller for consecutive whitespace.
     let mut result = String::with_capacity(value.len());
-    let source = value.as_bytes();
+    let bytes = value.as_bytes();
     let mut in_whitespace = true;
     let mut index = 0;
     let mut start = 0;
 
-    while index < source.len() {
-        if matches!(source[index], b'\t' | b'\n' | b'\r' | b' ') {
+    while index < bytes.len() {
+        if matches!(bytes[index], b'\t' | b'\n' | b'\r' | b' ') {
             // First whitespace we see after non-whitespace.
             if !in_whitespace {
                 result.push_str(&value[start..index]);

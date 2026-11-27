@@ -21,8 +21,8 @@ use alloc::vec;
 /// ```
 fn start(tokenizer: &mut Tokenizer, list: List) -> State {
     // At a byte that can start a construct, none did: eat it as data.
-    if let Some(code) = tokenizer.current {
-        if list.choice().marks(code) {
+    if let Some(byte) = tokenizer.current {
+        if list.choice().marks(byte) {
             tokenizer.enter(Name::Data);
             tokenizer.consume();
             return State::Next(StateName::Data(Step::Inside { list }));
@@ -39,12 +39,12 @@ fn start(tokenizer: &mut Tokenizer, list: List) -> State {
 ///     ^
 /// ```
 fn at_break(tokenizer: &mut Tokenizer, list: List) -> State {
-    if let Some(code) = tokenizer.current {
-        if !list.choice().marks(code) {
-            if code == b'\n' {
-                tokenizer.enter(Name::LineEnd);
+    if let Some(byte) = tokenizer.current {
+        if !list.choice().marks(byte) {
+            if byte == b'\n' {
+                tokenizer.enter(Name::LineEnding);
                 tokenizer.consume();
-                tokenizer.exit(Name::LineEnd);
+                tokenizer.exit(Name::LineEnding);
                 return State::Next(StateName::Data(Step::AtBreak { list }));
             }
             tokenizer.enter(Name::Data);
@@ -62,8 +62,8 @@ fn at_break(tokenizer: &mut Tokenizer, list: List) -> State {
 ///     ^^^
 /// ```
 fn inside(tokenizer: &mut Tokenizer, list: List) -> State {
-    if let Some(code) = tokenizer.current {
-        if code != b'\n' && !list.choice().marks(code) {
+    if let Some(byte) = tokenizer.current {
+        if byte != b'\n' && !list.choice().marks(byte) {
             tokenizer.consume();
             return State::Next(StateName::Data(Step::Inside { list }));
         }

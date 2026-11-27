@@ -54,9 +54,9 @@
 //! * [`Emphasis`][Name::Emphasis]
 //! * [`EmphasisSequence`][Name::EmphasisSequence]
 //! * [`EmphasisText`][Name::EmphasisText]
-//! * [`Strike`][Name::Strike]
-//! * [`StrikeSequence`][Name::StrikeSequence]
-//! * [`StrikeText`][Name::StrikeText]
+//! * [`Strikethrough`][Name::Strikethrough]
+//! * [`StrikethroughSequence`][Name::StrikethroughSequence]
+//! * [`StrikethroughText`][Name::StrikethroughText]
 //! * [`Strong`][Name::Strong]
 //! * [`StrongSequence`][Name::StrongSequence]
 //! * [`StrongText`][Name::StrongText]
@@ -89,7 +89,7 @@ use crate::util::char::{
 use alloc::{vec, vec::Vec};
 
 /// Bytes this construct can start at.
-pub const STARTS: Starts = Starts::Codes(b"*+=^_~");
+pub const STARTS: Starts = Starts::Bytes(b"*+=^_~");
 
 /// Byte that is transparent when looking at the neighbours of a run: the
 /// character before or after a run is found past any of these.
@@ -103,7 +103,7 @@ enum Rule {
     /// `_`: emphasis, strong.
     Underscore,
     /// `~~`: strikethrough.
-    Strike,
+    Strikethrough,
     /// `~`: subscript.
     Subscript,
     /// `^`: superscript.
@@ -179,7 +179,7 @@ impl Rule {
             b'*' => Rule::Asterisk,
             b'_' => Rule::Underscore,
             b'~' if size == 1 => Rule::Subscript,
-            b'~' => Rule::Strike,
+            b'~' => Rule::Strikethrough,
             b'^' => Rule::Superscript,
             b'+' => Rule::Insertion,
             b'=' => Rule::Mark,
@@ -224,12 +224,12 @@ impl Rule {
                 lone: Some(EMPHASIS),
                 double: Some(STRONG),
             },
-            Rule::Strike => Spec {
+            Rule::Strikethrough => Spec {
                 exact: true,
                 ..pair(Names {
-                    whole: Name::Strike,
-                    sequence: Name::StrikeSequence,
-                    text: Name::StrikeText,
+                    whole: Name::Strikethrough,
+                    sequence: Name::StrikethroughSequence,
+                    text: Name::StrikethroughText,
                 })
             },
             Rule::Insertion => pair(Names {
@@ -314,7 +314,7 @@ fn inside(tokenizer: &mut Tokenizer, marker: u8, size: usize) -> State {
         }))
     } else {
         tokenizer.exit(Name::AttentionSequence);
-        tokenizer.add_resolver(ResolveName::Attention);
+        tokenizer.register_resolver(ResolveName::Attention);
         State::Ok
     }
 }
@@ -389,18 +389,18 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
 }
 
 /// Classify the character next to a run, past transparent bytes.
-fn near(source: &[u8], index: usize, after: bool) -> CharacterKind {
+fn near(bytes: &[u8], index: usize, after: bool) -> CharacterKind {
     let mut index = index;
     if after {
-        while index < source.len() && source[index] == TRANSPARENT {
+        while index < bytes.len() && bytes[index] == TRANSPARENT {
             index += 1;
         }
-        class_opt(char_after_index(source, index))
+        class_opt(char_after_index(bytes, index))
     } else {
-        while index > 0 && source[index - 1] == TRANSPARENT {
+        while index > 0 && bytes[index - 1] == TRANSPARENT {
             index -= 1;
         }
-        class_opt(char_before_index(source, index))
+        class_opt(char_before_index(bytes, index))
     }
 }
 
@@ -411,12 +411,12 @@ fn flanks(flank: Flank, before: &CharacterKind, after: &CharacterKind) -> (bool,
     let punct_before = *before == CharacterKind::Punctuation;
     let punct_after = *after == CharacterKind::Punctuation;
     let left = !space_after && (!punct_after || space_before || punct_before);
-    let end = !space_before && (!punct_before || space_after || punct_after);
+    let right = !space_before && (!punct_before || space_after || punct_after);
     match flank {
-        Flank::Free => (left, end),
+        Flank::Free => (left, right),
         Flank::Bound => (
-            left && (!end || punct_before),
-            end && (!left || punct_after),
+            left && (!right || punct_before),
+            right && (!left || punct_after),
         ),
     }
 }
@@ -426,13 +426,13 @@ fn flanks(flank: Flank, before: &CharacterKind, after: &CharacterKind) -> (bool,
 fn spaces(tokenizer: &Tokenizer, index: usize) -> usize {
     let event = &tokenizer.events[index];
     match event.name {
-        Name::LineEnd => 1,
+        Name::LineEnding => 1,
         Name::Data => {
             let end = tokenizer.events[index + 1].point.index;
             usize::from(
-                tokenizer.parse_state.source[event.point.index..end]
+                tokenizer.parse_state.bytes[event.point.index..end]
                     .iter()
-                    .any(|code| matches!(code, b'\t' | b'\n' | b' ')),
+                    .any(|byte| matches!(byte, b'\t' | b'\n' | b' ')),
             )
         }
         _ => 0,
@@ -441,7 +441,7 @@ fn spaces(tokenizer: &Tokenizer, index: usize) -> usize {
 
 /// Get sequences.
 fn read_sequences(tokenizer: &mut Tokenizer) -> Vec<Sequence> {
-    let source = tokenizer.parse_state.source;
+    let bytes = tokenizer.parse_state.bytes;
     let mut index = 0;
     let mut stack = vec![];
     let mut sequences = vec![];
@@ -456,7 +456,7 @@ fn read_sequences(tokenizer: &mut Tokenizer) -> Vec<Sequence> {
             if enter.kind == Kind::Enter {
                 let end = index + 1;
                 let exit = &tokenizer.events[end];
-                let marker = source[enter.point.index];
+                let marker = bytes[enter.point.index];
                 let size = exit.point.index - enter.point.index;
                 let rule = Rule::of(marker, size);
                 let spec = rule.spec();
@@ -465,8 +465,8 @@ fn read_sequences(tokenizer: &mut Tokenizer) -> Vec<Sequence> {
                 } else if size < spec.min || (spec.exact && size != spec.min) {
                     (false, false)
                 } else {
-                    let before = near(source, enter.point.index, false);
-                    let after = near(source, exit.point.index, true);
+                    let before = near(bytes, enter.point.index, false);
+                    let after = near(bytes, exit.point.index, true);
                     flanks(spec.flank, &before, &after)
                 };
 
@@ -545,7 +545,7 @@ fn match_sequences(
 
     let names = if take == 1 { spec.lone } else { spec.double }
         .expect("expected a node for the markers taken");
-    let (whole_name, seq_name, text_name) = (names.whole, names.sequence, names.text);
+    let (group_name, seq_name, text_name) = (names.whole, names.sequence, names.text);
     let open_index = sequences[open].index;
     let close_index = sequences[close].index;
     let open_exit = sequences[open].end_point.clone();
@@ -578,7 +578,7 @@ fn match_sequences(
         vec![
             Event {
                 kind: Kind::Enter,
-                name: whole_name,
+                name: group_name,
                 point: sequences[open].end_point.clone(),
                 link: None,
             },
@@ -627,7 +627,7 @@ fn match_sequences(
             },
             Event {
                 kind: Kind::Exit,
-                name: whole_name,
+                name: group_name,
                 point: sequences[close].start_point.clone(),
                 link: None,
             },

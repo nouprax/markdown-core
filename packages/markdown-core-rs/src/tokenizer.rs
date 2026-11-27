@@ -49,13 +49,13 @@ pub struct ContainerState {
 
 /// How to handle a byte.
 #[derive(Debug, PartialEq)]
-enum CodeAction {
+enum ByteAction {
     /// This is a normal byte.
     ///
     /// Includes replaced bytes.
     Normal(u8),
     /// This byte must be ignored.
-    Skip,
+    Ignore,
     /// This is a new byte.
     Insert(u8),
 }
@@ -295,7 +295,7 @@ pub struct Tokenizer<'a> {
     /// Used when tokenizing [document content][crate::construct::document].
     pub pierce: bool,
     /// Whether this line is lazy: there are less containers than before.
-    pub lax: bool,
+    pub lazy: bool,
 }
 
 impl<'a> Tokenizer<'a> {
@@ -322,20 +322,20 @@ impl<'a> Tokenizer<'a> {
             interrupt: false,
             pierce: false,
             concrete: false,
-            lax: false,
+            lazy: false,
             resolvers: vec![],
         }
     }
 
     /// Register a resolver.
-    pub fn add_resolver(&mut self, name: ResolveName) {
+    pub fn register_resolver(&mut self, name: ResolveName) {
         if !self.resolvers.contains(&name) {
             self.resolvers.push(name);
         }
     }
 
     /// Register a resolver, before others.
-    pub fn add_resolver_before(&mut self, name: ResolveName) {
+    pub fn register_resolver_before(&mut self, name: ResolveName) {
         if !self.resolvers.contains(&name) {
             self.resolvers.insert(0, name);
         }
@@ -371,10 +371,10 @@ impl<'a> Tokenizer<'a> {
     }
 
     /// Prepare for a next byte to get consumed.
-    fn expect(&mut self, code: Option<u8>) {
+    fn expect(&mut self, byte: Option<u8>) {
         debug_assert!(self.consumed, "expected previous byte to be consumed");
         self.consumed = false;
-        self.current = code;
+        self.current = byte;
     }
 
     /// Consume the current byte.
@@ -394,21 +394,21 @@ impl<'a> Tokenizer<'a> {
 
     /// Move to the next (virtual) byte.
     fn move_one(&mut self) {
-        match code_action(self.parse_state.source, &self.point) {
-            CodeAction::Skip => {
+        match byte_action(self.parse_state.bytes, &self.point) {
+            ByteAction::Ignore => {
                 self.point.index += 1;
             }
-            CodeAction::Insert(code) => {
-                self.previous = Some(code);
+            ByteAction::Insert(byte) => {
+                self.previous = Some(byte);
                 self.point.column += 1;
                 self.point.vs += 1;
             }
-            CodeAction::Normal(code) => {
-                self.previous = Some(code);
+            ByteAction::Normal(byte) => {
+                self.previous = Some(byte);
                 self.point.vs = 0;
                 self.point.index += 1;
 
-                if code == b'\n' {
+                if byte == b'\n' {
                     self.point.line += 1;
                     self.point.column = 1;
 
@@ -593,8 +593,8 @@ impl<'a> Tokenizer<'a> {
 fn move_point_back(tokenizer: &mut Tokenizer, point: &mut Point) {
     while point.index > 0 {
         point.index -= 1;
-        let action = code_action(tokenizer.parse_state.source, point);
-        if !matches!(action, CodeAction::Skip) {
+        let action = byte_action(tokenizer.parse_state.bytes, point);
+        if !matches!(action, ByteAction::Ignore) {
             point.index += 1;
             break;
         }
@@ -658,24 +658,24 @@ fn push_impl(
                 let action = if tokenizer.point.index < to.0
                     || (tokenizer.point.index == to.0 && tokenizer.point.vs < to.1)
                 {
-                    Some(code_action(tokenizer.parse_state.source, &tokenizer.point))
+                    Some(byte_action(tokenizer.parse_state.bytes, &tokenizer.point))
                 } else if flush {
                     None
                 } else {
                     break;
                 };
 
-                if let Some(CodeAction::Skip) = action {
+                if let Some(ByteAction::Ignore) = action {
                     tokenizer.move_one();
                 } else {
-                    let code =
-                        if let Some(CodeAction::Insert(code) | CodeAction::Normal(code)) = action {
-                            Some(code)
+                    let byte =
+                        if let Some(ByteAction::Insert(byte) | ByteAction::Normal(byte)) = action {
+                            Some(byte)
                         } else {
                             None
                         };
 
-                    tokenizer.expect(code);
+                    tokenizer.expect(byte);
                     state = call(tokenizer, name);
                 }
             }
@@ -697,20 +697,20 @@ fn push_impl(
 }
 
 /// Figure out how to handle a byte.
-fn code_action(source: &[u8], point: &Point) -> CodeAction {
-    if point.index < source.len() {
-        let code = source[point.index];
+fn byte_action(bytes: &[u8], point: &Point) -> ByteAction {
+    if point.index < bytes.len() {
+        let byte = bytes[point.index];
 
-        if code == b'\r' {
+        if byte == b'\r' {
             // CRLF.
-            if point.index < source.len() - 1 && source[point.index + 1] == b'\n' {
-                CodeAction::Skip
+            if point.index < bytes.len() - 1 && bytes[point.index + 1] == b'\n' {
+                ByteAction::Ignore
             }
             // CR.
             else {
-                CodeAction::Normal(b'\n')
+                ByteAction::Normal(b'\n')
             }
-        } else if code == b'\t' {
+        } else if byte == b'\t' {
             let remainder = point.column % TAB_SIZE;
             let vs = if remainder == 0 {
                 0
@@ -721,17 +721,17 @@ fn code_action(source: &[u8], point: &Point) -> CodeAction {
             // On the tab itself, first send it.
             if point.vs == 0 {
                 if vs == 0 {
-                    CodeAction::Normal(code)
+                    ByteAction::Normal(byte)
                 } else {
-                    CodeAction::Insert(code)
+                    ByteAction::Insert(byte)
                 }
             } else if vs == 0 {
-                CodeAction::Normal(b' ')
+                ByteAction::Normal(b' ')
             } else {
-                CodeAction::Insert(b' ')
+                ByteAction::Insert(b' ')
             }
         } else {
-            CodeAction::Normal(code)
+            ByteAction::Normal(byte)
         }
     } else {
         unreachable!("out of bounds")

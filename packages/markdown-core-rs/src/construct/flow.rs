@@ -18,7 +18,7 @@
 //! * [Raw (flow)][crate::construct::raw_flow] (code (fenced), math (flow))
 //! * [Thematic break][crate::construct::thematic_break]
 
-use crate::choice::{self, Choice, Item, List};
+use crate::choice::{self, Choice, Entry, List};
 use crate::construct::{
     blank_line, callout, code_indented, comment, content, heading_atx, heading_setext, html_flow, raw_flow, table,
     thematic_break,
@@ -33,39 +33,39 @@ use crate::tokenizer::Tokenizer;
 /// matched.
 pub const CHOICE: Choice = Choice::new(
     &[
-        Item {
+        Entry {
             starts: code_indented::STARTS,
             step: StateName::CodeIndented(code_indented::Step::Start),
         },
-        Item {
+        Entry {
             starts: callout::STARTS,
             step: StateName::Callout(callout::Step::Start),
         },
-        Item {
+        Entry {
             starts: raw_flow::STARTS,
             step: StateName::RawFlow(raw_flow::Step::Start),
         },
-        Item {
+        Entry {
             starts: html_flow::STARTS,
             step: StateName::HtmlFlow(html_flow::Step::Start),
         },
-        Item {
+        Entry {
             starts: heading_atx::STARTS,
             step: StateName::HeadingAtx(heading_atx::Step::Start),
         },
-        Item {
+        Entry {
             starts: heading_setext::STARTS,
             step: StateName::HeadingSetext(heading_setext::Step::Start),
         },
-        Item {
+        Entry {
             starts: thematic_break::STARTS,
             step: StateName::ThematicBreak(thematic_break::Step::Start),
         },
-        Item {
+        Entry {
             starts: comment::FLOW,
             step: StateName::Comment(comment::Step::FlowStart),
         },
-        Item {
+        Entry {
             starts: table::STARTS,
             step: StateName::Table(table::Step::Start),
         },
@@ -113,9 +113,9 @@ fn blank_line_after(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         None => State::Ok,
         Some(b'\n') => {
-            tokenizer.enter(Name::BlankLineEnd);
+            tokenizer.enter(Name::BlankLineEnding);
             tokenizer.consume();
-            tokenizer.exit(Name::BlankLineEnd);
+            tokenizer.exit(Name::BlankLineEnding);
             // Feel free to interrupt.
             tokenizer.interrupt = false;
             State::Next(StateName::Flow(Step::Start))
@@ -134,9 +134,9 @@ fn after(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         None => State::Ok,
         Some(b'\n') => {
-            tokenizer.enter(Name::LineEnd);
+            tokenizer.enter(Name::LineEnding);
             tokenizer.consume();
-            tokenizer.exit(Name::LineEnd);
+            tokenizer.exit(Name::LineEnding);
             State::Next(StateName::Flow(Step::Start))
         }
         _ => unreachable!("expected eol/eof"),

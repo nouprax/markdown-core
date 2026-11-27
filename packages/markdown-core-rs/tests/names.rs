@@ -1,10 +1,10 @@
 //! Identifiers and file names of this crate contain none of the letters
-//! `g`, `j` and `y`, in either case, outside the standard words of markdown.
+//! `g`, `j` and `y`, in either case, outside standard terms.
 //!
 //! Names that come from outside the crate (the standard library, lints,
-//! other crates) are listed in `OUTSIDE`. The standard words of markdown
-//! (`heading`, `paragraph`, `string`, `strong`, `image`) are listed in
-//! `STANDARD` and may be parts of a name. Comments and literals are prose
+//! other crates) are listed in `OUTSIDE`. Standard terms (of markdown,
+//! HTML, Unicode, and programming: `heading`, `tag`, `lazy`, `byte`, ...)
+//! are listed in `STANDARD` and may be parts of a name. Comments and literals are prose
 //! and are not checked.
 
 use std::fs;
@@ -52,16 +52,45 @@ const OUTSIDE: &[&str] = &[
     "with_capacity",
 ];
 
-/// Words of markdown itself, which may be parts of a name.
+/// Standard terms, which may be parts of a name.
 const STANDARD: &[&str] = &[
+    "align",
+    "alignment",
+    "any",
+    "arguments",
+    "assign",
+    "body",
+    "byte",
+    "bytes",
+    "closing",
+    "directory",
+    "ending",
+    "entry",
+    "flag",
+    "group",
     "heading",
     "headings",
+    "height",
+    "ignore",
     "image",
     "images",
+    "key",
+    "keywords",
+    "language",
+    "lazy",
+    "merged",
+    "pages",
     "paragraph",
     "paragraphs",
+    "range",
+    "register",
+    "right",
+    "strikethrough",
     "string",
     "strong",
+    "symbol",
+    "tag",
+    "tight",
 ];
 
 /// The words of `name`: its `_` parts, each split before its capitals.
@@ -92,8 +121,8 @@ fn banned(name: &str) -> bool {
     })
 }
 
-fn files(folder: &Path, found: &mut Vec<PathBuf>) {
-    for item in fs::read_dir(folder).expect("expected a folder") {
+fn files(directory: &Path, found: &mut Vec<PathBuf>) {
+    for item in fs::read_dir(directory).expect("expected a folder") {
         let path = item.expect("expected a folder item").path();
         if path.is_dir() {
             if path.file_name().map_or(false, |name| name != "target") {
@@ -141,8 +170,8 @@ fn code(text: &str) -> String {
 fn names() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut found = vec![];
-    for folder in ["src", "tests", "fuzz"] {
-        files(&root.join(folder), &mut found);
+    for directory in ["src", "tests", "fuzz"] {
+        files(&root.join(directory), &mut found);
     }
     let mut bad = vec![];
     for path in &found {

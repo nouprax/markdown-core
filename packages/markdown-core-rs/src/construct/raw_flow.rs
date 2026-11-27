@@ -112,7 +112,7 @@
 //! * [`CodeFencedFenceMeta`][Name::CodeFencedFenceMeta]
 //! * [`CodeFencedFenceSequence`][Name::CodeFencedFenceSequence]
 //! * [`CodeFlowChunk`][Name::CodeFlowChunk]
-//! * [`LineEnd`][Name::LineEnd]
+//! * [`LineEnding`][Name::LineEnding]
 //! * [`MathFlow`][Name::MathFlow]
 //! * [`MathFlowFence`][Name::MathFlowFence]
 //! * [`MathFlowFenceMeta`][Name::MathFlowFenceMeta]
@@ -139,7 +139,7 @@
 //! [html_pre]: https://html.spec.whatwg.org/multipage/grouping-content.html#the-pre-element
 
 use crate::choice::Starts;
-use crate::construct::partial_non_lax_continuation;
+use crate::construct::partial_non_lazy_continuation;
 use crate::construct::partial_space_or_tab::{space_or_tab, space_or_tab_min_max};
 use crate::event::{Content, Link, Name};
 use crate::state::{Name as StateName, State};
@@ -150,7 +150,7 @@ use crate::util::{
 };
 
 /// Bytes this construct can start at.
-pub const STARTS: Starts = Starts::Codes(b"\t $`~");
+pub const STARTS: Starts = Starts::Bytes(b"\t $`~");
 
 /// Start of raw.
 ///
@@ -191,7 +191,7 @@ fn before_sequence_open(tokenizer: &mut Tokenizer) -> State {
     if let Some(event) = tail {
         if event.name == Name::SpaceOrTab {
             prefix = Slice::from_position(
-                tokenizer.parse_state.source,
+                tokenizer.parse_state.bytes,
                 &Position::from_exit_event(&tokenizer.events, tokenizer.events.len() - 1),
             )
             .len();
@@ -315,11 +315,11 @@ fn info_before(tokenizer: &mut Tokenizer, fence: Fence) -> State {
             // Do not form containers.
             tokenizer.concrete = true;
             tokenizer.check(
-                State::Next(StateName::RawFlow(Step::AtNonLaxBreak { fence })),
+                State::Next(StateName::RawFlow(Step::AtNonLazyBreak { fence })),
                 State::Next(StateName::RawFlow(Step::After { fence })),
             );
-            State::Redo(StateName::NonLaxContinuation(
-                partial_non_lax_continuation::Step::Start,
+            State::Redo(StateName::NonLazyContinuation(
+                partial_non_lazy_continuation::Step::Start,
             ))
         }
         _ => {
@@ -361,11 +361,11 @@ fn info(tokenizer: &mut Tokenizer, fence: Fence) -> State {
             );
             State::Redo(space_or_tab())
         }
-        Some(code) => {
+        Some(byte) => {
             // This looks like code (text) / math (text).
             // Note: no reason to check for `~`, because 3 of them can‘t be
             // used as strikethrough in text.
-            if fence.marker == code && matches!(code, b'$' | b'`') {
+            if fence.marker == byte && matches!(byte, b'$' | b'`') {
                 tokenizer.concrete = false;
                 State::Nok
             } else {
@@ -417,11 +417,11 @@ fn meta(tokenizer: &mut Tokenizer, fence: Fence) -> State {
             tokenizer.exit(names(fence.marker).meta);
             State::Redo(StateName::RawFlow(Step::InfoBefore { fence }))
         }
-        Some(code) => {
+        Some(byte) => {
             // This looks like code (text) / math (text).
             // Note: no reason to check for `~`, because 3 of them can‘t be
             // used as strikethrough in text.
-            if fence.marker == code && matches!(code, b'$' | b'`') {
+            if fence.marker == byte && matches!(byte, b'$' | b'`') {
                 tokenizer.concrete = false;
                 State::Nok
             } else {
@@ -441,14 +441,14 @@ fn meta(tokenizer: &mut Tokenizer, fence: Fence) -> State {
 ///                   ^
 ///   | ~~~
 /// ```
-fn at_non_lax_break(tokenizer: &mut Tokenizer, fence: Fence) -> State {
+fn at_non_lazy_break(tokenizer: &mut Tokenizer, fence: Fence) -> State {
     tokenizer.attempt(
         State::Next(StateName::RawFlow(Step::After { fence })),
         State::Next(StateName::RawFlow(Step::ContentBefore { fence })),
     );
-    tokenizer.enter(Name::LineEnd);
+    tokenizer.enter(Name::LineEnding);
     tokenizer.consume();
-    tokenizer.exit(Name::LineEnd);
+    tokenizer.exit(Name::LineEnding);
     State::Next(StateName::RawFlow(Step::CloseStart { fence }))
 }
 
@@ -551,9 +551,9 @@ fn sequence_close_after(tokenizer: &mut Tokenizer, fence: Fence) -> State {
 ///   | ~~~
 /// ```
 fn content_before(tokenizer: &mut Tokenizer, fence: Fence) -> State {
-    tokenizer.enter(Name::LineEnd);
+    tokenizer.enter(Name::LineEnding);
     tokenizer.consume();
-    tokenizer.exit(Name::LineEnd);
+    tokenizer.exit(Name::LineEnding);
     State::Next(StateName::RawFlow(Step::ContentStart { fence }))
 }
 
@@ -589,11 +589,11 @@ fn before_content_chunk(tokenizer: &mut Tokenizer, fence: Fence) -> State {
     match tokenizer.current {
         None | Some(b'\n') => {
             tokenizer.check(
-                State::Next(StateName::RawFlow(Step::AtNonLaxBreak { fence })),
+                State::Next(StateName::RawFlow(Step::AtNonLazyBreak { fence })),
                 State::Next(StateName::RawFlow(Step::After { fence })),
             );
-            State::Redo(StateName::NonLaxContinuation(
-                partial_non_lax_continuation::Step::Start,
+            State::Redo(StateName::NonLazyContinuation(
+                partial_non_lazy_continuation::Step::Start,
             ))
         }
         _ => {
@@ -651,7 +651,7 @@ pub enum Step {
     Info { fence: Fence },
     MetaBefore { fence: Fence },
     Meta { fence: Fence },
-    AtNonLaxBreak { fence: Fence },
+    AtNonLazyBreak { fence: Fence },
     CloseStart { fence: Fence },
     BeforeSequenceClose { fence: Fence },
     SequenceClose { fence: Fence, close: usize },
@@ -679,7 +679,7 @@ pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
         Step::Info { fence } => info(tokenizer, fence),
         Step::MetaBefore { fence } => meta_before(tokenizer, fence),
         Step::Meta { fence } => meta(tokenizer, fence),
-        Step::AtNonLaxBreak { fence } => at_non_lax_break(tokenizer, fence),
+        Step::AtNonLazyBreak { fence } => at_non_lazy_break(tokenizer, fence),
         Step::CloseStart { fence } => close_start(tokenizer, fence),
         Step::BeforeSequenceClose { fence } => before_sequence_close(tokenizer, fence),
         Step::SequenceClose { fence, close } => sequence_close(tokenizer, fence, close),

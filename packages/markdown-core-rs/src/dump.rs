@@ -24,14 +24,14 @@ struct Lines {
 }
 
 impl Lines {
-    fn new(source: &[u8]) -> Lines {
+    fn new(bytes: &[u8]) -> Lines {
         let mut starts = alloc::vec![0];
         let mut index = 0;
-        while index < source.len() {
-            match source[index] {
+        while index < bytes.len() {
+            match bytes[index] {
                 b'\n' => starts.push(index + 1),
                 b'\r' => {
-                    if index + 1 < source.len() && source[index + 1] == b'\n' {
+                    if index + 1 < bytes.len() && bytes[index + 1] == b'\n' {
                         index += 1;
                     }
                     starts.push(index + 1);
@@ -74,7 +74,7 @@ struct Out {
 /// One child line of a node: a node, or a group of nodes.
 enum Row<'a> {
     Node(&'a Node),
-    Field(&'static str, &'a [Node]),
+    Group(&'static str, &'a [Node]),
     /// A group that holds a node besides its nodes (a citation's note).
     Note(&'a Node),
 }
@@ -100,11 +100,11 @@ impl Out {
             Some(false) => self.prefix.push_str("│   "),
         }
         let count = entries.len();
-        for (index, item) in entries.iter().enumerate() {
+        for (index, entry) in entries.iter().enumerate() {
             let last = Some(index + 1 == count);
-            match item {
+            match entry {
                 Row::Node(node) | Row::Note(node) => self.node(node, last),
-                Row::Field(name, nodes) => {
+                Row::Group(name, nodes) => {
                     self.line(last, &format!("{} children={}", name, nodes.len()));
                     let inner: Vec<Row> = nodes.iter().map(Row::Node).collect();
                     self.entries(last, &inner);
@@ -159,7 +159,7 @@ fn name(kind: &Kind) -> &'static str {
         Kind::Formula { .. } => "Formula",
         Kind::Emphasis { .. } => "Emphasis",
         Kind::Strong { .. } => "Strong",
-        Kind::Strike { .. } => "Strikethrough",
+        Kind::Strikethrough { .. } => "Strikethrough",
         Kind::Mark { .. } => "Mark",
         Kind::Insertion { .. } => "Insertion",
         Kind::Span { .. } => "Span",
@@ -207,7 +207,7 @@ fn fields<'a>(line: &mut String, kind: &'a Kind) -> (usize, Vec<Row<'a>>) {
             option_bool(line, *collapsed);
             let mut entries = Vec::new();
             if let Some(title) = title {
-                entries.push(Row::Field("Title", title));
+                entries.push(Row::Group("Title", title));
             }
             entries.extend(content.iter().map(Row::Node));
             (content.len(), entries)
@@ -217,7 +217,7 @@ fn fields<'a>(line: &mut String, kind: &'a Kind) -> (usize, Vec<Row<'a>>) {
         | Kind::DirectiveLabel { content }
         | Kind::Emphasis { content }
         | Kind::Strong { content }
-        | Kind::Strike { content }
+        | Kind::Strikethrough { content }
         | Kind::Mark { content }
         | Kind::Insertion { content }
         | Kind::Span { content }
@@ -233,7 +233,7 @@ fn fields<'a>(line: &mut String, kind: &'a Kind) -> (usize, Vec<Row<'a>>) {
             start,
             variant,
             delimiter,
-            dense,
+            tight,
             items,
         } => {
             line.push_str(match flavor {
@@ -268,7 +268,7 @@ fn fields<'a>(line: &mut String, kind: &'a Kind) -> (usize, Vec<Row<'a>>) {
                     let _ = write!(line, "parenthesis(closed={})", closed);
                 }
             }
-            let _ = write!(line, " tight={}", dense);
+            let _ = write!(line, " tight={}", tight);
             (items.len(), nodes(items))
         }
         Kind::ListItem { marker, content } => {
@@ -278,7 +278,7 @@ fn fields<'a>(line: &mut String, kind: &'a Kind) -> (usize, Vec<Row<'a>>) {
         }
         Kind::CodeBlock {
             info,
-            script,
+            language,
             literal,
             fenced,
             closed,
@@ -286,7 +286,7 @@ fn fields<'a>(line: &mut String, kind: &'a Kind) -> (usize, Vec<Row<'a>>) {
             line.push_str(" info=");
             opt_text(line, info.as_deref());
             line.push_str(" language=");
-            opt_text(line, script.as_deref());
+            opt_text(line, language.as_deref());
             line.push_str(" literal=");
             string(line, literal);
             let _ = write!(line, " fenced={} closed={}", fenced, closed);
@@ -314,17 +314,17 @@ fn fields<'a>(line: &mut String, kind: &'a Kind) -> (usize, Vec<Row<'a>>) {
                 }
                 line.push_str(match column {
                     Flow::None => "none",
-                    Flow::Start => "left",
+                    Flow::Left => "left",
                     Flow::Center => "center",
-                    Flow::End => "right",
+                    Flow::Right => "right",
                 });
             }
             line.push(']');
             (
                 head.len() + content.len(),
                 alloc::vec![
-                    Row::Field("TableHead", head),
-                    Row::Field("TableBody", content)
+                    Row::Group("TableHead", head),
+                    Row::Group("TableBody", content)
                 ],
             )
         }
@@ -419,8 +419,8 @@ fn fields<'a>(line: &mut String, kind: &'a Kind) -> (usize, Vec<Row<'a>>) {
             compact,
         } => {
             let _ = write!(line, " compact={}", compact);
-            let mut entries = alloc::vec![Row::Field("DefinitionTerm", term)];
-            entries.extend(bodies.iter().map(|rest| Row::Field("DefinitionBody", rest)));
+            let mut entries = alloc::vec![Row::Group("DefinitionTerm", term)];
+            entries.extend(bodies.iter().map(|body| Row::Group("DefinitionBody", body)));
             (bodies.len(), entries)
         }
         Kind::Citation {
@@ -431,9 +431,9 @@ fn fields<'a>(line: &mut String, kind: &'a Kind) -> (usize, Vec<Row<'a>>) {
             line.push_str(" referent=");
             let mut entries = Vec::new();
             match referent {
-                Referent::Bib { id, mode } => {
+                Referent::Bib { key, mode } => {
                     line.push_str("bib(key=");
-                    string(line, id);
+                    string(line, key);
                     line.push_str(match mode {
                         Mode::Normal => ",mode=normal)",
                         Mode::AuthorInText => ",mode=authorInText)",
@@ -455,8 +455,8 @@ fn fields<'a>(line: &mut String, kind: &'a Kind) -> (usize, Vec<Row<'a>>) {
                     line.push(')');
                 }
             }
-            entries.push(Row::Field("CitationPrefix", prefix));
-            entries.push(Row::Field("CitationSuffix", suffix));
+            entries.push(Row::Group("CitationPrefix", prefix));
+            entries.push(Row::Group("CitationSuffix", suffix));
             (0, entries)
         }
         Kind::Footnote { label, content } => {
@@ -504,7 +504,7 @@ fn metadata(line: &mut String, fields: &Fields) {
         time,
         date,
         authors,
-        terms,
+        keywords,
         abstract_,
         state,
         comment,
@@ -516,7 +516,7 @@ fn metadata(line: &mut String, fields: &Fields) {
         ("time", time),
         ("date", date),
         ("authors", authors),
-        ("keywords", terms),
+        ("keywords", keywords),
         ("abstract", abstract_),
         ("state", state),
         ("comment", comment),
@@ -594,11 +594,11 @@ fn destination(line: &mut String, dest: &Destination) {
 fn option_dimensions(line: &mut String, dimensions: Option<Dimensions>) {
     match dimensions {
         None => line.push_str("null"),
-        Some(Dimensions { width, depth }) => {
+        Some(Dimensions { width, height }) => {
             let _ = write!(line, "(width={},height=", width);
-            match depth {
-                Some(depth) => {
-                    let _ = write!(line, "{}", depth);
+            match height {
+                Some(height) => {
+                    let _ = write!(line, "{}", height);
                 }
                 None => line.push_str("null"),
             }
@@ -654,10 +654,10 @@ fn attributes(line: &mut String, attributes: &Attributes) {
         first = false;
         line.push('.');
         let bare = !class.is_empty()
-            && class.bytes().all(|code| {
-                (0x21..=0x7e).contains(&code)
+            && class.bytes().all(|byte| {
+                (0x21..=0x7e).contains(&byte)
                     && !matches!(
-                        code,
+                        byte,
                         b'"' | b'\\' | b'{' | b'}' | b'[' | b']' | b'(' | b')' | b'='
                     )
             });

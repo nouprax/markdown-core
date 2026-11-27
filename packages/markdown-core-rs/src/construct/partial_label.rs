@@ -191,17 +191,17 @@ fn inside(tokenizer: &mut Tokenizer, mut label: Label) -> State {
             tokenizer.exit(Name::Data);
             State::Redo(StateName::Label(Step::AtBreak(label)))
         }
-        Some(code) => {
+        Some(byte) => {
             if label.size > LINK_REFERENCE_SIZE_MAX {
                 tokenizer.exit(Name::Data);
                 State::Redo(StateName::Label(Step::AtBreak(label)))
             } else {
                 tokenizer.consume();
                 label.size += 1;
-                if !matches!(code, b'\t' | b' ') {
+                if !matches!(byte, b'\t' | b' ') {
                     label.seen = true;
                 }
-                State::Next(StateName::Label(if code == b'\\' {
+                State::Next(StateName::Label(if byte == b'\\' {
                     Step::Escape(label)
                 } else {
                     Step::Inside(label)

@@ -95,7 +95,7 @@
 //! * [`MathText`][Name::MathText]
 //! * [`MathTextData`][Name::MathTextData]
 //! * [`MathTextSequence`][Name::MathTextSequence]
-//! * [`LineEnd`][Name::LineEnd]
+//! * [`LineEnding`][Name::LineEnding]
 //!
 //! ## References
 //!
@@ -117,7 +117,7 @@ use crate::state::{Name as StateName, State};
 use crate::tokenizer::Tokenizer;
 
 /// Bytes this construct can start at.
-pub const STARTS: Starts = Starts::Codes(b"$`");
+pub const STARTS: Starts = Starts::Bytes(b"$`");
 
 /// Start of raw (text).
 ///
@@ -186,9 +186,9 @@ fn between(tokenizer: &mut Tokenizer, marker: u8, size: usize) -> State {
     match tokenizer.current {
         None => State::Nok,
         Some(b'\n') => {
-            tokenizer.enter(Name::LineEnd);
+            tokenizer.enter(Name::LineEnding);
             tokenizer.consume();
-            tokenizer.exit(Name::LineEnd);
+            tokenizer.exit(Name::LineEnding);
             State::Next(StateName::RawText(Step::Between { marker, size }))
         }
         _ => {

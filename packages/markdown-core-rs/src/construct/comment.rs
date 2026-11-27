@@ -34,7 +34,7 @@
 //! * [`Comment`][Name::Comment]
 //! * [`CommentSequence`][Name::CommentSequence]
 //! * [`CommentText`][Name::CommentText]
-//! * [`LineEnd`][Name::LineEnd]
+//! * [`LineEnding`][Name::LineEnding]
 //! * [`SpaceOrTab`][Name::SpaceOrTab]
 //! * [`CommentFlow`][Name::CommentFlow]
 //! * [`CommentFence`][Name::CommentFence]
@@ -52,10 +52,10 @@ use crate::tokenizer::Tokenizer;
 use crate::util::constant::TAB_SIZE;
 
 /// Bytes this construct can start at in text.
-pub const STARTS: Starts = Starts::Codes(b"%");
+pub const STARTS: Starts = Starts::Bytes(b"%");
 
 /// Bytes this construct can start at in flow.
-pub const FLOW: Starts = Starts::Codes(b"\t %");
+pub const FLOW: Starts = Starts::Bytes(b"\t %");
 
 /// Start of comment.
 ///
@@ -100,9 +100,9 @@ fn between(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         None => State::Nok,
         Some(b'\n') => {
-            tokenizer.enter(Name::LineEnd);
+            tokenizer.enter(Name::LineEnding);
             tokenizer.consume();
-            tokenizer.exit(Name::LineEnd);
+            tokenizer.exit(Name::LineEnding);
             State::Next(StateName::Comment(Step::Line))
         }
         Some(b'%') => {
@@ -249,9 +249,9 @@ fn flow_break(tokenizer: &mut Tokenizer) -> State {
 ///   | %%
 /// ```
 fn flow_close(tokenizer: &mut Tokenizer) -> State {
-    tokenizer.enter(Name::LineEnd);
+    tokenizer.enter(Name::LineEnding);
     tokenizer.consume();
-    tokenizer.exit(Name::LineEnd);
+    tokenizer.exit(Name::LineEnding);
     State::Next(StateName::Comment(Step::FenceStart))
 }
 
@@ -264,9 +264,9 @@ fn flow_close(tokenizer: &mut Tokenizer) -> State {
 ///   | %%
 /// ```
 fn flow_eol(tokenizer: &mut Tokenizer) -> State {
-    tokenizer.enter(Name::LineEnd);
+    tokenizer.enter(Name::LineEnding);
     tokenizer.consume();
-    tokenizer.exit(Name::LineEnd);
+    tokenizer.exit(Name::LineEnding);
     State::Next(StateName::Comment(Step::FlowLine))
 }
 

@@ -72,7 +72,7 @@ impl Node {
             | Kind::DirectiveLabel { content }
             | Kind::Emphasis { content }
             | Kind::Strong { content }
-            | Kind::Strike { content }
+            | Kind::Strikethrough { content }
             | Kind::Mark { content }
             | Kind::Insertion { content }
             | Kind::Span { content }
@@ -149,7 +149,7 @@ impl Node {
             | Kind::DirectiveLabel { content }
             | Kind::Emphasis { content }
             | Kind::Strong { content }
-            | Kind::Strike { content }
+            | Kind::Strikethrough { content }
             | Kind::Mark { content }
             | Kind::Insertion { content }
             | Kind::Span { content }
@@ -247,7 +247,7 @@ pub enum Kind {
         start: Option<u64>,
         variant: Option<Variant>,
         delimiter: Option<Delimiter>,
-        dense: bool,
+        tight: bool,
         items: Vec<Node>,
     },
     ListItem {
@@ -256,7 +256,7 @@ pub enum Kind {
     },
     CodeBlock {
         info: Option<String>,
-        script: Option<String>,
+        language: Option<String>,
         literal: String,
         fenced: bool,
         closed: bool,
@@ -319,7 +319,7 @@ pub enum Kind {
     Strong {
         content: Vec<Node>,
     },
-    Strike {
+    Strikethrough {
         content: Vec<Node>,
     },
     Mark {
@@ -414,9 +414,9 @@ pub enum Delimiter {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Flow {
     None,
-    Start,
+    Left,
     Center,
-    End,
+    Right,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -445,12 +445,12 @@ pub enum Destination {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Dimensions {
     pub width: u32,
-    pub depth: Option<u32>,
+    pub height: Option<u32>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Referent {
-    Bib { id: String, mode: Mode },
+    Bib { key: String, mode: Mode },
     Footnote(Note),
     Specimen { label: String },
 }
@@ -472,7 +472,7 @@ pub struct Fields {
     pub time: Option<Value>,
     pub date: Option<Value>,
     pub authors: Option<Value>,
-    pub terms: Option<Value>,
+    pub keywords: Option<Value>,
     pub abstract_: Option<Value>,
     pub state: Option<Value>,
     pub comment: Option<Value>,

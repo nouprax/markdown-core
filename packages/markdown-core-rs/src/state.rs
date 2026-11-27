@@ -55,7 +55,7 @@ pub enum Name {
     LabelStartImage(construct::label_start_image::Step),
     LabelStartLink(construct::label_start_link::Step),
     ListItem(construct::list_item::Step),
-    NonLaxContinuation(construct::partial_non_lax_continuation::Step),
+    NonLazyContinuation(construct::partial_non_lazy_continuation::Step),
     Paragraph(construct::paragraph::Step),
     RawFlow(construct::raw_flow::Step),
     RawText(construct::raw_text::Step),
@@ -106,8 +106,8 @@ pub fn call(tokenizer: &mut Tokenizer, name: Name) -> State {
         Name::LabelStartImage(step) => construct::label_start_image::step(tokenizer, step),
         Name::LabelStartLink(step) => construct::label_start_link::step(tokenizer, step),
         Name::ListItem(step) => construct::list_item::step(tokenizer, step),
-        Name::NonLaxContinuation(step) => {
-            construct::partial_non_lax_continuation::step(tokenizer, step)
+        Name::NonLazyContinuation(step) => {
+            construct::partial_non_lazy_continuation::step(tokenizer, step)
         }
         Name::Paragraph(step) => construct::paragraph::step(tokenizer, step),
         Name::RawFlow(step) => construct::raw_flow::step(tokenizer, step),

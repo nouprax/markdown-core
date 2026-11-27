@@ -40,7 +40,7 @@ use crate::state::{Name as StateName, State};
 use crate::tokenizer::Tokenizer;
 
 /// Bytes this construct can start at.
-pub const STARTS: Starts = Starts::Codes(b"![");
+pub const STARTS: Starts = Starts::Bytes(b"![");
 
 /// Start of a cross link.
 ///

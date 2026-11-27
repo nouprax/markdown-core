@@ -38,7 +38,7 @@
 //!
 //! * [`CodeIndented`][Name::CodeIndented]
 //! * [`CodeFlowChunk`][Name::CodeFlowChunk]
-//! * [`LineEnd`][Name::LineEnd]
+//! * [`LineEnding`][Name::LineEnding]
 //! * [`SpaceOrTab`][Name::SpaceOrTab]
 //!
 //! ## References
@@ -61,7 +61,7 @@ use crate::tokenizer::Tokenizer;
 use crate::util::constant::TAB_SIZE;
 
 /// Bytes this construct can start at.
-pub const STARTS: Starts = Starts::Codes(b"\t ");
+pub const STARTS: Starts = Starts::Bytes(b"\t ");
 
 /// Start of code (indented).
 ///
@@ -150,14 +150,14 @@ fn after(tokenizer: &mut Tokenizer) -> State {
 ///   |     bbb
 /// ```
 fn further_start(tokenizer: &mut Tokenizer) -> State {
-    if tokenizer.lax || tokenizer.pierce {
+    if tokenizer.lazy || tokenizer.pierce {
         return State::Nok;
     }
 
     if tokenizer.current == Some(b'\n') {
-        tokenizer.enter(Name::LineEnd);
+        tokenizer.enter(Name::LineEnding);
         tokenizer.consume();
-        tokenizer.exit(Name::LineEnd);
+        tokenizer.exit(Name::LineEnding);
         State::Next(StateName::CodeIndented(Step::FurtherStart))
     } else {
         tokenizer.attempt(

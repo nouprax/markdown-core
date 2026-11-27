@@ -322,7 +322,7 @@ fn label_after(tokenizer: &mut Tokenizer) -> State {
             // Note: we don’t care about virtual spaces, so `as_str` is fine.
             let id = normalize_identifier(
                 Slice::from_position(
-                    tokenizer.parse_state.source,
+                    tokenizer.parse_state.bytes,
                     &Position::from_exit_event(&tokenizer.events, end),
                 )
                 .as_str(),

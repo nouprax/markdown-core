@@ -154,10 +154,10 @@ use crate::util::{
 use alloc::vec::Vec;
 
 /// Bytes the protocol kind (`https://a.b`) can start at.
-pub const PROTOCOL: Starts = Starts::Codes(b"Hh");
+pub const PROTOCOL: Starts = Starts::Bytes(b"Hh");
 
 /// Bytes the `www.` kind (`www.a.b`) can start at.
-pub const WWW: Starts = Starts::Codes(b"Ww");
+pub const WWW: Starts = Starts::Bytes(b"Ww");
 
 /// Start of protocol autolink literal.
 ///
@@ -219,7 +219,7 @@ fn protocol_prefix_inside(tokenizer: &mut Tokenizer, start: usize) -> State {
         }
         Some(b':') => {
             let slice = Slice::from_indices(
-                tokenizer.parse_state.source,
+                tokenizer.parse_state.bytes,
                 start,
                 tokenizer.point.index,
             );
@@ -368,7 +368,7 @@ fn domain_inside(tokenizer: &mut Tokenizer, mut domain: Domain) -> State {
         }
         _ => {
             // Source: <https://github.com/github/cmark-gfm/blob/ef1cfcb/extensions/autolink.c#L12>.
-            if kind_after_index(tokenizer.parse_state.source, tokenizer.point.index)
+            if kind_after_index(tokenizer.parse_state.bytes, tokenizer.point.index)
                 == CharacterKind::Other
             {
                 domain.seen = true;
@@ -468,7 +468,7 @@ fn path_inside(tokenizer: &mut Tokenizer, mut path: Path) -> State {
         _ => {
             // Source: <https://github.com/github/cmark-gfm/blob/ef1cfcb/extensions/autolink.c#L12>.
             if tokenizer.current.is_none()
-                || kind_after_index(tokenizer.parse_state.source, tokenizer.point.index)
+                || kind_after_index(tokenizer.parse_state.bytes, tokenizer.point.index)
                     == CharacterKind::Whitespace
             {
                 State::Ok
@@ -522,7 +522,7 @@ fn trail(tokenizer: &mut Tokenizer) -> State {
         Some(b'<') => State::Ok,
         _ => {
             // Whitespace is the end of the URL, anything else is continuation.
-            if kind_after_index(tokenizer.parse_state.source, tokenizer.point.index)
+            if kind_after_index(tokenizer.parse_state.bytes, tokenizer.point.index)
                 == CharacterKind::Whitespace
             {
                 State::Ok
@@ -585,26 +585,26 @@ pub fn resolve(tokenizer: &mut Tokenizer) {
         } else {
             if event.name == Name::Data && links == 0 {
                 let slice = Slice::from_position(
-                    tokenizer.parse_state.source,
+                    tokenizer.parse_state.bytes,
                     &Position::from_exit_event(&tokenizer.events, index),
                 );
-                let source = slice.source;
-                let mut code_index = 0;
+                let bytes = slice.bytes;
+                let mut byte_index = 0;
                 let mut replace = Vec::new();
                 let mut point = tokenizer.events[index - 1].point.clone();
                 let start_index = point.index;
                 let mut min = 0;
 
-                while code_index < source.len() {
-                    if source[code_index] == b'@' {
+                while byte_index < bytes.len() {
+                    if bytes[byte_index] == b'@' {
                         let mut span = (0, 0, Name::AutolinkLiteralEmail);
 
-                        if let Some(start) = peek_codes_atext(source, min, code_index) {
-                            let (start, kind) = peek_protocol(source, min, start);
+                        if let Some(start) = peek_bytes_atext(bytes, min, byte_index) {
+                            let (start, kind) = peek_protocol(bytes, min, start);
 
-                            if let Some(end) = peek_codes_email_domain(
-                                source,
-                                code_index + 1,
+                            if let Some(end) = peek_bytes_email_domain(
+                                bytes,
+                                byte_index + 1,
                                 kind == Name::AutolinkLiteralXmpp,
                             ) {
                                 // Note: normally we’d truncate trailing
@@ -620,7 +620,7 @@ pub fn resolve(tokenizer: &mut Tokenizer) {
                         }
 
                         if span.1 != 0 {
-                            code_index = span.1;
+                            byte_index = span.1;
 
                             // If there is something between the last link
                             // (or `min`) and this link.
@@ -632,7 +632,7 @@ pub fn resolve(tokenizer: &mut Tokenizer) {
                                     link: None,
                                 });
                                 point = point
-                                    .shift_to(tokenizer.parse_state.source, start_index + span.0);
+                                    .shift_to(tokenizer.parse_state.bytes, start_index + span.0);
                                 replace.push(Event {
                                     kind: Kind::Exit,
                                     name: Name::Data,
@@ -649,7 +649,7 @@ pub fn resolve(tokenizer: &mut Tokenizer) {
                                 link: None,
                             });
                             point =
-                                point.shift_to(tokenizer.parse_state.source, start_index + span.1);
+                                point.shift_to(tokenizer.parse_state.bytes, start_index + span.1);
                             replace.push(Event {
                                 kind: Kind::Exit,
                                 name: span.2,
@@ -660,11 +660,11 @@ pub fn resolve(tokenizer: &mut Tokenizer) {
                         }
                     }
 
-                    code_index += 1;
+                    byte_index += 1;
                 }
 
                 // If there was a link, and we have more bytes left.
-                if min != 0 && min < source.len() {
+                if min != 0 && min < bytes.len() {
                     replace.push(Event {
                         kind: Kind::Enter,
                         name: Name::Data,
@@ -704,14 +704,14 @@ pub fn resolve(tokenizer: &mut Tokenizer) {
 ///              ^-- from
 ///       ^-- to
 /// ```
-fn peek_codes_atext(source: &[u8], min: usize, end: usize) -> Option<usize> {
+fn peek_bytes_atext(bytes: &[u8], min: usize, end: usize) -> Option<usize> {
     let mut index = end;
 
     // Take simplified atext.
     // See `email_atext` in `autolink.rs` for a similar algorithm.
     // Source: <https://github.com/github/cmark-gfm/blob/ef1cfcb/extensions/autolink.c#L301>.
     while index > min
-        && matches!(source[index - 1], b'+' | b'-' | b'.' | b'0'..=b'9' | b'A'..=b'Z' | b'_' | b'a'..=b'z')
+        && matches!(bytes[index - 1], b'+' | b'-' | b'.' | b'0'..=b'9' | b'A'..=b'Z' | b'_' | b'a'..=b'z')
     {
         index -= 1;
     }
@@ -720,7 +720,7 @@ fn peek_codes_atext(source: &[u8], min: usize, end: usize) -> Option<usize> {
     // The reference code is a bit weird, but that’s what it results in.
     // Source: <https://github.com/github/cmark-gfm/blob/ef1cfcb/extensions/autolink.c#L307>.
     // Other than slash, every preceding character is allowed.
-    if index == end || (index > min && source[index - 1] == b'/') {
+    if index == end || (index > min && bytes[index - 1] == b'/') {
         None
     } else {
         Some(index)
@@ -737,18 +737,18 @@ fn peek_codes_atext(source: &[u8], min: usize, end: usize) -> Option<usize> {
 ///              ^-- from
 ///       ^-- to
 /// ```
-fn peek_protocol(source: &[u8], min: usize, end: usize) -> (usize, Name) {
+fn peek_protocol(bytes: &[u8], min: usize, end: usize) -> (usize, Name) {
     let mut index = end;
 
-    if index > min && source[index - 1] == b':' {
+    if index > min && bytes[index - 1] == b':' {
         index -= 1;
 
         // Take alphanumerical.
-        while index > min && matches!(source[index - 1], b'0'..=b'9' | b'A'..=b'Z' | b'a'..=b'z') {
+        while index > min && matches!(bytes[index - 1], b'0'..=b'9' | b'A'..=b'Z' | b'a'..=b'z') {
             index -= 1;
         }
 
-        let slice = Slice::from_indices(source, index, end - 1);
+        let slice = Slice::from_indices(bytes, index, end - 1);
         let name = slice.as_str().to_ascii_lowercase();
 
         if name == "xmpp" {
@@ -771,21 +771,21 @@ fn peek_protocol(source: &[u8], min: usize, end: usize) -> (usize, Name) {
 ///               ^-- from
 ///                         ^-- to
 /// ```
-fn peek_codes_email_domain(source: &[u8], start: usize, xmpp: bool) -> Option<usize> {
+fn peek_bytes_email_domain(bytes: &[u8], start: usize, xmpp: bool) -> Option<usize> {
     let mut index = start;
     let mut dot = false;
 
     // Move past “domain”.
     // The reference code is a bit overly complex as it handles the `@`, of which there may be just one.
     // Source: <https://github.com/github/cmark-gfm/blob/ef1cfcb/extensions/autolink.c#L318>
-    while index < source.len() {
-        match source[index] {
+    while index < bytes.len() {
+        match bytes[index] {
             // Alphanumerical, `-`, and `_`.
             b'-' | b'0'..=b'9' | b'A'..=b'Z' | b'_' | b'a'..=b'z' => {}
             b'/' if xmpp => {}
             // Dot followed by alphanumerical (not `-` or `_`).
-            b'.' if index + 1 < source.len()
-                && matches!(source[index + 1], b'0'..=b'9' | b'A'..=b'Z' | b'a'..=b'z') =>
+            b'.' if index + 1 < bytes.len()
+                && matches!(bytes[index + 1], b'0'..=b'9' | b'A'..=b'Z' | b'a'..=b'z') =>
             {
                 dot = true;
             }
@@ -797,7 +797,7 @@ fn peek_codes_email_domain(source: &[u8], start: usize, xmpp: bool) -> Option<us
 
     // Domain must not be empty, must include a dot, and must end in alphabetical or `.`.
     // Source: <https://github.com/github/cmark-gfm/blob/ef1cfcb/extensions/autolink.c#L332>.
-    if index > start && dot && matches!(source[index - 1], b'.' | b'A'..=b'Z' | b'a'..=b'z') {
+    if index > start && dot && matches!(bytes[index - 1], b'.' | b'A'..=b'Z' | b'a'..=b'z') {
         Some(index)
     } else {
         None

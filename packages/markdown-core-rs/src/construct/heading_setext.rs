@@ -81,7 +81,7 @@ use crate::util::{constant::TAB_SIZE, skip};
 use alloc::vec;
 
 /// Bytes this construct can start at.
-pub const STARTS: Starts = Starts::Codes(b"\t -=");
+pub const STARTS: Starts = Starts::Bytes(b"\t -=");
 
 /// At start of heading (setext) underline.
 ///
@@ -91,14 +91,14 @@ pub const STARTS: Starts = Starts::Codes(b"\t -=");
 ///     ^
 /// ```
 fn start(tokenizer: &mut Tokenizer) -> State {
-    if !tokenizer.lax
+    if !tokenizer.lazy
         && !tokenizer.pierce
         // Require a paragraph before.
         && (!tokenizer.events.is_empty()
             && matches!(tokenizer.events[skip::opt_back(
                 &tokenizer.events,
                 tokenizer.events.len() - 1,
-                &[Name::LineEnd, Name::SpaceOrTab],
+                &[Name::LineEnding, Name::SpaceOrTab],
             )]
             .name, Name::Content | Name::HeadingSetextUnderline))
     {
@@ -175,7 +175,7 @@ fn after(tokenizer: &mut Tokenizer) -> State {
         None | Some(b'\n') => {
             // Feel free to interrupt.
             tokenizer.interrupt = false;
-            tokenizer.add_resolver(ResolveName::HeadingSetext);
+            tokenizer.register_resolver(ResolveName::HeadingSetext);
             tokenizer.exit(Name::HeadingSetextUnderline);
             State::Ok
         }
@@ -198,7 +198,7 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
                 Name::SpaceOrTab,
                 Name::ListItemIndent,
                 Name::FootnoteDefinitionIndent,
-                Name::LineEnd,
+                Name::LineEnding,
                 Name::BlockQuotePrefix,
             ],
         );
@@ -222,7 +222,7 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
         } else {
             // There’s a following paragraph, move this underline inside it.
             if exit + 3 < tokenizer.events.len()
-                && tokenizer.events[exit + 1].name == Name::LineEnd
+                && tokenizer.events[exit + 1].name == Name::LineEnding
                 && tokenizer.events[exit + 3].name == Name::Paragraph
             {
                 // Swap type, HeadingSetextUnderline:Enter -> Paragraph:Enter.

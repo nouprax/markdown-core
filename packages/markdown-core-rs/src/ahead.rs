@@ -20,7 +20,7 @@ use crate::tokenizer::Tokenizer;
 /// Whether a line after the one `tokenizer` is at the end of passes `test`
 /// under the containers of the current line.
 pub fn ahead(tokenizer: &Tokenizer, test: StateName) -> bool {
-    let source = tokenizer.parse_state.source;
+    let source = tokenizer.parse_state.bytes;
     let index = tokenizer.point.index + 1;
     if tokenizer.current != Some(b'\n') || index >= source.len() {
         return false;

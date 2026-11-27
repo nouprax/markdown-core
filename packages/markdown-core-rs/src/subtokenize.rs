@@ -124,9 +124,9 @@ pub fn subtokenize(
                         events,
                         index - 2,
                         &[
-                            Name::BlankLineEnd,
+                            Name::BlankLineEnding,
                             Name::Definition,
-                            Name::LineEnd,
+                            Name::LineEnding,
                             Name::SpaceOrTab,
                             Name::ListItemIndent,
                             Name::FootnoteDefinitionIndent,

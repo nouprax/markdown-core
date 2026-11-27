@@ -38,7 +38,7 @@ use crate::tokenizer::{Container, Tokenizer};
 use crate::util::constant::TAB_SIZE;
 
 /// Bytes this construct can start at.
-pub const STARTS: Starts = Starts::Codes(b" [");
+pub const STARTS: Starts = Starts::Bytes(b" [");
 
 /// Start of a callout header.
 ///

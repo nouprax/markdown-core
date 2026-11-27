@@ -272,7 +272,7 @@ fn after(tokenizer: &mut Tokenizer, blank: bool) -> State {
             &[Name::ListItem],
         );
         let mut prefix = Slice::from_position(
-            tokenizer.parse_state.source,
+            tokenizer.parse_state.bytes,
             &Position {
                 start: &tokenizer.events[start].point,
                 end: &tokenizer.point,
@@ -290,7 +290,7 @@ fn after(tokenizer: &mut Tokenizer, blank: bool) -> State {
         container.size = prefix;
 
         tokenizer.exit(Name::ListItemPrefix);
-        tokenizer.add_resolver_before(ResolveName::ListItem);
+        tokenizer.register_resolver_before(ResolveName::ListItem);
         State::Ok
     }
 }
@@ -369,7 +369,7 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
                 let end = skip::opt(&tokenizer.events, index, &[Name::ListItem]) - 1;
                 let marker = skip::to(&tokenizer.events, index, &[Name::ListItemMarker]);
                 // Guaranteed to be a valid ASCII byte.
-                let marker = tokenizer.parse_state.source[tokenizer.events[marker].point.index];
+                let marker = tokenizer.parse_state.bytes[tokenizer.events[marker].point.index];
                 let current = (marker, balance, index, end);
 
                 let mut list_index = lists_wip.len();
@@ -385,8 +385,8 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
                             Name::SpaceOrTab,
                             Name::ListItemIndent,
                             Name::FootnoteDefinitionIndent,
-                            Name::LineEnd,
-                            Name::BlankLineEnd,
+                            Name::LineEnding,
+                            Name::BlankLineEnding,
                             Name::BlockQuotePrefix,
                         ],
                     );

@@ -100,7 +100,7 @@ pub enum Name {
     /// > | ␠␠␊
     ///       ^
     /// ```
-    BlankLineEnd,
+    BlankLineEnding,
     /// Whole block quote.
     ///
     /// ## Info
@@ -171,7 +171,7 @@ pub enum Name {
     ///   void
     /// * **Construct**:
     ///   [`document`][crate::construct::document]
-    Bom,
+    ByteOrderMark,
     /// Callout header.
     ///
     /// ## Info
@@ -537,7 +537,7 @@ pub enum Name {
     /// * **Content model**:
     ///   [`CodeFencedFence`][Name::CodeFencedFence],
     ///   [`CodeFlowChunk`][Name::CodeFlowChunk],
-    ///   [`LineEnd`][Name::LineEnd],
+    ///   [`LineEnding`][Name::LineEnding],
     ///   [`SpaceOrTab`][Name::SpaceOrTab]
     /// * **Construct**:
     ///   [`raw_flow`][crate::construct::raw_flow]
@@ -673,7 +673,7 @@ pub enum Name {
     ///   [flow content][crate::construct::flow]
     /// * **Content model**:
     ///   [`CodeFlowChunk`][Name::CodeFlowChunk],
-    ///   [`LineEnd`][Name::LineEnd],
+    ///   [`LineEnding`][Name::LineEnding],
     ///   [`SpaceOrTab`][Name::SpaceOrTab]
     /// * **Construct**:
     ///   [`raw_flow`][crate::construct::raw_flow]
@@ -694,7 +694,7 @@ pub enum Name {
     /// * **Content model**:
     ///   [`CodeTextData`][Name::CodeTextData],
     ///   [`CodeTextSequence`][Name::CodeTextSequence],
-    ///   [`LineEnd`][Name::LineEnd]
+    ///   [`LineEnding`][Name::LineEnding]
     /// * **Construct**:
     ///   [`raw_text`][crate::construct::raw_text]
     ///
@@ -749,7 +749,7 @@ pub enum Name {
     /// * **Content model**:
     ///   [`CommentSequence`][Name::CommentSequence],
     ///   [`CommentText`][Name::CommentText],
-    ///   [`LineEnd`][Name::LineEnd],
+    ///   [`LineEnding`][Name::LineEnding],
     ///   [`SpaceOrTab`][Name::SpaceOrTab]
     /// * **Construct**:
     ///   [`comment`][crate::construct::comment]
@@ -812,7 +812,7 @@ pub enum Name {
     /// * **Content model**:
     ///   [`CommentChunk`][Name::CommentChunk],
     ///   [`CommentFence`][Name::CommentFence],
-    ///   [`LineEnd`][Name::LineEnd]
+    ///   [`LineEnding`][Name::LineEnding]
     /// * **Construct**:
     ///   [`comment`][crate::construct::comment]
     ///
@@ -914,7 +914,7 @@ pub enum Name {
     ///   [`DefinitionLabel`][Name::DefinitionLabel],
     ///   [`DefinitionDestination`][Name::DefinitionDestination],
     ///   [`DefinitionTitle`][Name::DefinitionTitle],
-    ///   [`LineEnd`][Name::LineEnd],
+    ///   [`LineEnding`][Name::LineEnding],
     ///   [`SpaceOrTab`][Name::SpaceOrTab]
     /// * **Construct**:
     ///   [`definition`][crate::construct::definition]
@@ -1032,7 +1032,7 @@ pub enum Name {
     /// * **Content model**:
     ///   [`DefinitionLabelMarker`][Name::DefinitionLabelMarker],
     ///   [`DefinitionLabelText`][Name::DefinitionLabelText],
-    ///   [`LineEnd`][Name::LineEnd],
+    ///   [`LineEnding`][Name::LineEnding],
     ///   [`SpaceOrTab`][Name::SpaceOrTab]
     /// * **Construct**:
     ///   [`label`][crate::construct::partial_label]
@@ -1108,7 +1108,7 @@ pub enum Name {
     /// * **Content model**:
     ///   [`DefinitionTitleMarker`][Name::DefinitionTitleMarker],
     ///   [`DefinitionTitleText`][Name::DefinitionTitleText],
-    ///   [`LineEnd`][Name::LineEnd],
+    ///   [`LineEnding`][Name::LineEnding],
     ///   [`SpaceOrTab`][Name::SpaceOrTab]
     /// * **Construct**:
     ///   [`title`][crate::construct::partial_title]
@@ -1220,7 +1220,7 @@ pub enum Name {
     /// * **Content model**:
     ///   [`FrontmatterFence`][Name::FrontmatterFence],
     ///   [`FrontmatterChunk`][Name::FrontmatterChunk],
-    ///   [`LineEnd`][Name::LineEnd]
+    ///   [`LineEnding`][Name::LineEnding]
     /// * **Construct**:
     ///   [`frontmatter`][crate::construct::frontmatter]
     ///
@@ -1560,8 +1560,8 @@ pub enum Name {
     /// * **Context**:
     ///   [text content][crate::construct::text]
     /// * **Content model**:
-    ///   [`StrikeSequence`][Name::StrikeSequence],
-    ///   [`StrikeText`][Name::StrikeText]
+    ///   [`StrikethroughSequence`][Name::StrikethroughSequence],
+    ///   [`StrikethroughText`][Name::StrikethroughText]
     /// * **Construct**:
     ///   [`attention`][crate::construct::attention]
     ///
@@ -1571,13 +1571,13 @@ pub enum Name {
     /// > | ~a~
     ///     ^^^
     /// ```
-    Strike,
+    Strikethrough,
     /// GFM extension: Strikethrough sequence.
     ///
     /// ## Info
     ///
     /// * **Context**:
-    ///   [`Strike`][Name::Strike]
+    ///   [`Strikethrough`][Name::Strikethrough]
     /// * **Content model**:
     ///   void
     /// * **Construct**:
@@ -1589,13 +1589,13 @@ pub enum Name {
     /// > | ~a~
     ///     ^ ^
     /// ```
-    StrikeSequence,
+    StrikethroughSequence,
     /// GFM extension: Strikethrough text.
     ///
     /// ## Info
     ///
     /// * **Context**:
-    ///   [`Strike`][Name::Strike]
+    ///   [`Strikethrough`][Name::Strikethrough]
     /// * **Content model**:
     ///   [text content][crate::construct::text]
     /// * **Construct**:
@@ -1607,7 +1607,7 @@ pub enum Name {
     /// > | ~a~
     ///      ^
     /// ```
-    StrikeText,
+    StrikethroughText,
     /// Whole insertion (`++a++`).
     ///
     /// Formed by the [`attention`][crate::construct::attention] resolver
@@ -1651,9 +1651,9 @@ pub enum Name {
     /// * **Context**:
     ///   [flow content][crate::construct::flow]
     /// * **Content model**:
-    ///   [`TableRest`][Name::TableRest],
+    ///   [`TableBody`][Name::TableBody],
     ///   [`TableHead`][Name::TableHead],
-    ///   [`LineEnd`][Name::LineEnd]
+    ///   [`LineEnding`][Name::LineEnding]
     /// * **Construct**:
     ///   [`table`][crate::construct::table]
     ///
@@ -1676,7 +1676,7 @@ pub enum Name {
     ///   [`Table`][Name::Table]
     /// * **Content model**:
     ///   [`TableRow`][Name::TableRow],
-    ///   [`LineEnd`][Name::LineEnd]
+    ///   [`LineEnding`][Name::LineEnding]
     /// * **Construct**:
     ///   [`table`][crate::construct::table]
     ///
@@ -1688,7 +1688,7 @@ pub enum Name {
     /// > | | b |
     ///     ^^^^^
     /// ```
-    TableRest,
+    TableBody,
     /// GFM extension: Table cell.
     ///
     /// ## Info
@@ -1867,7 +1867,7 @@ pub enum Name {
     /// * **Content model**:
     ///   [`TableRow`][Name::TableRow],
     ///   [`TableDelimiterRow`][Name::TableDelimiterRow],
-    ///   [`LineEnd`][Name::LineEnd]
+    ///   [`LineEnding`][Name::LineEnding]
     /// * **Construct**:
     ///   [`table`][crate::construct::table]
     ///
@@ -1886,7 +1886,7 @@ pub enum Name {
     /// ## Info
     ///
     /// * **Context**:
-    ///   [`TableRest`][Name::TableRest],
+    ///   [`TableBody`][Name::TableBody],
     ///   [`TableHead`][Name::TableHead]
     /// * **Content model**:
     ///   [`TableCell`][Name::TableCell]
@@ -2080,7 +2080,7 @@ pub enum Name {
     /// * **Content model**:
     ///   [`HeadingSetextText`][Name::HeadingSetextText],
     ///   [`HeadingSetextUnderline`][Name::HeadingSetextUnderline],
-    ///   [`LineEnd`][Name::LineEnd],
+    ///   [`LineEnding`][Name::LineEnding],
     ///   [`SpaceOrTab`][Name::SpaceOrTab]
     /// * **Construct**:
     ///   [`heading_setext`][crate::construct::heading_setext]
@@ -2160,7 +2160,7 @@ pub enum Name {
     ///   [flow content][crate::construct::flow]
     /// * **Content model**:
     ///   [`HtmlFlowData`][Name::HtmlFlowData],
-    ///   [`LineEnd`][Name::LineEnd],
+    ///   [`LineEnding`][Name::LineEnding],
     ///   [`SpaceOrTab`][Name::SpaceOrTab]
     /// * **Construct**:
     ///   [`html_flow`][crate::construct::html_flow]
@@ -2198,7 +2198,7 @@ pub enum Name {
     ///   [text content][crate::construct::text]
     /// * **Content model**:
     ///   [`HtmlTextData`][Name::HtmlTextData],
-    ///   [`LineEnd`][Name::LineEnd],
+    ///   [`LineEnding`][Name::LineEnding],
     ///   [`SpaceOrTab`][Name::SpaceOrTab]
     /// * **Construct**:
     ///   [`html_text`][crate::construct::html_text]
@@ -2417,7 +2417,7 @@ pub enum Name {
     ///      ^
     ///   | b
     /// ```
-    LineEnd,
+    LineEnding,
     /// Link.
     ///
     /// ## Info
@@ -2531,10 +2531,10 @@ pub enum Name {
     /// * **Context**:
     ///   [document content][crate::construct::document]
     /// * **Content model**:
-    ///   [`BlankLineEnd`][Name::BlankLineEnd],
+    ///   [`BlankLineEnding`][Name::BlankLineEnding],
     ///   [`BlockQuotePrefix`][Name::BlockQuotePrefix],
     ///   [`ListItem`][Name::ListItem],
-    ///   [`LineEnd`][Name::LineEnd],
+    ///   [`LineEnding`][Name::LineEnding],
     ///   [`SpaceOrTab`][Name::SpaceOrTab]
     /// * **Construct**:
     ///   [`list item`][crate::construct::list_item]
@@ -2555,10 +2555,10 @@ pub enum Name {
     /// * **Context**:
     ///   [document content][crate::construct::document]
     /// * **Content model**:
-    ///   [`BlankLineEnd`][Name::BlankLineEnd],
+    ///   [`BlankLineEnding`][Name::BlankLineEnding],
     ///   [`BlockQuotePrefix`][Name::BlockQuotePrefix],
     ///   [`ListItem`][Name::ListItem],
-    ///   [`LineEnd`][Name::LineEnd],
+    ///   [`LineEnding`][Name::LineEnding],
     ///   [`SpaceOrTab`][Name::SpaceOrTab]
     /// * **Construct**:
     ///   [`list item`][crate::construct::list_item]
@@ -2581,7 +2581,7 @@ pub enum Name {
     /// * **Content model**:
     ///   [`MathFlowFence`][Name::MathFlowFence],
     ///   [`MathFlowChunk`][Name::MathFlowChunk],
-    ///   [`LineEnd`][Name::LineEnd],
+    ///   [`LineEnding`][Name::LineEnding],
     ///   [`SpaceOrTab`][Name::SpaceOrTab]
     /// * **Construct**:
     ///   [`raw_flow`][crate::construct::raw_flow]
@@ -2690,7 +2690,7 @@ pub enum Name {
     /// * **Content model**:
     ///   [`MathTextData`][Name::MathTextData],
     ///   [`MathTextSequence`][Name::MathTextSequence],
-    ///   [`LineEnd`][Name::LineEnd]
+    ///   [`LineEnding`][Name::LineEnding]
     /// * **Construct**:
     ///   [`raw_text`][crate::construct::raw_text]
     ///
@@ -2825,7 +2825,7 @@ pub enum Name {
     ///   [`ResourceDestination`][Name::ResourceDestination],
     ///   [`ResourceTitle`][Name::ResourceTitle],
     ///   [`SpaceOrTab`][Name::SpaceOrTab],
-    ///   [`LineEnd`][Name::LineEnd]
+    ///   [`LineEnding`][Name::LineEnding]
     /// * **Construct**:
     ///   [`label_end`][crate::construct::label_end]
     ///
@@ -3170,7 +3170,7 @@ pub enum Inline {
     HardBreakEscape,
     Emphasis,
     Strong,
-    Strike,
+    Strikethrough,
     Insertion,
     Mark,
     Subscript,
@@ -3190,8 +3190,8 @@ pub enum Inline {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Space {
     Whitespace,
-    LineEnd,
-    BlankLineEnd,
+    LineEnding,
+    BlankLineEnding,
 }
 
 impl Name {
@@ -3220,7 +3220,7 @@ impl Name {
             Name::HardBreakEscape => Role::Inline(Inline::HardBreakEscape),
             Name::Emphasis => Role::Inline(Inline::Emphasis),
             Name::Strong => Role::Inline(Inline::Strong),
-            Name::Strike => Role::Inline(Inline::Strike),
+            Name::Strikethrough => Role::Inline(Inline::Strikethrough),
             Name::Insertion => Role::Inline(Inline::Insertion),
             Name::Mark => Role::Inline(Inline::Mark),
             Name::Subscript => Role::Inline(Inline::Subscript),
@@ -3240,15 +3240,15 @@ impl Name {
             Name::Link | Name::Image => Role::Inline(Inline::Media),
             Name::FootnoteCall => Role::Inline(Inline::FootnoteCall),
             Name::SpaceOrTab => Role::Space(Space::Whitespace),
-            Name::LineEnd => Role::Space(Space::LineEnd),
-            Name::BlankLineEnd => Role::Space(Space::BlankLineEnd),
+            Name::LineEnding => Role::Space(Space::LineEnding),
+            Name::BlankLineEnding => Role::Space(Space::BlankLineEnding),
             Name::AttentionSequence
             | Name::AutolinkEmail
             | Name::AutolinkMarker
             | Name::AutolinkProtocol
             | Name::BlockQuoteMarker
             | Name::BlockQuotePrefix
-            | Name::Bom
+            | Name::ByteOrderMark
             | Name::CharacterEscapeMarker
             | Name::CharacterEscapeValue
             | Name::CharacterReferenceMarker
@@ -3301,8 +3301,8 @@ impl Name {
             | Name::FootnoteDefinitionLabelMarker
             | Name::FootnoteDefinitionLabelText
             | Name::FootnoteDefinitionMarker
-            | Name::StrikeSequence
-            | Name::StrikeText
+            | Name::StrikethroughSequence
+            | Name::StrikethroughText
             | Name::InsertionSequence
             | Name::InsertionText
             | Name::MarkSequence
@@ -3311,7 +3311,7 @@ impl Name {
             | Name::SubscriptText
             | Name::SuperscriptSequence
             | Name::SuperscriptText
-            | Name::TableRest
+            | Name::TableBody
             | Name::TableCell
             | Name::TableCellText
             | Name::TableCellDivider
@@ -3378,9 +3378,9 @@ pub const VOID_EVENTS: [Name; 76] = [
     Name::AutolinkEmail,
     Name::AutolinkMarker,
     Name::AutolinkProtocol,
-    Name::BlankLineEnd,
+    Name::BlankLineEnding,
     Name::BlockQuoteMarker,
-    Name::Bom,
+    Name::ByteOrderMark,
     Name::CharacterEscapeMarker,
     Name::CharacterEscapeValue,
     Name::CharacterReferenceMarker,
@@ -3405,7 +3405,7 @@ pub const VOID_EVENTS: [Name; 76] = [
     Name::FootnoteCallMarker,
     Name::FootnoteDefinitionLabelMarker,
     Name::FootnoteDefinitionMarker,
-    Name::StrikeSequence,
+    Name::StrikethroughSequence,
     Name::InsertionSequence,
     Name::MarkSequence,
     Name::SubscriptSequence,
@@ -3425,7 +3425,7 @@ pub const VOID_EVENTS: [Name; 76] = [
     Name::HtmlTextData,
     Name::LabelImageMarker,
     Name::LabelMarker,
-    Name::LineEnd,
+    Name::LineEnding,
     Name::ListItemMarker,
     Name::ListItemValue,
     Name::MathFlowFenceSequence,
@@ -3493,7 +3493,7 @@ pub struct Point {
     pub column: usize,
     /// 0-indexed position in the document.
     ///
-    /// Also an `index` into `source`.
+    /// Also an `index` into `bytes`.
     pub index: usize,
     /// Virtual step on the same `index`.
     pub vs: usize,
@@ -3502,12 +3502,12 @@ pub struct Point {
 impl Point {
     /// Create a new point, that is shifted from the close earlier current
     /// point, to `index`.
-    pub fn shift_to(&self, source: &[u8], index: usize) -> Point {
+    pub fn shift_to(&self, bytes: &[u8], index: usize) -> Point {
         let mut next = self.clone();
         debug_assert!(index > next.index, "expected to shift forward");
 
         while next.index < index {
-            match source[next.index] {
+            match bytes[next.index] {
                 b'\n' | b'\r' => unreachable!("cannot move past line endings"),
                 b'\t' => {
                     let remainder = next.column % TAB_SIZE;

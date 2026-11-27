@@ -1,6 +1,6 @@
 //! Deal with bytes, chars, and kinds.
 
-use crate::util::classes::{classes, MARK, PUNCTUATION, WHITESPACE};
+use crate::util::classes::{classes, PUNCTUATION, SYMBOL, WHITESPACE};
 use alloc::string::String;
 
 /// Character kinds.
@@ -39,9 +39,9 @@ pub enum Kind {
 ///
 /// In most cases, markdown operates on ASCII bytes.
 /// In a few cases, it is unicode aware, so we need to find an actual char.
-pub fn before_index(source: &[u8], index: usize) -> Option<char> {
+pub fn before_index(bytes: &[u8], index: usize) -> Option<char> {
     let start = index.saturating_sub(4);
-    String::from_utf8_lossy(&source[start..index])
+    String::from_utf8_lossy(&bytes[start..index])
         .chars()
         .last()
 }
@@ -50,31 +50,31 @@ pub fn before_index(source: &[u8], index: usize) -> Option<char> {
 ///
 /// In most cases, markdown operates on ASCII bytes.
 /// In a few cases, it is unicode aware, so we need to find an actual char.
-pub fn after_index(source: &[u8], index: usize) -> Option<char> {
-    let end = if index + 4 > source.len() {
-        source.len()
+pub fn after_index(bytes: &[u8], index: usize) -> Option<char> {
+    let end = if index + 4 > bytes.len() {
+        bytes.len()
     } else {
         index + 4
     };
-    String::from_utf8_lossy(&source[index..end]).chars().next()
+    String::from_utf8_lossy(&bytes[index..end]).chars().next()
 }
 
 /// Classify a char at `index` in bytes (`&[u8]`).
-pub fn kind_after_index(source: &[u8], index: usize) -> Kind {
-    if index == source.len() {
+pub fn kind_after_index(bytes: &[u8], index: usize) -> Kind {
+    if index == bytes.len() {
         Kind::Whitespace
     } else {
-        let code = source[index];
-        if code.is_ascii_whitespace() {
+        let byte = bytes[index];
+        if byte.is_ascii_whitespace() {
             Kind::Whitespace
-        } else if code.is_ascii_punctuation() {
+        } else if byte.is_ascii_punctuation() {
             Kind::Punctuation
-        } else if code.is_ascii_alphanumeric() {
+        } else if byte.is_ascii_alphanumeric() {
             Kind::Other
         } else {
             // Otherwise: seems to be an ASCII control, so it seems to be a
             // non-ASCII `char`.
-            class_opt(after_index(source, index))
+            class_opt(after_index(bytes, index))
         }
     }
 }
@@ -92,7 +92,7 @@ pub fn class(char: char) -> Kind {
     let found = classes(char);
     if found & WHITESPACE != 0 {
         Kind::Whitespace
-    } else if found & (PUNCTUATION | MARK) != 0 {
+    } else if found & (PUNCTUATION | SYMBOL) != 0 {
         Kind::Punctuation
     } else {
         Kind::Other

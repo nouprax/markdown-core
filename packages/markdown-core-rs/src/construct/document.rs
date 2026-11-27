@@ -277,10 +277,10 @@ fn container_new_after(tokenizer: &mut Tokenizer) -> State {
 fn containers_after(tokenizer: &mut Tokenizer) -> State {
     let child = tokenizer.document.child.as_mut().unwrap();
 
-    child.lax = tokenizer.document.continued != tokenizer.document.stack.len();
+    child.lazy = tokenizer.document.continued != tokenizer.document.stack.len();
     // A lax line after flow that takes one (a paragraph, a callout header)
     // is read as if it interrupts that flow.
-    if child.lax && tokenizer.document.open {
+    if child.lazy && tokenizer.document.open {
         child.interrupt = true;
     }
     child.define_skip(tokenizer.point.clone());
@@ -351,7 +351,7 @@ fn flow_end(tokenizer: &mut Tokenizer) -> State {
     // The containers of this line, which a lookahead continues: a lax line
     // that does not continue a paragraph closes the ones that did not
     // continue.
-    let count = if child.lax {
+    let count = if child.lazy {
         tokenizer.document.continued
     } else {
         tokenizer.document.stack.len()
@@ -399,35 +399,35 @@ fn flow_end(tokenizer: &mut Tokenizer) -> State {
     //     ^
     //   | ```
     // ```
-    let mut document_lax_continuation_current = false;
+    let mut document_lazy_continuation_current = false;
     let mut stack_index = child.stack.len();
 
     // Use two algo’s: one for when we’re suspended or in multiline things
     // like definitions, another for when we fed the line ending and closed.
-    while !document_lax_continuation_current && stack_index > 0 {
+    while !document_lazy_continuation_current && stack_index > 0 {
         stack_index -= 1;
         let name = &child.stack[stack_index];
         if name == &Name::Content || name == &Name::TableHead {
-            document_lax_continuation_current = true;
+            document_lazy_continuation_current = true;
         }
     }
 
     // …another because we parse each “rest” line as a paragraph, and we passed
     // a EOL already.
-    if !document_lax_continuation_current && !child.events.is_empty() {
-        let before = skip::opt_back(&child.events, child.events.len() - 1, &[Name::LineEnd]);
+    if !document_lazy_continuation_current && !child.events.is_empty() {
+        let before = skip::opt_back(&child.events, child.events.len() - 1, &[Name::LineEnding]);
         let name = &child.events[before].name;
         // A callout header takes a lax line as the start of its body.
         if name == &Name::Content || name == &Name::HeadingSetextUnderline || name == &Name::Callout
         {
-            document_lax_continuation_current = true;
+            document_lazy_continuation_current = true;
         }
     }
 
     // Reset “piercing”.
     child.pierce = false;
 
-    if child.lax && tokenizer.document.open && document_lax_continuation_current {
+    if child.lazy && tokenizer.document.open && document_lazy_continuation_current {
         tokenizer.document.continued = tokenizer.document.stack.len();
     }
 
@@ -444,7 +444,7 @@ fn flow_end(tokenizer: &mut Tokenizer) -> State {
         State::Ok
     } else {
         tokenizer.document.continued = 0;
-        tokenizer.document.open = document_lax_continuation_current;
+        tokenizer.document.open = document_lazy_continuation_current;
         // Containers would only be interrupting if we’ve continued.
         tokenizer.interrupt = false;
         State::Redo(StateName::Document(Step::ContainerOldBefore))
@@ -523,10 +523,10 @@ pub fn resolve(tokenizer: &mut Tokenizer) {
         if child.events[child_index].kind == Kind::Exit
             && matches!(
                 child.events[child_index].name,
-                Name::LineEnd | Name::BlankLineEnd
+                Name::LineEnding | Name::BlankLineEnding
             )
         {
-            // Inject before `Enter:LineEnd`.
+            // Inject before `Enter:LineEnding`.
             let mut insert_index = child_index - 1;
             let mut point = &child.events[insert_index].point;
 

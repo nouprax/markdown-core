@@ -12,7 +12,7 @@
 //!
 //! [text]: crate::construct::text
 
-use crate::choice::{self, Choice, Item, List};
+use crate::choice::{self, Choice, Entry, List};
 use crate::construct::partial_whitespace::resolve_whitespace;
 use crate::construct::{character_escape, character_reference, partial_data};
 use crate::resolve::Name as ResolveName;
@@ -25,11 +25,11 @@ use crate::tokenizer::Tokenizer;
 /// Data when none of these matched.
 pub const CHOICE: Choice = Choice::new(
     &[
-        Item {
+        Entry {
             starts: character_reference::STARTS,
             step: StateName::CharacterReference(character_reference::Step::Start),
         },
-        Item {
+        Entry {
             starts: character_escape::STARTS,
             step: StateName::CharacterEscape(character_escape::Step::Start),
         },
@@ -56,8 +56,8 @@ fn start(_tokenizer: &mut Tokenizer) -> State {
 /// ````
 fn before(tokenizer: &mut Tokenizer) -> State {
     if tokenizer.current.is_none() {
-        tokenizer.add_resolver(ResolveName::Data);
-        tokenizer.add_resolver(ResolveName::String);
+        tokenizer.register_resolver(ResolveName::Data);
+        tokenizer.register_resolver(ResolveName::String);
         State::Ok
     } else {
         State::Redo(choice::start(List::String))

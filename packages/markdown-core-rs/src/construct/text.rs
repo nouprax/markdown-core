@@ -24,7 +24,7 @@
 //! > 👉 **Note**: for performance reasons, hard break (trailing) is formed by
 //! > [whitespace][crate::construct::partial_whitespace].
 
-use crate::choice::{self, Choice, Item, List};
+use crate::choice::{self, Choice, Entry, List};
 use crate::construct::autolink_literal::resolve as resolve_autolink_literal;
 use crate::construct::partial_whitespace::resolve_whitespace;
 use crate::construct::{
@@ -43,63 +43,63 @@ use crate::tokenizer::Tokenizer;
 /// Data when none of these matched.
 pub const CHOICE: Choice = Choice::new(
     &[
-        Item {
+        Entry {
             starts: cross_link::STARTS,
             step: StateName::CrossLink(cross_link::Step::Start),
         },
-        Item {
+        Entry {
             starts: label_start_image::STARTS,
             step: StateName::LabelStartImage(label_start_image::Step::Start),
         },
-        Item {
+        Entry {
             starts: raw_text::STARTS,
             step: StateName::RawText(raw_text::Step::Start),
         },
-        Item {
+        Entry {
             starts: character_reference::STARTS,
             step: StateName::CharacterReference(character_reference::Step::Start),
         },
-        Item {
+        Entry {
             starts: comment::STARTS,
             step: StateName::Comment(comment::Step::Start),
         },
-        Item {
+        Entry {
             starts: attention::STARTS,
             step: StateName::Attention(attention::Step::Start),
         },
-        Item {
+        Entry {
             starts: autolink::STARTS,
             step: StateName::Autolink(autolink::Step::Start),
         },
-        Item {
+        Entry {
             starts: html_text::STARTS,
             step: StateName::HtmlText(html_text::Step::Start),
         },
-        Item {
+        Entry {
             starts: autolink_literal::PROTOCOL,
             step: StateName::AutolinkLiteral(autolink_literal::Step::ProtocolStart),
         },
-        Item {
+        Entry {
             starts: autolink_literal::WWW,
             step: StateName::AutolinkLiteral(autolink_literal::Step::WwwStart),
         },
-        Item {
+        Entry {
             starts: label_start_footnote::STARTS,
             step: StateName::LabelStartFootnote(label_start_footnote::Step::Start),
         },
-        Item {
+        Entry {
             starts: label_start_link::STARTS,
             step: StateName::LabelStartLink(label_start_link::Step::Start),
         },
-        Item {
+        Entry {
             starts: character_escape::STARTS,
             step: StateName::CharacterEscape(character_escape::Step::Start),
         },
-        Item {
+        Entry {
             starts: hard_break_escape::STARTS,
             step: StateName::HardBreakEscape(hard_break_escape::Step::Start),
         },
-        Item {
+        Entry {
             starts: label_end::STARTS,
             step: StateName::LabelEnd(label_end::Step::Start),
         },
@@ -136,8 +136,8 @@ fn start(tokenizer: &mut Tokenizer) -> State {
 /// ```
 fn before(tokenizer: &mut Tokenizer) -> State {
     if tokenizer.current.is_none() {
-        tokenizer.add_resolver(ResolveName::Data);
-        tokenizer.add_resolver(ResolveName::Text);
+        tokenizer.register_resolver(ResolveName::Data);
+        tokenizer.register_resolver(ResolveName::Text);
         State::Ok
     } else {
         State::Redo(choice::start(List::Text))

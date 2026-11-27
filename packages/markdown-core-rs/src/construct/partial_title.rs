@@ -113,11 +113,11 @@ fn lead(tokenizer: &mut Tokenizer, title: Title) -> State {
 ///      ^
 /// ```
 fn at_break(tokenizer: &mut Tokenizer, mut title: Title) -> State {
-    if let Some(code) = tokenizer.current {
-        if code == title.close {
+    if let Some(byte) = tokenizer.current {
+        if byte == title.close {
             tokenizer.exit(title.names.text);
             State::Redo(StateName::Title(Step::Lead(title)))
-        } else if code == b'\n' {
+        } else if byte == b'\n' {
             tokenizer.attempt(
                 State::Next(StateName::Title(Step::AfterEol(title))),
                 State::Nok,

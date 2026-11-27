@@ -46,7 +46,7 @@ impl<'a> Position<'a> {
 #[derive(Debug)]
 pub struct Slice<'a> {
     /// Bytes.
-    pub source: &'a [u8],
+    pub bytes: &'a [u8],
     /// Number of virtual spaces before the bytes.
     pub before: usize,
     /// Number of virtual spaces after the bytes.
@@ -55,7 +55,7 @@ pub struct Slice<'a> {
 
 impl<'a> Slice<'a> {
     /// Get a slice for a position.
-    pub fn from_position(source: &'a [u8], position: &Position) -> Slice<'a> {
+    pub fn from_position(bytes: &'a [u8], position: &Position) -> Slice<'a> {
         let mut before = position.start.vs;
         let mut after = position.end.vs;
         let mut start = position.start.index;
@@ -76,7 +76,7 @@ impl<'a> Slice<'a> {
         }
 
         Slice {
-            source: &source[start..end],
+            bytes: &bytes[start..end],
             before,
             after,
         }
@@ -85,9 +85,9 @@ impl<'a> Slice<'a> {
     /// Get a slice for two indices.
     ///
     /// > 👉 **Note**: indices cannot represent virtual spaces.
-    pub fn from_indices(source: &'a [u8], start: usize, end: usize) -> Slice<'a> {
+    pub fn from_indices(bytes: &'a [u8], start: usize, end: usize) -> Slice<'a> {
         Slice {
-            source: &source[start..end],
+            bytes: &bytes[start..end],
             before: 0,
             after: 0,
         }
@@ -95,14 +95,14 @@ impl<'a> Slice<'a> {
 
     /// Get the size of this slice, including virtual spaces.
     pub fn len(&self) -> usize {
-        self.source.len() + self.before + self.after
+        self.bytes.len() + self.before + self.after
     }
 
     /// Turn the slice into a `&str`.
     ///
     /// > 👉 **Note**: cannot represent virtual spaces.
     pub fn as_str(&self) -> &str {
-        str::from_utf8(self.source).unwrap()
+        str::from_utf8(self.bytes).unwrap()
     }
 
     /// Turn the slice into a `String`.

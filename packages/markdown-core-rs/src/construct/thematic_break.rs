@@ -64,7 +64,7 @@ use crate::tokenizer::Tokenizer;
 use crate::util::constant::{TAB_SIZE, THEMATIC_BREAK_MARKER_COUNT_MIN};
 
 /// Bytes this construct can start at.
-pub const STARTS: Starts = Starts::Codes(b"\t *-_");
+pub const STARTS: Starts = Starts::Bytes(b"\t *-_");
 
 /// Start of thematic break.
 ///

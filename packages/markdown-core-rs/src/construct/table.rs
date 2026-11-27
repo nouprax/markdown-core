@@ -146,7 +146,7 @@
 //! in the HTML spec for more info.
 //!
 //! If the alignment of a column is left, right, or center, a deprecated
-//! `side` attribute is added to each `<th>` and `<td>` element belonging to
+//! `align` attribute is added to each `<th>` and `<td>` element belonging to
 //! that column.
 //! That attribute is interpreted by browsers as if a CSS `text-align` property
 //! was included, with its value set to that same keyword.
@@ -196,7 +196,7 @@
 //! ## Tokens
 //!
 //! * [`Table`][Name::Table]
-//! * [`TableRest`][Name::TableRest]
+//! * [`TableBody`][Name::TableBody]
 //! * [`TableCell`][Name::TableCell]
 //! * [`TableCellDivider`][Name::TableCellDivider]
 //! * [`TableCellText`][Name::TableCellText]
@@ -207,7 +207,7 @@
 //! * [`TableDelimiterRow`][Name::TableDelimiterRow]
 //! * [`TableHead`][Name::TableHead]
 //! * [`TableRow`][Name::TableRow]
-//! * [`LineEnd`][Name::LineEnd]
+//! * [`LineEnding`][Name::LineEnding]
 //!
 //! ## References
 //!
@@ -236,7 +236,7 @@ use crate::util::{constant::TAB_SIZE, skip::opt_back as skip_opt_back};
 use alloc::vec;
 
 /// Bytes this construct can start at.
-pub const STARTS: Starts = Starts::All;
+pub const STARTS: Starts = Starts::Any;
 
 /// Start of a GFM table.
 ///
@@ -258,13 +258,13 @@ fn start(tokenizer: &mut Tokenizer) -> State {
             tokenizer.events[skip_opt_back(
                 &tokenizer.events,
                 tokenizer.events.len() - 1,
-                &[Name::LineEnd, Name::SpaceOrTab],
+                &[Name::LineEnding, Name::SpaceOrTab],
             )]
             .name,
             Name::TableHead | Name::TableRow
         )
     {
-        State::Redo(StateName::Table(Step::RestRowStart))
+        State::Redo(StateName::Table(Step::BodyRowStart))
     } else {
         State::Redo(StateName::Table(Step::HeadRowBefore {
             head: Head::default(),
@@ -336,9 +336,9 @@ fn head_row_break(tokenizer: &mut Tokenizer, mut head: Head) -> State {
                 // Feel free to interrupt:
                 tokenizer.interrupt = true;
                 tokenizer.exit(Name::TableRow);
-                tokenizer.enter(Name::LineEnd);
+                tokenizer.enter(Name::LineEnding);
                 tokenizer.consume();
-                tokenizer.exit(Name::LineEnd);
+                tokenizer.exit(Name::LineEnding);
                 State::Next(StateName::Table(Step::HeadDelimiterStart { head }))
             } else {
                 State::Nok
@@ -433,7 +433,7 @@ fn head_delimiter_start(tokenizer: &mut Tokenizer, mut head: Head) -> State {
     // Reset `interrupt`.
     tokenizer.interrupt = false;
 
-    if tokenizer.lax || tokenizer.pierce {
+    if tokenizer.lazy || tokenizer.pierce {
         State::Nok
     } else {
         tokenizer.enter(Name::TableDelimiterRow);
@@ -517,12 +517,12 @@ fn head_delimiter_value_before(tokenizer: &mut Tokenizer, mut head: Head) -> Sta
             tokenizer.enter(Name::TableDelimiterMarker);
             tokenizer.consume();
             tokenizer.exit(Name::TableDelimiterMarker);
-            State::Next(StateName::Table(Step::HeadDelimiterLeftSideAfter { head }))
+            State::Next(StateName::Table(Step::HeadDelimiterLeftAlignmentAfter { head }))
         }
         Some(b'-') => {
             // Align: none.
             head.count += 1;
-            State::Redo(StateName::Table(Step::HeadDelimiterLeftSideAfter { head }))
+            State::Redo(StateName::Table(Step::HeadDelimiterLeftAlignmentAfter { head }))
         }
         _ => State::Redo(StateName::Table(Step::HeadDelimiterNok)),
     }
@@ -535,7 +535,7 @@ fn head_delimiter_value_before(tokenizer: &mut Tokenizer, mut head: Head) -> Sta
 /// > | | :- |
 ///        ^
 /// ```
-fn head_delimiter_left_side_after(tokenizer: &mut Tokenizer, head: Head) -> State {
+fn head_delimiter_left_alignment_after(tokenizer: &mut Tokenizer, head: Head) -> State {
     match tokenizer.current {
         Some(b'-') => {
             tokenizer.enter(Name::TableDelimiterFiller);
@@ -560,17 +560,17 @@ fn head_delimiter_filler(tokenizer: &mut Tokenizer, mut head: Head) -> State {
             State::Next(StateName::Table(Step::HeadDelimiterFiller { head }))
         }
         Some(b':') => {
-            // Align is `center` if it was `left`, `end` otherwise.
+            // Align is `center` if it was `left`, `right` otherwise.
             head.seen = true;
             tokenizer.exit(Name::TableDelimiterFiller);
             tokenizer.enter(Name::TableDelimiterMarker);
             tokenizer.consume();
             tokenizer.exit(Name::TableDelimiterMarker);
-            State::Next(StateName::Table(Step::HeadDelimiterEndSideAfter { head }))
+            State::Next(StateName::Table(Step::HeadDelimiterRightAlignmentAfter { head }))
         }
         _ => {
             tokenizer.exit(Name::TableDelimiterFiller);
-            State::Redo(StateName::Table(Step::HeadDelimiterEndSideAfter { head }))
+            State::Redo(StateName::Table(Step::HeadDelimiterRightAlignmentAfter { head }))
         }
     }
 }
@@ -582,7 +582,7 @@ fn head_delimiter_filler(tokenizer: &mut Tokenizer, mut head: Head) -> State {
 /// > | | -: |
 ///         ^
 /// ```
-fn head_delimiter_end_side_after(tokenizer: &mut Tokenizer, head: Head) -> State {
+fn head_delimiter_right_alignment_after(tokenizer: &mut Tokenizer, head: Head) -> State {
     match tokenizer.current {
         Some(b'\t' | b' ') => {
             tokenizer.attempt(
@@ -614,7 +614,7 @@ fn head_delimiter_cell_after(tokenizer: &mut Tokenizer, head: Head) -> State {
             } else {
                 tokenizer.exit(Name::TableDelimiterRow);
                 tokenizer.exit(Name::TableHead);
-                tokenizer.add_resolver(ResolveName::Table);
+                tokenizer.register_resolver(ResolveName::Table);
                 State::Ok
             }
         }
@@ -642,8 +642,8 @@ fn head_delimiter_nok(_tokenizer: &mut Tokenizer) -> State {
 /// > | | b |
 ///     ^
 /// ```
-fn rest_row_start(tokenizer: &mut Tokenizer) -> State {
-    if tokenizer.lax {
+fn body_row_start(tokenizer: &mut Tokenizer) -> State {
+    if tokenizer.lazy {
         State::Nok
     } else {
         tokenizer.enter(Name::TableRow);
@@ -651,7 +651,7 @@ fn rest_row_start(tokenizer: &mut Tokenizer) -> State {
         match tokenizer.current {
             Some(b'\t' | b' ') => {
                 tokenizer.attempt(
-                    State::Next(StateName::Table(Step::RestRowBreak)),
+                    State::Next(StateName::Table(Step::BodyRowBreak)),
                     State::Nok,
                 );
                 // We’re parsing a body row.
@@ -660,7 +660,7 @@ fn rest_row_start(tokenizer: &mut Tokenizer) -> State {
                 // So parse as much whitespace as needed:
                 State::Redo(space_or_tab_min_max(0, usize::MAX))
             }
-            _ => State::Redo(StateName::Table(Step::RestRowBreak)),
+            _ => State::Redo(StateName::Table(Step::BodyRowBreak)),
         }
     }
 }
@@ -675,7 +675,7 @@ fn rest_row_start(tokenizer: &mut Tokenizer) -> State {
 ///       ^
 ///         ^
 /// ```
-fn rest_row_break(tokenizer: &mut Tokenizer) -> State {
+fn body_row_break(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         None | Some(b'\n') => {
             tokenizer.exit(Name::TableRow);
@@ -683,7 +683,7 @@ fn rest_row_break(tokenizer: &mut Tokenizer) -> State {
         }
         Some(b'\t' | b' ') => {
             tokenizer.attempt(
-                State::Next(StateName::Table(Step::RestRowBreak)),
+                State::Next(StateName::Table(Step::BodyRowBreak)),
                 State::Nok,
             );
             State::Redo(space_or_tab())
@@ -692,12 +692,12 @@ fn rest_row_break(tokenizer: &mut Tokenizer) -> State {
             tokenizer.enter(Name::TableCellDivider);
             tokenizer.consume();
             tokenizer.exit(Name::TableCellDivider);
-            State::Next(StateName::Table(Step::RestRowBreak))
+            State::Next(StateName::Table(Step::BodyRowBreak))
         }
         // Anything else is cell content.
         _ => {
             tokenizer.enter(Name::Data);
-            State::Redo(StateName::Table(Step::RestRowData))
+            State::Redo(StateName::Table(Step::BodyRowData))
         }
     }
 }
@@ -710,17 +710,17 @@ fn rest_row_break(tokenizer: &mut Tokenizer) -> State {
 /// > | | b |
 ///       ^
 /// ```
-fn rest_row_data(tokenizer: &mut Tokenizer) -> State {
+fn body_row_data(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         None | Some(b'\t' | b'\n' | b' ' | b'|') => {
             tokenizer.exit(Name::Data);
-            State::Redo(StateName::Table(Step::RestRowBreak))
+            State::Redo(StateName::Table(Step::BodyRowBreak))
         }
         _ => {
             let name = if tokenizer.current == Some(b'\\') {
-                StateName::Table(Step::RestRowEscape)
+                StateName::Table(Step::BodyRowEscape)
             } else {
-                StateName::Table(Step::RestRowData)
+                StateName::Table(Step::BodyRowData)
             };
             tokenizer.consume();
             State::Next(name)
@@ -736,13 +736,13 @@ fn rest_row_data(tokenizer: &mut Tokenizer) -> State {
 /// > | | b\-c |
 ///         ^
 /// ```
-fn rest_row_escape(tokenizer: &mut Tokenizer) -> State {
+fn body_row_escape(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         Some(b'\\' | b'|') => {
             tokenizer.consume();
-            State::Next(StateName::Table(Step::RestRowData))
+            State::Next(StateName::Table(Step::BodyRowData))
         }
-        _ => State::Redo(StateName::Table(Step::RestRowData)),
+        _ => State::Redo(StateName::Table(Step::BodyRowData)),
     }
 }
 
@@ -754,9 +754,9 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
     let mut in_delimiter_row = false;
     let mut last_cell = (0, 0, 0, 0);
     let mut cell = (0, 0, 0, 0);
-    let mut after_head_before_first_rest_row = false;
+    let mut after_head_before_first_body_row = false;
     let mut last_table_end = 0;
-    let mut last_table_has_rest = false;
+    let mut last_table_has_body = false;
 
     while index < tokenizer.events.len() {
         let event = &tokenizer.events[index];
@@ -764,12 +764,12 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
         if event.kind == Kind::Enter {
             // Start of head.
             if event.name == Name::TableHead {
-                after_head_before_first_rest_row = false;
+                after_head_before_first_body_row = false;
 
                 // Inject previous (body end and) table end.
                 if last_table_end != 0 {
-                    flush_table_end(tokenizer, last_table_end, last_table_has_rest);
-                    last_table_has_rest = false;
+                    flush_table_end(tokenizer, last_table_end, last_table_has_body);
+                    last_table_has_body = false;
                     last_table_end = 0;
                 }
 
@@ -789,12 +789,12 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
                 cell = (0, index + 1, 0, 0);
 
                 // Inject table body start.
-                if after_head_before_first_rest_row {
-                    after_head_before_first_rest_row = false;
-                    last_table_has_rest = true;
+                if after_head_before_first_body_row {
+                    after_head_before_first_body_row = false;
+                    last_table_has_body = true;
                     let enter = Event {
                         kind: Kind::Enter,
-                        name: Name::TableRest,
+                        name: Name::TableBody,
                         point: tokenizer.events[index].point.clone(),
                         link: None,
                     };
@@ -835,7 +835,7 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
             }
         // Exit events.
         } else if event.name == Name::TableHead {
-            after_head_before_first_rest_row = true;
+            after_head_before_first_body_row = true;
             last_table_end = index;
         } else if matches!(event.name, Name::TableRow | Name::TableDelimiterRow) {
             in_row = false;
@@ -859,7 +859,7 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
     }
 
     if last_table_end != 0 {
-        flush_table_end(tokenizer, last_table_end, last_table_has_rest);
+        flush_table_end(tokenizer, last_table_end, last_table_has_body);
     }
 
     tokenizer.map.consume(&mut tokenizer.events);
@@ -873,7 +873,7 @@ fn flush_cell(
     in_delimiter_row: bool,
     row_end: Option<usize>,
 ) {
-    let whole_name = if in_delimiter_row {
+    let group_name = if in_delimiter_row {
         Name::TableDelimiterCell
     } else {
         Name::TableCell
@@ -897,7 +897,7 @@ fn flush_cell(
             0,
             vec![Event {
                 kind: Kind::Exit,
-                name: whole_name,
+                name: group_name,
                 point: tokenizer.events[span.0].point.clone(),
                 link: None,
             }],
@@ -916,7 +916,7 @@ fn flush_cell(
         0,
         vec![Event {
             kind: Kind::Enter,
-            name: whole_name,
+            name: group_name,
             point: tokenizer.events[span.1].point.clone(),
             link: None,
         }],
@@ -985,7 +985,7 @@ fn flush_cell(
             0,
             vec![Event {
                 kind: Kind::Exit,
-                name: whole_name,
+                name: group_name,
                 point: tokenizer.events[row_end].point.clone(),
                 link: None,
             }],
@@ -994,13 +994,13 @@ fn flush_cell(
 }
 
 /// Generate table end (and table body end).
-fn flush_table_end(tokenizer: &mut Tokenizer, index: usize, rest: bool) {
+fn flush_table_end(tokenizer: &mut Tokenizer, index: usize, body: bool) {
     let mut exits = vec![];
 
-    if rest {
+    if body {
         exits.push(Event {
             kind: Kind::Exit,
-            name: Name::TableRest,
+            name: Name::TableBody,
             point: tokenizer.events[index].point.clone(),
             link: None,
         });
@@ -1041,15 +1041,15 @@ pub enum Step {
     HeadDelimiterBefore { head: Head },
     HeadDelimiterCellBefore { head: Head },
     HeadDelimiterValueBefore { head: Head },
-    HeadDelimiterLeftSideAfter { head: Head },
+    HeadDelimiterLeftAlignmentAfter { head: Head },
     HeadDelimiterFiller { head: Head },
-    HeadDelimiterEndSideAfter { head: Head },
+    HeadDelimiterRightAlignmentAfter { head: Head },
     HeadDelimiterCellAfter { head: Head },
     HeadDelimiterNok,
-    RestRowStart,
-    RestRowBreak,
-    RestRowData,
-    RestRowEscape,
+    BodyRowStart,
+    BodyRowBreak,
+    BodyRowData,
+    BodyRowEscape,
 }
 
 impl From<Step> for StateName {
@@ -1071,16 +1071,16 @@ pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
         Step::HeadDelimiterBefore { head } => head_delimiter_before(tokenizer, head),
         Step::HeadDelimiterCellBefore { head } => head_delimiter_cell_before(tokenizer, head),
         Step::HeadDelimiterValueBefore { head } => head_delimiter_value_before(tokenizer, head),
-        Step::HeadDelimiterLeftSideAfter { head } => {
-            head_delimiter_left_side_after(tokenizer, head)
+        Step::HeadDelimiterLeftAlignmentAfter { head } => {
+            head_delimiter_left_alignment_after(tokenizer, head)
         }
         Step::HeadDelimiterFiller { head } => head_delimiter_filler(tokenizer, head),
-        Step::HeadDelimiterEndSideAfter { head } => head_delimiter_end_side_after(tokenizer, head),
+        Step::HeadDelimiterRightAlignmentAfter { head } => head_delimiter_right_alignment_after(tokenizer, head),
         Step::HeadDelimiterCellAfter { head } => head_delimiter_cell_after(tokenizer, head),
         Step::HeadDelimiterNok => head_delimiter_nok(tokenizer),
-        Step::RestRowStart => rest_row_start(tokenizer),
-        Step::RestRowBreak => rest_row_break(tokenizer),
-        Step::RestRowData => rest_row_data(tokenizer),
-        Step::RestRowEscape => rest_row_escape(tokenizer),
+        Step::BodyRowStart => body_row_start(tokenizer),
+        Step::BodyRowBreak => body_row_break(tokenizer),
+        Step::BodyRowData => body_row_data(tokenizer),
+        Step::BodyRowEscape => body_row_escape(tokenizer),
     }
 }

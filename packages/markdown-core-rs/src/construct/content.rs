@@ -64,7 +64,7 @@ fn chunk_inside(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         None | Some(b'\n') => {
             tokenizer.exit(Name::Content);
-            tokenizer.add_resolver_before(ResolveName::Content);
+            tokenizer.register_resolver_before(ResolveName::Content);
             // You’d be interrupting.
             tokenizer.interrupt = true;
             State::Ok
@@ -102,9 +102,9 @@ fn definition_after(tokenizer: &mut Tokenizer) -> State {
     if tokenizer.current.is_none() {
         State::Ok
     } else {
-        tokenizer.enter(Name::LineEnd);
+        tokenizer.enter(Name::LineEnding);
         tokenizer.consume();
-        tokenizer.exit(Name::LineEnd);
+        tokenizer.exit(Name::LineEnding);
         State::Next(StateName::Content(Step::DefinitionBefore))
     }
 }
@@ -125,7 +125,7 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Subresult {
                 let mut enter_index = exit_index + 1;
 
                 if enter_index == tokenizer.events.len()
-                    || tokenizer.events[enter_index].name != Name::LineEnd
+                    || tokenizer.events[enter_index].name != Name::LineEnding
                 {
                     break;
                 }

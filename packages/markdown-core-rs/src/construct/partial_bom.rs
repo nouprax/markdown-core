@@ -15,7 +15,7 @@
 //!
 //! ## Tokens
 //!
-//! * [`Bom`][Name::Bom]
+//! * [`ByteOrderMark`][Name::ByteOrderMark]
 //!
 //! ## References
 //!
@@ -36,7 +36,7 @@ const BOM: [u8; 3] = [0xEF, 0xBB, 0xBF];
 /// ```
 fn start(tokenizer: &mut Tokenizer) -> State {
     if tokenizer.current == Some(BOM[0]) {
-        tokenizer.enter(Name::Bom);
+        tokenizer.enter(Name::ByteOrderMark);
         State::Redo(StateName::Bom(Step::Inside { size: 0 }))
     } else {
         State::Nok
@@ -53,7 +53,7 @@ fn inside(tokenizer: &mut Tokenizer, size: usize) -> State {
     if tokenizer.current == Some(BOM[size]) {
         tokenizer.consume();
         if size + 1 == BOM.len() {
-            tokenizer.exit(Name::Bom);
+            tokenizer.exit(Name::ByteOrderMark);
             State::Ok
         } else {
             State::Next(StateName::Bom(Step::Inside { size: size + 1 }))

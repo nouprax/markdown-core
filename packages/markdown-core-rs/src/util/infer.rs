@@ -34,7 +34,7 @@ pub fn list_loose(events: &[Event], mut index: usize, include_items: bool) -> bo
         } else {
             balance -= 1;
 
-            if balance == 1 && event.name == Name::BlankLineEnd {
+            if balance == 1 && event.name == Name::BlankLineEnding {
                 // Blank line directly after item, which is just a prefix.
                 //
                 // ```markdown
@@ -107,7 +107,7 @@ pub fn list_item_loose(events: &[Event], mut index: usize) -> bool {
         } else {
             balance -= 1;
 
-            if balance == 1 && event.name == Name::BlankLineEnd {
+            if balance == 1 && event.name == Name::BlankLineEnding {
                 // Blank line directly after a prefix:
                 //
                 // ```markdown
@@ -149,10 +149,10 @@ pub fn list_item_loose(events: &[Event], mut index: usize) -> bool {
 }
 
 /// Figure out the alignment of a GFM table.
-pub fn table_sides(events: &[Event], mut index: usize) -> Vec<Flow> {
+pub fn table_align(events: &[Event], mut index: usize) -> Vec<Flow> {
     debug_assert!(matches!(events[index].name, Name::Table), "expected table");
     let mut in_delimiter_row = false;
-    let mut side = vec![];
+    let mut align = vec![];
 
     while index < events.len() {
         let event = &events[index];
@@ -161,8 +161,8 @@ pub fn table_sides(events: &[Event], mut index: usize) -> Vec<Flow> {
             if event.kind == Kind::Enter {
                 // Start of alignment value: set a new column.
                 if event.name == Name::TableDelimiterCellValue {
-                    side.push(if events[index + 1].name == Name::TableDelimiterMarker {
-                        Flow::Start
+                    align.push(if events[index + 1].name == Name::TableDelimiterMarker {
+                        Flow::Left
                     } else {
                         Flow::None
                     });
@@ -171,11 +171,11 @@ pub fn table_sides(events: &[Event], mut index: usize) -> Vec<Flow> {
                 // End of alignment value: change the column.
                 if event.name == Name::TableDelimiterCellValue {
                     if events[index - 1].name == Name::TableDelimiterMarker {
-                        let side_index = side.len() - 1;
-                        side[side_index] = if side[side_index] == Flow::Start {
+                        let align_index = align.len() - 1;
+                        align[align_index] = if align[align_index] == Flow::Left {
                             Flow::Center
                         } else {
-                            Flow::End
+                            Flow::Right
                         }
                     }
                 }
@@ -191,5 +191,5 @@ pub fn table_sides(events: &[Event], mut index: usize) -> Vec<Flow> {
         index += 1;
     }
 
-    side
+    align
 }
