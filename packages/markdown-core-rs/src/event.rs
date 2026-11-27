@@ -391,6 +391,25 @@ pub enum Name {
     ///         ^
     /// ```
     DirectiveClass,
+    /// Whole bracketed span.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [text content][crate::construct::text]
+    /// * **Content model**:
+    ///   [`Label`][Name::Label],
+    ///   [`Attributes`][Name::Attributes]
+    /// * **Construct**:
+    ///   [`label_end`][crate::construct::label_end]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | a [b]{.c} d
+    ///       ^^^^^^^
+    /// ```
+    Span,
     /// Whole directive (text).
     ///
     /// ## Info
@@ -3741,6 +3760,7 @@ pub enum Inline {
     Comment,
     CrossLink,
     Directive,
+    Span,
     Topic,
     Autolink,
     Literal,
@@ -3797,6 +3817,7 @@ impl Name {
             Name::Comment => Role::Inline(Inline::Comment),
             Name::CrossLink => Role::Inline(Inline::CrossLink),
             Name::DirectiveText => Role::Inline(Inline::Directive),
+            Name::Span => Role::Inline(Inline::Span),
             Name::Topic => Role::Inline(Inline::Topic),
             Name::CommentFlow => Role::Block(Block::Comment),
             Name::Autolink => Role::Inline(Inline::Autolink),

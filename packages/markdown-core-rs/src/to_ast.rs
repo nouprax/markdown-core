@@ -1250,6 +1250,15 @@ impl<'a> Compiler<'a> {
             Inline::Media => self.link(index),
             Inline::CrossLink => self.cross_link(index),
             Inline::Directive => self.directive(index),
+            Inline::Span => Kind::Span {
+                content: match self
+                    .child(index, Name::Label)
+                    .and_then(|label| self.child(label, Name::LabelText))
+                {
+                    Some(text) => self.label_content(text),
+                    None => vec![],
+                },
+            },
             Inline::Topic => Kind::Topic {
                 name: self
                     .child(index, Name::TopicText)

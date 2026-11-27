@@ -65,7 +65,7 @@ enum ByteAction {
 }
 
 /// Label start kind.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LabelKind {
     /// Label (image) start.
     ///
@@ -113,6 +113,15 @@ pub enum LabelKind {
     ///
     /// Construct: [Label start (note)][crate::construct::label_start_note].
     Note,
+    /// Label (link) start that attributes follow, as a bracketed span.
+    ///
+    /// ```markdown
+    /// > | a [b]{.c} d
+    ///       ^
+    /// ```
+    ///
+    /// Construct: [Label end][crate::construct::label_end].
+    Span,
 }
 
 /// Label start, looking for an end.

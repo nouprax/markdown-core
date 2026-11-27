@@ -224,7 +224,10 @@ fn start(tokenizer: &mut Tokenizer) -> State {
             // ```
             //
             // We can’t have that, so it’s just balanced brackets.
-            if label_start.inactive {
+            // Only a bracketed span may wrap a link.
+            if label_start.inactive
+                && tokenizer.parse_state.bytes.get(tokenizer.point.index + 1) != Some(&b'{')
+            {
                 return State::Redo(StateName::LabelEnd(Step::Nok));
             }
 
@@ -254,6 +257,51 @@ fn start(tokenizer: &mut Tokenizer) -> State {
 /// ```
 fn after(tokenizer: &mut Tokenizer, end: usize) -> State {
     let start_index = tokenizer.labels.starts.len() - 1;
+    let kind = tokenizer.labels.starts[start_index].kind;
+    // Attributes make a bracketed span of a link, image, or footnote start,
+    // which wins over a shortcut reference or a footnote call, and is all a
+    // start inside a link may be.
+    if tokenizer.current == Some(b'{') && kind != LabelKind::Note {
+        tokenizer.labels.starts[start_index].kind = LabelKind::Span;
+        tokenizer.attempt(
+            State::Next(StateName::LabelEnd(Step::Done { end })),
+            State::Next(StateName::LabelEnd(Step::Unspan { end, kind })),
+        );
+        return State::Redo(StateName::Attributes(partial_attributes::Step::Start {
+            line: false,
+        }));
+    }
+    State::Redo(StateName::LabelEnd(Step::Reference { end }))
+}
+
+/// After a label start that attributes did not follow: it is what it was.
+///
+/// ```markdown
+/// > | [a]{.} b
+///        ^
+/// ```
+fn unspan(tokenizer: &mut Tokenizer, end: usize, kind: LabelKind) -> State {
+    let index = tokenizer.labels.starts.len() - 1;
+    tokenizer.labels.starts[index].kind = kind;
+    State::Redo(StateName::LabelEnd(
+        if tokenizer.labels.starts[index].inactive {
+            Step::Nok
+        } else {
+            Step::Reference { end }
+        },
+    ))
+}
+
+/// After `]`, at what makes the label a link, an image, or a footnote call.
+///
+/// ```markdown
+/// > | [a](b) c
+///        ^
+/// > | [a] b
+///        ^
+/// ```
+fn reference(tokenizer: &mut Tokenizer, end: usize) -> State {
+    let start_index = tokenizer.labels.starts.len() - 1;
     let start = &tokenizer.labels.starts[start_index];
 
     let indices = (
@@ -280,14 +328,18 @@ fn after(tokenizer: &mut Tokenizer, end: usize) -> State {
     // See if this matches a footnote definition.
     if start.kind == LabelKind::Footnote {
         if tokenizer.parse_state.definitions.notes.contains(&id) {
-            // A resource makes it a link all the same.
-            if tokenizer.current == Some(b'(') {
+            // A resource or a full reference makes it a link all the same.
+            if matches!(tokenizer.current, Some(b'(' | b'[')) {
                 tokenizer.labels.starts[start_index].kind = LabelKind::UndefinedFootnote;
                 tokenizer.attempt(
                     State::Next(StateName::LabelEnd(Step::Ok { end })),
                     State::Next(StateName::LabelEnd(Step::Call { end })),
                 );
-                return State::Redo(StateName::LabelEnd(Step::ResourceStart));
+                return State::Redo(StateName::LabelEnd(if tokenizer.current == Some(b'(') {
+                    Step::ResourceStart
+                } else {
+                    Step::ReferenceFull
+                }));
             }
             return State::Redo(StateName::LabelEnd(Step::Ok { end }));
         }
@@ -413,7 +465,11 @@ fn done(tokenizer: &mut Tokenizer, end: usize) -> State {
     // we can’t remove them, but we can mark them.
     // An inline note holds its own links: they do not reach past it, and the
     // note is no link either.
-    if !matches!(label_start.kind, LabelKind::Image | LabelKind::Note) {
+    // A bracketed span is no link either.
+    if !matches!(
+        label_start.kind,
+        LabelKind::Image | LabelKind::Note | LabelKind::Span
+    ) {
         let mut index = tokenizer.labels.starts.len();
         while index > 0 {
             index -= 1;
@@ -424,6 +480,13 @@ fn done(tokenizer: &mut Tokenizer, end: usize) -> State {
                 _ => label_start.inactive = true,
             }
         }
+    }
+
+    // A bracketed span from a footnote start reads its caret as attention.
+    if label_start.kind == LabelKind::Span
+        && tokenizer.events[label_start.start.0].name == Name::FootnoteCallLabel
+    {
+        tokenizer.register_resolver(ResolveName::Attention);
     }
 
     tokenizer.labels.pairs.push(Label {
@@ -726,6 +789,8 @@ fn insert_labels(tokenizer: &mut Tokenizer, labels: &[Label]) {
             Name::Note
         } else if label.kind == LabelKind::Image {
             Name::Image
+        } else if label.kind == LabelKind::Span {
+            Name::Span
         } else {
             Name::Link
         };
@@ -733,19 +798,56 @@ fn insert_labels(tokenizer: &mut Tokenizer, labels: &[Label]) {
         // If this is a fine link, which starts with a footnote start that did
         // not match, we need to inject the caret as data.
         let mut caret = vec![];
+        let start_name = tokenizer.events[label.start.0].name;
+        // A bracketed span from a footnote start reads its caret as text,
+        // where it may be attention.
+        let span = label.kind == LabelKind::Span;
+        let caret_name = if span {
+            Name::AttentionSequence
+        } else {
+            Name::Data
+        };
 
-        if label.kind == LabelKind::UndefinedFootnote {
+        // A bracketed span from an image start leaves its `!` as text before
+        // it.
+        if span && start_name == Name::LabelImage {
+            let mark = vec![
+                Event {
+                    kind: Kind::Enter,
+                    name: Name::Data,
+                    point: tokenizer.events[label.start.0].point.clone(),
+                    link: None,
+                },
+                Event {
+                    kind: Kind::Exit,
+                    name: Name::Data,
+                    point: tokenizer.events[label.start.0 + 2].point.clone(),
+                    link: None,
+                },
+            ];
+            tokenizer.events[label.start.0].name = Name::LabelLink;
+            tokenizer.events[label.start.1].name = Name::LabelLink;
+            tokenizer.events[label.start.0].point =
+                tokenizer.events[label.start.0 + 3].point.clone();
+            // Remove the `!`: Enter:LabelImageMarker, Exit:LabelImageMarker.
+            tokenizer.map.add(label.start.0 + 1, 2, vec![]);
+            tokenizer.map.add(label.start.0, 0, mark);
+        }
+
+        if label.kind == LabelKind::UndefinedFootnote
+            || (span && start_name == Name::FootnoteCallLabel)
+        {
             // Add caret.
             caret.push(Event {
                 kind: Kind::Enter,
-                name: Name::Data,
+                name: caret_name,
                 // Enter:GfmFootnoteCallMarker.
                 point: tokenizer.events[label.start.1 - 2].point.clone().clone(),
                 link: None,
             });
             caret.push(Event {
                 kind: Kind::Exit,
-                name: Name::Data,
+                name: caret_name,
                 // Exit:GfmFootnoteCallMarker.
                 point: tokenizer.events[label.start.1 - 1].point.clone(),
                 link: None,
@@ -887,6 +989,8 @@ pub enum Step {
     ReferenceFullAfter,
     ReferenceNotFull { end: usize },
     Call { end: usize },
+    Unspan { end: usize, kind: LabelKind },
+    Reference { end: usize },
     ReferenceCollapsed,
     ReferenceCollapsedOpen,
 }
@@ -916,6 +1020,8 @@ pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
         Step::ReferenceFullAfter => reference_full_after(tokenizer),
         Step::ReferenceNotFull { end } => reference_not_full(tokenizer, end),
         Step::Call { end } => call(tokenizer, end),
+        Step::Unspan { end, kind } => unspan(tokenizer, end, kind),
+        Step::Reference { end } => reference(tokenizer, end),
         Step::ReferenceCollapsed => reference_collapsed(tokenizer),
         Step::ReferenceCollapsedOpen => reference_collapsed_open(tokenizer),
     }
