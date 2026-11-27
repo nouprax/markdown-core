@@ -6,6 +6,15 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Task checks accept only `[ ]`, `[x]` and `[X]`, `[?]` and `[-]`; any
+  other character between the brackets is ordinary text. A list item's
+  authored `marker` string is replaced by a `status`: open, done, question
+  or cancelled, and null for an ordinary item. C reads it with
+  `markdown_core_node_list_item_status` (`markdown_core_task_status`), which
+  replaces `markdown_core_node_list_item_marker`; Swift, Kotlin and ES expose
+  `status` (`TaskStatus`), replacing `marker`, `tasked` and `completed`; the
+  dump writes `status=done`.
+
 - Rename the image node `Embedded` to `Embed` and the workspace transclusion
   `CrossEmbedded` to `CrossEmbed` across C, Swift, Kotlin, ES, the dump and
   the fixtures: C uses `MARKDOWN_CORE_KIND_EMBED` and

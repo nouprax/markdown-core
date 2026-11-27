@@ -85,11 +85,19 @@ const mdastKinds = {
     highlight: "Mark"
 };
 
+/** The dump's status of an Obsidian task character; one the dialect has no
+ * status for keeps its character, so it shows as a difference. */
+function taskStatus(char) {
+    if (char === undefined || char === null) return "null";
+    const statuses = { " ": "open", x: "done", X: "done", "?": "question", "-": "cancelled" };
+    return statuses[char] ?? JSON.stringify(char);
+}
+
 const comparedFields = {
     Heading: ["level"],
     Text: ["literal"],
     List: ["flavor", "start", "tight"],
-    ListItem: ["marker"],
+    ListItem: ["status"],
     Code: ["literal"],
     CodeBlock: ["literal", "info"],
     Link: ["dest", "title"],
@@ -299,7 +307,7 @@ function fromMdast(node, unknown, source) {
         fields.tight = String(!node.spread);
     }
     if (node.type === "listItem") {
-        fields.marker = node.data?.taskChar ?? "null";
+        fields.status = taskStatus(node.data?.taskChar);
     }
     if (node.type === "inlineCode") fields.literal = node.value;
     if (node.type === "code") {

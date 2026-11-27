@@ -26,6 +26,7 @@ static int inspect_node(const markdown_core_node *node, ts_ast_range range, void
     bool flag;
     markdown_core_string literal;
     markdown_core_optional_string optional;
+    markdown_core_task_status task;
     const char *name;
     markdown_core_node_kind kind = markdown_core_node_get_kind(node);
     markdown_core_status status = markdown_core_node_kind_name(kind, &name);
@@ -46,7 +47,7 @@ static int inspect_node(const markdown_core_node *node, ts_ast_range range, void
         status = markdown_core_node_heading_level(node, &level);
         break;
     case MARKDOWN_CORE_KIND_LIST_ITEM:
-        status = markdown_core_node_list_item_marker(node, &optional);
+        status = markdown_core_node_list_item_status(node, &task);
         break;
     case MARKDOWN_CORE_KIND_DIRECTIVE:
     case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
@@ -119,7 +120,8 @@ static const struct {
     const char *bytes;
     size_t length;
 } probes[] = {
-#define PROBE(literal) {literal, sizeof(literal) - 1}
+#define PROBE(literal)                                                                                                 \
+    { literal, sizeof(literal) - 1 }
     PROBE("\xe4**a** b\n"),                     /* flanking, before */
     PROBE("**a**\xe4 b\n"),                     /* flanking, after */
     PROBE("a **\xe4"),                          /* flanking, cut at the end */

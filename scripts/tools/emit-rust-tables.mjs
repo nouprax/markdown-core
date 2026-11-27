@@ -35,7 +35,6 @@ const tables = (text) => {
     return found;
 };
 
-const rustKind = { uint8_t: "u8", uint16_t: "u16", uint32_t: "u32", int32_t: "i32", unsigned: "u8" };
 const emit = (rustName, table, kind) => {
     const lines = [];
     for (let index = 0; index < table.values.length; index += 16) {

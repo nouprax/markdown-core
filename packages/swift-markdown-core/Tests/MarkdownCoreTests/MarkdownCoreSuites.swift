@@ -87,7 +87,7 @@ import Testing
         #expect(try Document.parse("| a |\n| --- |\n| b |\n").content.first is Table)
         #expect(try dumped("~~x~~\n").contains("Strikethrough scope="))
         #expect(try dumped("www.example.com\n").contains("Link scope="))
-        #expect(try dumped("- [x] task\n").contains("marker=\"x\""))
+        #expect(try dumped("- [x] task\n").contains("status=done"))
         #expect(try dumped("ref[^a]\n\n[^a]: note\n").contains("Cite scope="))
         #expect(try dumped("$x$\n").contains("Formula scope="))
         #expect(try dumped(":badge[label]\n").contains("Directive scope="))

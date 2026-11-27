@@ -88,9 +88,7 @@ test("conformance: fields, nullability, and typed table nodes map to JavaScript"
         closed: false
     });
     assert.equal(document.content[0].tight, true);
-    assert.equal(document.content[1].items[0].marker, "x");
-    assert.equal(document.content[1].items[0].tasked, true);
-    assert.equal(document.content[1].items[0].completed, true);
+    assert.equal(document.content[1].items[0].status, "done");
     assert.deepEqual(
         document.content[2].columns.map((column) => column.flow),
         ["center"]
@@ -198,17 +196,20 @@ function dumpKinds(dump) {
     );
 }
 
-test("conformance: task markers preserve scalars and derive completion", () => {
-    for (const marker of [" ", "x", "X", "?", "é", "✓", "🚀", "́", "]"]) {
-        const item = Document.parse(`- [${marker}] body\n`).content[0].items[0];
-        assert.equal(item.marker, marker);
-        assert.equal(item.tasked, true);
-        assert.equal(item.completed, marker !== " ");
+test("conformance: task checks give their statuses, and other scalars stay text", () => {
+    const statuses = [
+        [" ", "open"],
+        ["x", "done"],
+        ["X", "done"],
+        ["?", "question"],
+        ["-", "cancelled"]
+    ];
+    for (const [marker, status] of statuses) {
+        assert.equal(Document.parse(`- [${marker}] body\n`).content[0].items[0].status, status);
     }
-    const item = Document.parse("- [é] body\n").content[0].items[0];
-    assert.equal(item.marker, null);
-    assert.equal(item.tasked, false);
-    assert.equal(item.completed, false);
+    for (const marker of ["é", "✓", "🚀", "!", "]"]) {
+        assert.equal(Document.parse(`- [${marker}] body\n`).content[0].items[0].status, null);
+    }
 });
 
 // The bindings' query corpus (specs/context): what the C queries answer at the

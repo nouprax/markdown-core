@@ -127,7 +127,7 @@ class State {
                 return;
             }
             this.start();
-            this.container("ListItem", node, [`marker=${optional(node.marker)}`], node.content);
+            this.container("ListItem", node, [`status=${node.status ?? "null"}`], node.content);
         },
         codeBlock: (node, phase) => {
             if (phase === "exit") {

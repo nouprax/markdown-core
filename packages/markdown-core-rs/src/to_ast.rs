@@ -7,7 +7,7 @@
 
 use crate::ast::{
     Delimiter, Destination, Dimensions, Flavor, Kind, Mode, Node, Note, Placement, Record,
-    Referent, Span, Variant,
+    Referent, Span, Status, Variant,
 };
 use crate::event::{Block, Event, Inline, Kind as EventKind, Name, Role, Space};
 use crate::util::{
@@ -875,7 +875,7 @@ impl<'a> Compiler<'a> {
             self.blank_tail(last).unwrap_or(content_end)
         };
         let runs = Self::whole(self.lead(index), end);
-        let marker = self.marker(index);
+        let status = self.status(index);
         // The block identifier on the first line of its first paragraph names
         // the item.
         let first = self
@@ -897,18 +897,23 @@ impl<'a> Compiler<'a> {
             }
         }
         let content = self.block_content(index);
-        let mut node = Node::new(Kind::ListItem { marker, content }, runs);
+        let mut node = Node::new(Kind::ListItem { status, content }, runs);
         node.anchor = self.item_anchor.take();
         node
     }
 
-    /// The task marker of the list item at `index`: the value of the check
+    /// The task status of the list item at `index`: the value of the check
     /// that ends its prefix.
-    fn marker(&self, index: usize) -> Option<String> {
+    fn status(&self, index: usize) -> Option<Status> {
         let prefix = self.child(index, Name::ListItemPrefix)?;
         let check = self.child(prefix, Name::TaskListItemCheck)?;
-        self.child(check, Name::TaskListItemValue)
-            .map(|value| self.text(value).to_string())
+        let value = self.child(check, Name::TaskListItemValue)?;
+        match self.bytes[self.start(value)] {
+            b' ' => Some(Status::Open),
+            b'x' | b'X' => Some(Status::Done),
+            b'?' => Some(Status::Question),
+            _ => Some(Status::Cancelled),
+        }
     }
 
     fn reference(&self, index: usize) -> Node {

@@ -55,6 +55,7 @@ export type {
     Position,
     Run,
     Scope,
+    TaskStatus,
     TextUnit
 } from "./markup/values.js";
 export type { Dimensions, Flow } from "./common/constraints.js";

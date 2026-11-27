@@ -7,8 +7,7 @@
 //! (<small>see [construct][crate::construct] for character groups</small>):
 //!
 //! ```bnf
-//! ; Restriction: the value is one Unicode scalar, no line ending.
-//! task_list_item_check ::= '[' value ']' 1*space_or_tab
+//! task_list_item_check ::= '[' (' ' | 'x' | 'X' | '?' | '-') ']' 1*space_or_tab
 //! ```
 //!
 //! The check is the first thing after the list item marker and its
@@ -18,8 +17,9 @@
 //! the content after the marker, as without a check.
 //! The whitespace after the check is part of it, so a line with nothing else
 //! leaves the item empty, with no paragraph that a lax line could continue.
-//! Its value is any one scalar, kept as written: `x`, a space, `?`, `🚀` or
-//! `]`.
+//! Its value gives the item's status: a space is open, `x` and `X` done, `?`
+//! a question and `-` cancelled; any other byte is no check, and the line is
+//! text.
 //!
 //! ## Tokens
 //!
@@ -57,37 +57,20 @@ fn start(tokenizer: &mut Tokenizer) -> State {
     }
 }
 
-/// At the value: one scalar, of as many bytes as its first says.
+/// At the value.
 ///
 /// ```markdown
 /// > | * [x] y.
 ///        ^
 /// ```
 fn inside(tokenizer: &mut Tokenizer) -> State {
-    let size = match tokenizer.current {
-        None | Some(b'\n' | b'\r') => return State::Nok,
-        Some(0xF0..=0xFF) => 4,
-        Some(0xE0..=0xEF) => 3,
-        Some(0xC0..=0xDF) => 2,
-        Some(_) => 1,
-    };
-    tokenizer.enter(Name::TaskListItemValue);
-    State::Redo(StateName::TaskListItemCheck(Step::Value { size }))
-}
-
-/// In the value, with `size` bytes of it left.
-///
-/// ```markdown
-/// > | * [x] y.
-///        ^
-/// ```
-fn value(tokenizer: &mut Tokenizer, size: usize) -> State {
-    if size == 0 {
-        tokenizer.exit(Name::TaskListItemValue);
-        State::Redo(StateName::TaskListItemCheck(Step::Close))
-    } else {
+    if matches!(tokenizer.current, Some(b' ' | b'x' | b'X' | b'?' | b'-')) {
+        tokenizer.enter(Name::TaskListItemValue);
         tokenizer.consume();
-        State::Next(StateName::TaskListItemCheck(Step::Value { size: size - 1 }))
+        tokenizer.exit(Name::TaskListItemValue);
+        State::Next(StateName::TaskListItemCheck(Step::Close))
+    } else {
+        State::Nok
     }
 }
 
@@ -142,7 +125,6 @@ fn end(tokenizer: &mut Tokenizer) -> State {
 pub enum Step {
     Start,
     Inside,
-    Value { size: usize },
     Close,
     After,
     End,
@@ -159,7 +141,6 @@ pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
     match step {
         Step::Start => start(tokenizer),
         Step::Inside => inside(tokenizer),
-        Step::Value { size } => value(tokenizer, size),
         Step::Close => close(tokenizer),
         Step::After => after(tokenizer),
         Step::End => end(tokenizer),

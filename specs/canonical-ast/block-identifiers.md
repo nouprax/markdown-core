@@ -1,6 +1,6 @@
 A paragraph #paragraph#
 
-- [✓] task #item#
+- [x] task #item#
 - second
   line #item-paragraph#
 

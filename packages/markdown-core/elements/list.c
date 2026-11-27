@@ -28,8 +28,7 @@ static void S_list_reads(const markdown_core_element_instance *self, markdown_co
     (void)self;
     markdown_core_block_consume_item_marker(reader, start->matched);
     markdown_core_reader_find(reader);
-    bufsize_t width;
-    (void)markdown_core_task_prefix_end(reader, &width);
+    (void)markdown_core_task_prefix_end(reader);
 }
 
 static bool markdown_core_list_scan(const markdown_core_element_instance *self, markdown_core_parser *parser,
@@ -282,7 +281,7 @@ static bool markdown_core_list_open(const markdown_core_element_instance *self, 
     }
     memcpy((*container)->as.list, data, sizeof(*data));
     markdown_core_reader_find(reader);
-    markdown_core_parse_task_prefix(parser, *container, reader);
+    markdown_core_parse_task_prefix(*container, reader);
     if (parser->error) {
         return false;
     }
@@ -432,33 +431,7 @@ const markdown_core_record_ops MARKDOWN_CORE_RECORD_LIST = {
     .init = init_list,
 };
 
-/* An item's record, a list's, which owns its task marker. */
-static void free_item(markdown_core_node_pool *pool, markdown_core_node *node) {
-    (void)pool;
-    markdown_core_optional_chunk_free(&node->as.list->task_marker);
-}
-
-static bool view_item(markdown_core_node_pool *pool, markdown_core_node *copy, const markdown_core_node *node,
-                      bool failed) {
-    (void)pool;
-    (void)node;
-    (void)failed;
-    markdown_core_chunk_view(&copy->as.list->task_marker.value);
-    return true;
-}
-
-static bool own_item(markdown_core_node *copy, const markdown_core_node *node) {
-    return markdown_core_chunk_own(&copy->as.list->task_marker.value, &node->as.list->task_marker.value);
-}
-
-static void adopt_item(markdown_core_node *view, markdown_core_node *node) {
-    markdown_core_chunk_adopt(&view->as.list->task_marker.value, &node->as.list->task_marker.value);
-}
-
+/* An item's record, a list's, which holds its task status. */
 const markdown_core_record_ops MARKDOWN_CORE_RECORD_LIST_ITEM = {
     .size = sizeof(markdown_core_list),
-    .free = free_item,
-    .view = view_item,
-    .own = own_item,
-    .adopt = adopt_item,
 };

@@ -245,7 +245,7 @@ FACADE_ANSWER(markdown_core_string, facade_literal, markdown_core_node_literal)
 FACADE_ANSWER(markdown_core_destination, facade_destination, markdown_core_node_destination)
 FACADE_ANSWER(markdown_core_optional_string, facade_title, markdown_core_node_title)
 FACADE_ANSWER(markdown_core_optional_string, facade_cross_label, markdown_core_node_cross_label)
-FACADE_ANSWER(markdown_core_optional_string, facade_list_item_marker, markdown_core_node_list_item_marker)
+FACADE_ANSWER(markdown_core_task_status, facade_list_item_status, markdown_core_node_list_item_status)
 FACADE_ANSWER(markdown_core_optional_string, facade_footnote_label, markdown_core_footnote_label)
 FACADE_ANSWER(markdown_core_referent, facade_referent, markdown_core_citation_referent)
 FACADE_ANSWER(int32_t, facade_heading_level, markdown_core_node_heading_level)
@@ -524,8 +524,6 @@ static size_t payload_releases;
 static int payload_counting;
 static int payload_fill_fresh;
 static int strbuf_refuse_next;
-static void *marker_to_free;
-static int marker_free_count;
 
 /* Counts calls, for the tests that assert a speculative probe allocated
  * nothing it would throw away. */
@@ -698,10 +696,6 @@ void *markdown_core_realloc(void *pointer, size_t size) {
 }
 
 void markdown_core_free(void *pointer) {
-    if (pointer != NULL && pointer == marker_to_free) {
-        marker_free_count++;
-        marker_to_free = NULL;
-    }
     if (properties_counting) {
         if (pointer) {
             properties_allocation *allocation = (properties_allocation *)pointer - 1;
@@ -2518,12 +2512,12 @@ static void source_pos(test_batch_runner *runner) {
         "└── Callout scope=6:1..10:20 anchor=null attributes={} variant=null collapsed=null children=1\n"
         "    └── List scope=6:3..10:20 anchor=null attributes={} flavor=ordered start=1 variant=decimal "
         "delimiter=period tight=false children=2\n"
-        "        ├── ListItem scope=6:3..8:1 anchor=null attributes={} marker=null children=1\n"
+        "        ├── ListItem scope=6:3..8:1 anchor=null attributes={} status=null children=1\n"
         "        │   └── Paragraph scope=6:6..7:0,7:6..7:10 anchor=null attributes={} children=3\n"
         "        │       ├── Text scope=6:6..6:10 anchor=null attributes={} literal=\"Okay.\" children=0\n"
         "        │       ├── SoftBreak scope=6:11..7:0 anchor=null attributes={} children=0\n"
         "        │       └── Text scope=7:6..7:10 anchor=null attributes={} literal=\"Sure.\" children=0\n"
-        "        └── ListItem scope=9:3..10:20 anchor=null attributes={} marker=null children=1\n"
+        "        └── ListItem scope=9:3..10:20 anchor=null attributes={} status=null children=1\n"
         "            └── Paragraph scope=9:6..10:0,10:6..10:20 anchor=null attributes={} children=3\n"
         "                ├── Text scope=9:6..9:15 anchor=null attributes={} literal=\"Yes, okay.\" children=0\n"
         "                ├── SoftBreak scope=9:16..10:0 anchor=null attributes={} children=0\n"
@@ -4352,110 +4346,34 @@ static void block_cursor_coordinates(test_batch_runner *runner) {
     }
 }
 
-/* All block facts except the authored marker and byte coordinates must be
- * invariant under replacing a single-scalar marker with another UTF-8 width.
- * The generated trees have bounded depth and contain only lists and leaves. */
-static bool task_block_facts_equal(markdown_core_node *a, markdown_core_node *b) {
-    if (!a || !b) {
-        return a == b;
-    }
-    if (a->kind != b->kind || a->child_count != b->child_count) {
-        return false;
-    }
-    markdown_core_string a_literal, b_literal;
-    bool a_has = literal_of(a, &a_literal), b_has = literal_of(b, &b_literal);
-    if (a_has != b_has || (a_has && !strings_equal(a_literal, b_literal))) {
-        return false;
-    }
-    if (a->kind == MARKDOWN_CORE_NODE_LIST &&
-        (a->as.list->flavor != b->as.list->flavor || a->as.list->start != b->as.list->start ||
-         a->as.list->delimiter.kind != b->as.list->delimiter.kind ||
-         a->as.list->delimiter.closed != b->as.list->delimiter.closed ||
-         a->as.list->variant.kind != b->as.list->variant.kind ||
-         a->as.list->variant.lowercased != b->as.list->variant.lowercased || a->as.list->tight != b->as.list->tight)) {
-        return false;
-    }
-    for (size_t i = 0; i < a->child_count; i++) {
-        if (!task_block_facts_equal(a->children[i], b->children[i])) {
-            return false;
-        }
-    }
-    return true;
-}
-
-static void task_marker_tab_structure(test_batch_runner *runner) {
-    const char *markers[] = {"é", "✓", "🚀", "́"};
-    const char *separators[] = {" ", "\t", " \t", "\t ", "  ", " \t \t"};
-    const char *padding[] = {" ", "\t", " \t", "\t ", " \t ", "\t\t"};
-    const char *lists[] = {"-", "1.", "1)"};
-    for (int indent = 0; indent < 4; indent++) {
-        for (size_t sep = 0; sep < sizeof(separators) / sizeof(separators[0]); sep++) {
-            for (size_t pad = 0; pad < sizeof(padding) / sizeof(padding[0]); pad++) {
-                for (size_t list = 0; list < sizeof(lists) / sizeof(lists[0]); list++) {
-                    char source[128];
-                    int length = snprintf(source, sizeof(source), "%*s- [?]%s%s%schild\n", indent, "", separators[sep],
-                                          lists[list], padding[pad]);
-                    markdown_core_node *baseline = markdown_core_parse_document(source, length);
-                    OK(runner, baseline != NULL, "ASCII task baseline parses");
-                    for (size_t m = 0; m < sizeof(markers) / sizeof(markers[0]); m++) {
-                        length = snprintf(source, sizeof(source), "%*s- [%s]%s%s%schild\n", indent, "", markers[m],
-                                          separators[sep], lists[list], padding[pad]);
-                        markdown_core_node *actual = markdown_core_parse_document(source, length);
-                        OK(runner, baseline && actual && task_block_facts_equal(baseline, actual),
-                           "task marker width cannot change block facts (indent=%d sep=%zu pad=%zu list=%zu marker=%s)",
-                           indent, sep, pad, list, markers[m]);
-                        markdown_core_node_free(actual);
-                    }
-                    markdown_core_node_free(baseline);
-                }
-            }
-        }
-    }
-}
-
-static void task_marker_ownership(test_batch_runner *runner) {
-    static const char original[] = "- [ ] open\n- [X] done\n- ordinary\n- [🚀] custom\n";
-    char source[sizeof(original)];
-    memcpy(source, original, sizeof(original));
+/* A check's five markers give their statuses, `x` and `X` alike; any other
+ * scalar between brackets leaves the item an ordinary one, its text kept. */
+static void task_status_values(test_batch_runner *runner) {
+    static const char source[] = "- [ ] a\n- [x] b\n- [X] c\n- [?] d\n- [-] e\n- [!] f\n- [\xc3\xa9] g\n- ordinary\n";
+    static const markdown_core_task_status expected[] = {
+        MARKDOWN_CORE_TASK_STATUS_OPEN,     MARKDOWN_CORE_TASK_STATUS_DONE,      MARKDOWN_CORE_TASK_STATUS_DONE,
+        MARKDOWN_CORE_TASK_STATUS_QUESTION, MARKDOWN_CORE_TASK_STATUS_CANCELLED, MARKDOWN_CORE_TASK_STATUS_NONE,
+        MARKDOWN_CORE_TASK_STATUS_NONE,     MARKDOWN_CORE_TASK_STATUS_NONE,
+    };
     markdown_core_document *document = facade_parse((const uint8_t *)source, strlen(source));
-    OK(runner, document != NULL, "task marker ownership document parses");
+    OK(runner, document != NULL, "task status document parses");
     if (!document) {
         return;
     }
-    memset(source, '?', sizeof(source) - 1);
-    markdown_core_node *item = child_at(child_at(document->root, 0), 0);
-    markdown_core_optional_string marker = facade_list_item_marker(item);
-    OK(runner, marker.has_value && marker.value.length == 1 && marker.value.data[0] == ' ',
-       "incomplete marker survives input reuse");
-    OK(runner, item->as.list->task_marker.value.alloc, "parsed task owns its marker bytes");
-    marker = facade_list_item_marker(child_at(child_at(document->root, 0), 1));
-    OK(runner, marker.has_value && marker.value.length == 1 && marker.value.data[0] == 'X',
-       "completed marker retains authored case");
-    marker = facade_list_item_marker(child_at(child_at(document->root, 0), 2));
-    OK(runner, !marker.has_value && marker.value.data == NULL && marker.value.length == 0,
-       "ordinary item has an absent marker");
-
-    marker = facade_list_item_marker(child_at(child_at(document->root, 0), 3));
-    OK(runner, marker.has_value && marker.value.length == 4 && memcmp(marker.value.data, "🚀", 4) == 0,
-       "parsed custom marker survives input reuse with its complete UTF-8 spelling");
+    for (size_t i = 0; i < sizeof(expected) / sizeof(expected[0]); i++) {
+        markdown_core_node *item = child_at(child_at(document->root, 0), i);
+        INT_EQ(runner, (int)facade_list_item_status(item), (int)expected[i], "item %zu has its task status", i);
+    }
     uint8_t *dump = NULL;
     size_t length = 0;
     OK(runner,
-       (markdown_core_document_dump(document, markdown_core_document_root(document), (const uint8_t *)original,
-                                    sizeof(original) - 1, &dump, &length) == MARKDOWN_CORE_OK),
-       "UTF-8 marker document dumps");
-    OK(runner, dump && strstr((const char *)dump, "marker=\"🚀\""), "dump preserves UTF-8 marker spelling");
+       (markdown_core_document_dump(document, markdown_core_document_root(document), (const uint8_t *)source,
+                                    sizeof(source) - 1, &dump, &length) == MARKDOWN_CORE_OK),
+       "task status document dumps");
+    OK(runner, dump && strstr((const char *)dump, "status=question") && strstr((const char *)dump, "status=null"),
+       "dump names task statuses");
     markdown_core_dump_free(dump);
     markdown_core_document_free(document);
-
-    item = markdown_core_node_new(MARKDOWN_CORE_NODE_LIST_ITEM);
-    markdown_core_chunk bytes = markdown_core_chunk_literal("🚀");
-    OK(runner, markdown_core_chunk_to_cstr(&bytes) != NULL, "custom marker allocates");
-    item->as.list->task_marker = markdown_core_optional_chunk_present(bytes);
-    marker_to_free = bytes.data;
-    marker_free_count = 0;
-    markdown_core_node_free(item);
-    INT_EQ(runner, marker_free_count, 1, "destroying an item frees its owned marker exactly once");
 }
 
 /* SPECIMEN VALUES. A definition is a block where it was written: it owns its
@@ -12546,9 +12464,6 @@ static owned_parts parts_of(const markdown_core_node *node) {
     case MARKDOWN_CORE_NODE_CALLOUT:
         parts.text = node->as.callout->variant.value.data;
         break;
-    case MARKDOWN_CORE_NODE_LIST_ITEM:
-        parts.text = node->as.list->task_marker.value.data;
-        break;
     case MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK:
         parts.payload = markdown_core_elements_get_directive_name(node);
         break;
@@ -12599,7 +12514,7 @@ static bool parts_equal(const markdown_core_node *a, const markdown_core_node *b
     case MARKDOWN_CORE_NODE_CALLOUT:
         return chunks_equal(a->as.callout->variant.value, b->as.callout->variant.value);
     case MARKDOWN_CORE_NODE_LIST_ITEM:
-        return chunks_equal(a->as.list->task_marker.value, b->as.list->task_marker.value);
+        return a->as.list->task == b->as.list->task;
     case MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK:
         return strcmp(markdown_core_elements_get_directive_name(a), markdown_core_elements_get_directive_name(b)) == 0;
     case MARKDOWN_CORE_NODE_TABLE: {
@@ -12950,8 +12865,7 @@ int main(void) {
     link_resource_lifecycle(runner);
     reference_attribute_lifecycle(runner);
     block_cursor_coordinates(runner);
-    task_marker_tab_structure(runner);
-    task_marker_ownership(runner);
+    task_status_values(runner);
     specimen_values(runner);
     definition_blank_continuation(runner);
     set_kind_keeps_element_data_beside_the_arm(runner);

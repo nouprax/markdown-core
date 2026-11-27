@@ -4679,10 +4679,10 @@ markdown_core_status markdown_core_node_list_properties(const markdown_core_node
     return MARKDOWN_CORE_OK;
 }
 
-markdown_core_status markdown_core_node_list_item_marker(const markdown_core_node *node,
-                                                         markdown_core_optional_string *marker) {
+markdown_core_status markdown_core_node_list_item_status(const markdown_core_node *node,
+                                                         markdown_core_task_status *status) {
     REQUIRE_KIND(node, KIND_BIT(MARKDOWN_CORE_KIND_LIST_ITEM));
-    *marker = optional_chunk_string(node->as.list->task_marker);
+    *status = node->as.list->task;
     return MARKDOWN_CORE_OK;
 }
 
@@ -5334,6 +5334,23 @@ static void buffer_json_string(dump_buffer *buffer, markdown_core_string value) 
 /* `null` and `""` are two answers, not one, and this reads the presence flag
  * rather than the pointer -- which is the same rule the dump already applied
  * to an optional Int and an optional Bool (requirement 14). */
+/* The dump's name of a task status: null for an item with no check. */
+static const char *task_status_name(markdown_core_task_status status) {
+    switch (status) {
+    case MARKDOWN_CORE_TASK_STATUS_OPEN:
+        return "open";
+    case MARKDOWN_CORE_TASK_STATUS_DONE:
+        return "done";
+    case MARKDOWN_CORE_TASK_STATUS_QUESTION:
+        return "question";
+    case MARKDOWN_CORE_TASK_STATUS_CANCELLED:
+        return "cancelled";
+    case MARKDOWN_CORE_TASK_STATUS_NONE:
+    default:
+        return "null";
+    }
+}
+
 static void buffer_optional_string(dump_buffer *buffer, markdown_core_optional_string value) {
     if (!value.has_value) {
         buffer_cstr(buffer, "null");
@@ -5567,8 +5584,8 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
         buffer_cstr(buffer, x ? "true" : "false");
         break;
     case MARKDOWN_CORE_KIND_LIST_ITEM:
-        buffer_cstr(buffer, " marker=");
-        buffer_optional_string(buffer, optional_chunk_string(node->as.list->task_marker));
+        buffer_cstr(buffer, " status=");
+        buffer_cstr(buffer, task_status_name(node->as.list->task));
         break;
     case MARKDOWN_CORE_KIND_CODE_BLOCK:
         if (!code_block_properties(node, &oa, &ob, &c, &x, &y)) {

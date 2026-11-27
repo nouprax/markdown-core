@@ -60,6 +60,8 @@ export interface Run {
 }
 
 export type ListFlavor = "bullet" | "ordered";
+/** The status a list item's task check gives it: `[ ]`, `[x]` or `[X]`, `[?]` and `[-]`. */
+export type TaskStatus = "open" | "done" | "question" | "cancelled";
 export type OrderedListVariant =
     | "decimal"
     | { readonly kind: "alpha"; readonly lowercased: boolean }

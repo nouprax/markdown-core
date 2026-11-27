@@ -1458,7 +1458,7 @@ static int case_formula_backslash_nested(pc_context *context) {
     return result;
 }
 
-/* A malformed task prefix may inspect only its candidate scalar, regardless
+/* A malformed task prefix may inspect only its candidate byte, regardless
  * of the bracket run or scalar run that follows. Size doubling checks exact
  * fallback and a constant output-node count for both kinds of adversary. */
 static int case_task_marker_runs(pc_context *unused) {
@@ -1473,9 +1473,10 @@ static int case_task_marker_runs(pc_context *unused) {
             if (result == 0) {
                 const markdown_core_node *item =
                     ts_child(ts_child(markdown_core_document_root(context.document), 0), 0);
-                markdown_core_optional_string marker;
-                TS_OK(markdown_core_node_list_item_marker(item, &marker));
-                if (marker.has_value || pc_expect_count(&context, MARKDOWN_CORE_KIND_LIST_ITEM, 1, "ListItem") != 0 ||
+                markdown_core_task_status status;
+                TS_OK(markdown_core_node_list_item_status(item, &status));
+                if (status != MARKDOWN_CORE_TASK_STATUS_NONE ||
+                    pc_expect_count(&context, MARKDOWN_CORE_KIND_LIST_ITEM, 1, "ListItem") != 0 ||
                     pc_expect_count(&context, MARKDOWN_CORE_KIND_TEXT, 1, "Text") != 0 ||
                     pc_expect_text(&context, context.input + 2, context.input_length - 3) != 0) {
                     result = -1;

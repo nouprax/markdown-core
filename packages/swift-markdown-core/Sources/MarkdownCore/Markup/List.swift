@@ -33,6 +33,18 @@ public enum OrderedListDelimiter: Hashable, Sendable {
     case `default`
 }
 
+/// The status a list item's task check gives it.
+public enum TaskStatus: String, Sendable {
+    /// `[ ]`.
+    case open
+    /// `[x]` or `[X]`.
+    case done
+    /// `[?]`.
+    case question
+    /// `[-]`.
+    case cancelled
+}
+
 /// A bulleted or numbered list.
 public struct List: Markup {
     let record: ListRecord
@@ -158,34 +170,44 @@ public struct ListItem: Markup {
     public var attributes: Attributes { record.attributes }
     /// The item's blocks. Block content, not inline.
     public var content: MarkupCollection<any Markup> { record.collection(record.children.indices) }
-    /// The authored task marker, or `nil` when this is not a task item.
-    public var marker: String? { record.marker }
-    /// Whether this item authored a task marker.
-    public var tasked: Bool { marker != nil }
-    /// Whether this item authored a completed or custom-state task marker.
-    /// Non-task items and the incomplete marker (`" "`) are not complete.
-    public var completed: Bool { marker != nil && marker != " " }
+    /// The status of the item's task check, or `nil` when this is not a task
+    /// item.
+    public var status: TaskStatus? { record.status }
 }
 
 final class ListItemRecord: MarkupRecord, @unchecked Sendable {
-    let marker: String?
+    let status: TaskStatus?
 
-    init(_ fields: InheritedFields, marker: String?, content: [MarkupRecord]) {
-        self.marker = marker
+    init(_ fields: InheritedFields, status: TaskStatus?, content: [MarkupRecord]) {
+        self.status = status
         super.init(fields, children: content)
     }
 
     override var markup: any Markup { ListItem(record: self) }
 
     override func hasEqualFields(_ other: MarkupRecord) -> Bool {
-        marker == unsafeDowncast(other, to: ListItemRecord.self).marker
+        status == unsafeDowncast(other, to: ListItemRecord.self).status
     }
 }
 
 extension ListItemRecord {
     convenience init(from node: OpaquePointer, content: [MarkupRecord]) {
-        let marker = answer(markdown_core_optional_string()) { markdown_core_node_list_item_marker(node, $0) }.string
-        self.init(InheritedFields(from: node), marker: marker, content: content)
+        var task = MARKDOWN_CORE_TASK_STATUS_NONE
+        answered(markdown_core_node_list_item_status(node, &task))
+        self.init(InheritedFields(from: node), status: TaskStatus(task), content: content)
+    }
+}
+
+extension TaskStatus {
+    /// The status the C core reports, `nil` for an item with no check.
+    init?(_ status: markdown_core_task_status) {
+        switch status {
+        case MARKDOWN_CORE_TASK_STATUS_OPEN: self = .open
+        case MARKDOWN_CORE_TASK_STATUS_DONE: self = .done
+        case MARKDOWN_CORE_TASK_STATUS_QUESTION: self = .question
+        case MARKDOWN_CORE_TASK_STATUS_CANCELLED: self = .cancelled
+        default: return nil
+        }
     }
 }
 

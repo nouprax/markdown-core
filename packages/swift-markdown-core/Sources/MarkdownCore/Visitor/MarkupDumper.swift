@@ -113,7 +113,7 @@ private struct LineVisitor: MarkupVisitor {
     }
 
     mutating func visit(_ node: ListItem, phase: MarkupVisitPhase) {
-        line("ListItem", node, fields: ["marker=\(dump(optional: node.marker))"], children: node.content.count)
+        line("ListItem", node, fields: ["status=\(node.status?.rawValue ?? "null")"], children: node.content.count)
     }
 
     mutating func visit(_ node: CodeBlock, phase: MarkupVisitPhase) {

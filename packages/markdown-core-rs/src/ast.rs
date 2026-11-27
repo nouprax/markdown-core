@@ -251,7 +251,7 @@ pub enum Kind {
         items: Vec<Node>,
     },
     ListItem {
-        marker: Option<String>,
+        status: Option<Status>,
         content: Vec<Node>,
     },
     CodeBlock {
@@ -388,6 +388,19 @@ pub enum Kind {
         dest: Destination,
         title: Option<String>,
     },
+}
+
+/// The status a list item's task check gives it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Status {
+    /// `[ ]`.
+    Open,
+    /// `[x]` or `[X]`.
+    Done,
+    /// `[?]`.
+    Question,
+    /// `[-]`.
+    Cancelled,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

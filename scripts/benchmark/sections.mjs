@@ -109,7 +109,7 @@ export const sectionDispositions = {
             "attribute-bare",
             "named-container",
             "formula-parenthesis",
-            "task-unicode",
+            "task-cancelled",
             "common-html-comment",
             "common-inline-html",
             "decimal-list",
@@ -284,7 +284,7 @@ export const sectionDispositions = {
     },
     "task-lists": {
         "Task lists": grammar("gfm-task-open", "gfm-task-lower", "gfm-task-upper"),
-        "Custom markers and nesting": grammar("task-value", "task-unicode", "task-nested"),
+        Nesting: grammar("task-value", "task-cancelled", "task-nested"),
         "Required separator": grammar("fallback-task-separator", "task-heading")
     },
     "thematic-breaks": {

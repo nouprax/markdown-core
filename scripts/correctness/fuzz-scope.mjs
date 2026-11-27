@@ -78,8 +78,8 @@ export function outsideSharedFuzzScope(input) {
         if (node.type === "listItem" && node.children[0]?.type === "paragraph") {
             const first = node.children[0];
             const raw = input.slice(first.position.start.offset, first.position.end.offset);
-            const marker = /^\[([^[\]\p{White_Space}])\][ \t]/u.exec(raw)?.[1];
-            if (marker && ![" ", "x", "X"].includes(marker)) return "custom-task-markers";
+            // The dialect's statuses beyond GFM's open and done.
+            if (/^\[[?-]\][ \t]/u.test(raw)) return "custom-task-markers";
         }
         if (node.type === "paragraph") {
             const raw = input.slice(node.position.start.offset, node.position.end.offset);

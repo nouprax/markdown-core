@@ -658,7 +658,7 @@ function renderHosts(id, p) {
             ["See ![[", target, "|", literal, `|${p.start}x${p.start + 1}]] here.\n\n`],
             ["See ![", literal, "](/", target, ") here.\n\n"]
         );
-    if (id === "task-value") return pair(["- [~] ", b, "\n- [~] ", t, "\n\n"], ["- [x] ", b, "\n- [x] ", t, "\n\n"]);
+    if (id === "task-value") return pair(["- [?] ", b, "\n- [?] ", t, "\n\n"], ["- [x] ", b, "\n- [x] ", t, "\n\n"]);
     if (id === "decimal-list")
         return pair(
             [`${p.start}. `, b, `\n${p.start + 1}. `, t, "\n\n"],
@@ -818,7 +818,7 @@ function grammarDescription(certificate, side) {
         );
     if (directFrames.has(certificate.id))
         return (
-            `Document = Item (LF* Item)* LF+ ; Item = ${certificate.id === "task-value" ? JSON.stringify(side === "dialect" ? "- [~] " : "- [x] ") : "Decimal '. '"} Body LF ; Decimal = [1-9][0-9]{0,8} ; OPEN = CLOSE = '**' ; ` +
+            `Document = Item (LF* Item)* LF+ ; Item = ${certificate.id === "task-value" ? JSON.stringify(side === "dialect" ? "- [?] " : "- [x] ") : "Decimal '. '"} Body LF ; Decimal = [1-9][0-9]{0,8} ; OPEN = CLOSE = '**' ; ` +
             normalForms.inline
         );
     const marker = side === "dialect" ? certificate.dialectMarker : certificate.commonMarker;
@@ -970,7 +970,7 @@ export function recognizePairedDocument(id, side, source) {
             const line = match[1],
                 blankLines = match[2].length;
             if (id === "task-value") {
-                const prefix = side === "dialect" ? "- [~] " : "- [x] ";
+                const prefix = side === "dialect" ? "- [?] " : "- [x] ";
                 assert.ok(line.startsWith(prefix));
                 items.push({ value: "task", body: recognizeBody(line.slice(prefix.length)), blankLines });
             } else {
@@ -1026,7 +1026,7 @@ export function encodePairedDocument(id, side, derivations) {
                 if (id === "task-value") assert.equal(item.value, "task");
                 else assert.match(item.value, /^[1-9][0-9]{0,8}$/u);
                 return (
-                    (id === "task-value" ? (side === "dialect" ? "- [~] " : "- [x] ") : `${item.value}. `) +
+                    (id === "task-value" ? (side === "dialect" ? "- [?] " : "- [x] ") : `${item.value}. `) +
                     renderBody(item.body) +
                     "\n".repeat(item.blankLines + 1)
                 );

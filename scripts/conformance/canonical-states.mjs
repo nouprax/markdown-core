@@ -49,12 +49,6 @@ const INLINE_CONTENT = new Set([
     "Embed"
 ]);
 
-function taskMarkers(tree) {
-    return [...tree.matchAll(/^.*ListItem scope=.* marker=("(?:[^"\\]|\\.)*") /gm)].map((match) =>
-        JSON.parse(match[1])
-    );
-}
-
 const stateValidators = {
     "directiveBlock.name.null": (tree) => /DirectiveBlock scope=.* name=null /.test(tree),
     "definition.compact.true": (tree) => /Definition scope=.* compact=true /.test(tree),
@@ -84,11 +78,11 @@ const stateValidators = {
     "list.start.value": (tree) => /^.*List scope=.* start=-?\d+ /m.test(tree),
     "list.tight.false": (tree) => /^.*List scope=.* tight=false /m.test(tree),
     "list.tight.true": (tree) => /^.*List scope=.* tight=true /m.test(tree),
-    "listItem.marker.null": (tree) => /^.*ListItem scope=.* marker=null /m.test(tree),
-    "listItem.marker.space": (tree) => /^.*ListItem scope=.* marker=" " /m.test(tree),
-    "listItem.marker.value": (tree) => taskMarkers(tree).some((marker) => [...marker].length === 1 && marker !== " "),
-    "listItem.marker.custom": (tree) =>
-        taskMarkers(tree).some((marker) => [...marker].length === 1 && ![" ", "x", "X"].includes(marker)),
+    "listItem.status.null": (tree) => /^.*ListItem scope=.* status=null /m.test(tree),
+    "listItem.status.open": (tree) => /^.*ListItem scope=.* status=open /m.test(tree),
+    "listItem.status.done": (tree) => /^.*ListItem scope=.* status=done /m.test(tree),
+    "listItem.status.question": (tree) => /^.*ListItem scope=.* status=question /m.test(tree),
+    "listItem.status.cancelled": (tree) => /^.*ListItem scope=.* status=cancelled /m.test(tree),
     "list.variant.decimal": (tree) => /^.*List scope=.* variant=decimal /m.test(tree),
     "list.variant.null": (tree) => /^.*List scope=.* variant=null /m.test(tree),
     "list.delimiter.period": (tree) => /^.*List scope=.* delimiter=period /m.test(tree),

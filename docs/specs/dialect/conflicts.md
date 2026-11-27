@@ -23,7 +23,7 @@ differences and explains overlapping syntax.
 | Attributes | One grammar at every site; a bare name such as `{disabled}` records `disabled="true"`. Ordered duplicate classes/records survive. |
 | Colon containers | Named directives and nameless fenced divs share one model and one minimum closing-fence length. |
 | Formula brackets | Two authored backslashes open `\\(...\\)` or `\\[...\\]`; a single backslash remains a Markdown escape. |
-| Task markers | Exactly one Unicode scalar plus a following separator; the authored marker is retained. |
+| Task markers | One of `[ ]`, `[x]`, `[X]`, `[?]`, `[-]` plus a following separator; the item records its status. |
 | Comments | HTML and percent comments remain `Comment` nodes. |
 | Raw HTML | Block content is opaque, but text between separate inline tags still parses as Markdown. |
 | Ordered lists | The first marker always sets the start; nested ordered lists must start at one. |

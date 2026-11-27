@@ -86,7 +86,7 @@ MARKDOWN_CORE_1.0 {
     markdown_core_node_heading_level;
     markdown_core_node_id;
     markdown_core_node_kind_name;
-    markdown_core_node_list_item_marker;
+    markdown_core_node_list_item_status;
     markdown_core_node_list_properties;
     markdown_core_node_literal;
     markdown_core_node_runs;

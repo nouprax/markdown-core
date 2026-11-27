@@ -195,7 +195,7 @@ private fun describe(node: Markup): Line =
         }
 
         is ListItem -> {
-            Line("ListItem", node.content.size, listOf("marker=${optional(node.marker)}"))
+            Line("ListItem", node.content.size, listOf("status=${node.status?.name?.lowercase() ?: "null"}"))
         }
 
         is CodeBlock -> {

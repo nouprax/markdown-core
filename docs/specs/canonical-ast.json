@@ -12,6 +12,7 @@
         "Placement": ["embedded", "standalone"],
         "BibMode": ["normal", "authorInText", "suppressAuthor"],
         "ListFlavor": ["bullet", "ordered"],
+        "TaskStatus": ["open", "done", "question", "cancelled"],
         "Flow": ["none", "left", "center", "right"]
     },
     "slots": [
@@ -209,8 +210,8 @@
             "ordinal": 7,
             "fields": [
                 {
-                    "name": "marker",
-                    "type": "String",
+                    "name": "status",
+                    "type": "TaskStatus",
                     "optional": true
                 },
                 {
@@ -219,7 +220,7 @@
                     "optional": false
                 }
             ],
-            "invariants": "`marker == null` means not a task item; block content"
+            "invariants": "`status == null` means not a task item; `[ ]` is open, `[x]` and `[X]` done, `[?]` question and `[-]` cancelled; block content"
         },
         {
             "name": "CodeBlock",

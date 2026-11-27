@@ -563,7 +563,7 @@ Document scope=1:1..6:9 anchor=null attributes={} children=2
 │       ├── SoftBreak scope=2:17..3:0 anchor=null attributes={} children=0
 │       └── Text scope=3:1..3:9 anchor=null attributes={} literal="continued" children=0
 └── List scope=5:1..6:9 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
-    └── ListItem scope=5:1..6:9 anchor=null attributes={} marker=null children=1
+    └── ListItem scope=5:1..6:9 anchor=null attributes={} status=null children=1
         └── Callout scope=5:3..6:9 anchor=null attributes={} variant="tip" collapsed=null children=1
             ├── Title children=1
             │   └── Text scope=5:12..5:12 anchor=null attributes={} literal="T" children=0
@@ -641,7 +641,7 @@ Document scope=1:1..18:6 anchor=null attributes={} children=10
 ├── ThematicBreak scope=15:1..16:0 anchor=null attributes={} children=0
 ├── Callout scope=17:1..17:9 anchor=null attributes={} variant="note" collapsed=null children=0
 └── List scope=18:1..18:6 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
-    └── ListItem scope=18:1..18:6 anchor=null attributes={} marker=null children=1
+    └── ListItem scope=18:1..18:6 anchor=null attributes={} status=null children=1
         └── Paragraph scope=18:3..18:6 anchor=null attributes={} children=1
             └── Text scope=18:3..18:6 anchor=null attributes={} literal="item" children=0
 ````````````````````````````````
@@ -716,7 +716,7 @@ Document scope=1:1..17:5 anchor=null attributes={} children=5
 > > >
 > > >     code
 >
-> - [✓] task
+> - [?] task
 >   > [!custom_1] nested
 >
 > ```md
@@ -736,15 +736,15 @@ Document scope=1:1..14:5 anchor=null attributes={} children=1
     │       │   └── Mark scope=4:17..4:25 anchor=null attributes={} children=1
     │       │       └── Text scope=4:19..4:23 anchor=null attributes={} literal="inner" children=0
     │       └── List scope=5:7..7:14 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=false children=1
-    │           └── ListItem scope=5:7..7:14 anchor=null attributes={} marker=null children=2
+    │           └── ListItem scope=5:7..7:14 anchor=null attributes={} status=null children=2
     │               ├── Paragraph scope=5:9..5:12 anchor=null attributes={} children=1
     │               │   └── Text scope=5:9..5:12 anchor=null attributes={} literal="item" children=0
     │               └── Paragraph scope=7:11..7:14 anchor=null attributes={} children=1
     │                   └── Text scope=7:11..7:14 anchor=null attributes={} literal="code" children=0
     ├── List scope=9:3..11:1 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
-    │   └── ListItem scope=9:3..11:1 anchor=null attributes={} marker="✓" children=2
-    │       ├── Paragraph scope=9:11..9:14 anchor=null attributes={} children=1
-    │       │   └── Text scope=9:11..9:14 anchor=null attributes={} literal="task" children=0
+    │   └── ListItem scope=9:3..11:1 anchor=null attributes={} status=question children=2
+    │       ├── Paragraph scope=9:9..9:12 anchor=null attributes={} children=1
+    │       │   └── Text scope=9:9..9:12 anchor=null attributes={} literal="task" children=0
     │       └── Callout scope=10:5..10:24 anchor=null attributes={} variant="custom_1" collapsed=null children=0
     │           └── Title children=1
     │               └── Text scope=10:19..10:24 anchor=null attributes={} literal="nested" children=0
@@ -1006,7 +1006,7 @@ Document scope=1:1..10:5 anchor=null attributes={} children=1
     ├── Heading scope=2:3..2:11 anchor="heading" attributes={} level=1 children=1
     │   └── Text scope=2:5..2:11 anchor=null attributes={} literal="heading" children=0
     ├── List scope=4:3..5:1 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
-    │   └── ListItem scope=4:3..5:1 anchor=null attributes={} marker=null children=1
+    │   └── ListItem scope=4:3..5:1 anchor=null attributes={} status=null children=1
     │       └── Paragraph scope=4:5..4:8 anchor=null attributes={} children=1
     │           └── Text scope=4:5..4:8 anchor=null attributes={} literal="item" children=0
     ├── Comment scope=6:3..6:13 anchor=null attributes={} literal="body" children=0
@@ -1033,7 +1033,7 @@ Document scope=1:1..9:6 anchor=null attributes={} children=3
 │   ├── Title children=1
 │   │   └── Text scope=1:11..1:11 anchor=null attributes={} literal="T" children=0
 │   └── List scope=2:3..2:13 anchor=null attributes={} flavor=ordered start=2 variant=decimal delimiter=period tight=true children=1
-│       └── ListItem scope=2:3..2:13 anchor=null attributes={} marker=null children=1
+│       └── ListItem scope=2:3..2:13 anchor=null attributes={} status=null children=1
 │           └── Paragraph scope=2:6..2:13 anchor=null attributes={} children=1
 │               └── Text scope=2:6..2:13 anchor=null attributes={} literal="numbered" children=0
 ├── Callout scope=4:1..5:19 anchor=null attributes={} variant="note" collapsed=null children=1

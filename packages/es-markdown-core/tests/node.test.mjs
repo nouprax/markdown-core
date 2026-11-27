@@ -321,7 +321,7 @@ test("api: the dialect has no switches, so a plain parse recognizes every featur
     for (const [source, witness] of [
         ["~~x~~\n", "Strikethrough scope="],
         ["www.example.com\n", "Link scope="],
-        ["- [x] task\n", 'marker="x"'],
+        ["- [x] task\n", "status=done"],
         ["ref[^a]\n\n[^a]: note\n", "Cite scope="],
         ["$x$\n", "Formula scope="],
         [":badge[label]\n", "Directive scope="],
@@ -1515,13 +1515,14 @@ test("ast: every ordered delimiter and associated numbering value survives decod
     assert.equal(list(3, null, 2, null).content[0].variant, "default");
 });
 
-test("ast: a UTF-8 task marker is an owned string, independent of the payload", () => {
+test("ast: a task status is read from its wire index", () => {
     const bytes = new MessageWriter()
         .text("x")
         .record("paragraph")
         .u32(1)
         .record("listItem")
-        .optional("🚀", MessageWriter.prototype.string)
+        .bool(true)
+        .u8(2)
         .u32(1)
         .record("list")
         .u8(0)
@@ -1534,9 +1535,8 @@ test("ast: a UTF-8 task marker is an owned string, independent of the payload", 
         .document();
     const document = decoder(bytes).decode();
     bytes.fill(0);
-    assert.equal(document.content[0].items[0].marker, "🚀");
-    assert.equal(document.content[0].items[0].completed, true);
-    assert.ok(MarkupDumper.dump(document, "").includes('marker="🚀"'));
+    assert.equal(document.content[0].items[0].status, "question");
+    assert.ok(MarkupDumper.dump(document, "").includes("status=question"));
 });
 
 test("ast: specimen definitions and references retain ownership, nulls and reset facts", () => {

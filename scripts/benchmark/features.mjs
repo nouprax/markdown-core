@@ -455,10 +455,10 @@ pair(
     inline("[", k, "](/normal) [", target, "](/suppressed)")
 );
 pair(
-    "task-unicode",
+    "task-cancelled",
     "task-lists",
-    ["unicode-marker", "authored-marker"],
-    ["- [✓] ", b, "\n\n"],
+    ["cancelled-marker", "authored-marker"],
+    ["- [-] ", b, "\n\n"],
     ["- [x] ", b, "\n\n"],
     { gfm: true }
 );

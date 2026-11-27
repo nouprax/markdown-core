@@ -2589,8 +2589,8 @@ pub enum Name {
     ///       ^ ^
     /// ```
     TaskListItemMarker,
-    /// Task list item value: the one scalar between the brackets, kept as
-    /// written.
+    /// Task list item value: the byte between the brackets, which gives the
+    /// item's status.
     ///
     /// ## Info
     ///

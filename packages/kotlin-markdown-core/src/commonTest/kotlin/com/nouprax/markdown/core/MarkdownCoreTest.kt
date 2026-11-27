@@ -206,17 +206,23 @@ class ApiTest {
     }
 
     @Test
-    fun taskMarkersPreserveScalarsAndDeriveCompletion() {
-        for (marker in listOf(" ", "x", "X", "?", "é", "✓", "🚀", "́", "]")) {
+    fun taskChecksGiveTheirStatusesAndOtherScalarsStayText() {
+        val statuses =
+            listOf(
+                " " to TaskStatus.OPEN,
+                "x" to TaskStatus.DONE,
+                "X" to TaskStatus.DONE,
+                "?" to TaskStatus.QUESTION,
+                "-" to TaskStatus.CANCELLED,
+            )
+        for ((marker, status) in statuses) {
             val item = assertIs<List>(Document.parse("- [$marker] body\n").content.single()).items.single()
-            assertEquals(marker, item.marker)
-            assertEquals(true, item.tasked)
-            assertEquals(marker != " ", item.completed)
+            assertEquals(status, item.status)
         }
-        val item = assertIs<List>(Document.parse("- [é] body\n").content.single()).items.single()
-        assertEquals(null, item.marker)
-        assertEquals(false, item.tasked)
-        assertEquals(false, item.completed)
+        for (marker in listOf("é", "✓", "🚀", "!", "]")) {
+            val item = assertIs<List>(Document.parse("- [$marker] body\n").content.single()).items.single()
+            assertEquals(null, item.status)
+        }
     }
 
     @Test
@@ -234,7 +240,7 @@ class ApiTest {
             listOf(
                 "~~x~~\n" to "Strikethrough scope=",
                 "www.example.com\n" to "Link scope=",
-                "- [x] task\n" to "marker=\"x\"",
+                "- [x] task\n" to "status=done",
                 "ref[^a]\n\n[^a]: note\n" to "Cite scope=",
                 "\$x\$\n" to "Formula scope=",
                 ":badge[label]\n" to "Directive scope=",
@@ -743,13 +749,9 @@ class BindingMappingTest {
         assertEquals(emptyList(), assertIs<DirectiveBlock>(withNothing.content[2]).attributes.records)
 
         val checked = assertIs<com.nouprax.markdown.core.List>(withEverything.content[3])
-        assertEquals("x", checked.items.single().marker)
-        assertEquals(true, checked.items.single().tasked)
-        assertEquals(true, checked.items.single().completed)
+        assertEquals(TaskStatus.DONE, checked.items.single().status)
         val unchecked = assertIs<com.nouprax.markdown.core.List>(withNothing.content[3])
-        assertEquals(null, unchecked.items.single().marker)
-        assertEquals(false, unchecked.items.single().tasked)
-        assertEquals(false, unchecked.items.single().completed)
+        assertEquals(null, unchecked.items.single().status)
         val parenthesized = assertIs<com.nouprax.markdown.core.List>(Document.parse("1) item\n").content.single())
         assertEquals(false, assertIs<OrderedListDelimiter.Parenthesis>(parenthesized.delimiter).closed)
     }

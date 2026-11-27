@@ -35,6 +35,7 @@ internal object WireDecoder {
 
     // The contract's enums, in the order of their wire indices.
     private val flavors = listOf(ListFlavor.BULLET, ListFlavor.ORDERED)
+    private val statuses = listOf(TaskStatus.OPEN, TaskStatus.DONE, TaskStatus.QUESTION, TaskStatus.CANCELLED)
     private val flows = listOf(Flow.NONE, Flow.LEFT, Flow.CENTER, Flow.RIGHT)
     private val placements = listOf(Placement.EMBEDDED, Placement.STANDALONE)
     private val bibModes = listOf(BibMode.NORMAL, BibMode.AUTHOR_IN_TEXT, BibMode.SUPPRESS_AUTHOR)
@@ -172,8 +173,8 @@ internal object WireDecoder {
                 }
 
                 NodeKind.LIST_ITEM -> {
-                    val marker = optional { string() }
-                    ListItem(marker, content(), id, extent, runs, anchor, attributes)
+                    val status = optional { index(statuses) }
+                    ListItem(status, content(), id, extent, runs, anchor, attributes)
                 }
 
                 NodeKind.CODE_BLOCK -> {

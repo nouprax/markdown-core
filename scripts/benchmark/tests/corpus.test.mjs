@@ -128,7 +128,7 @@ test("the source recognizers reject syntax outside each grammar, including compl
 test("list equivalence retains all blank lines and decimal spellings", () => {
     for (const id of ["decimal-list", "task-value"]) {
         const source =
-            id === "decimal-list" ? "987654321. a\n\n\n2. b **c** d\n\n\n\n" : "- [~] a\n\n\n- [~] b **c** d\n\n\n\n";
+            id === "decimal-list" ? "987654321. a\n\n\n2. b **c** d\n\n\n\n" : "- [?] a\n\n\n- [?] b **c** d\n\n\n\n";
         const decoded = recognizePairedDocument(id, "dialect", source);
         assert.deepEqual(
             decoded.map((item) => item.blankLines),

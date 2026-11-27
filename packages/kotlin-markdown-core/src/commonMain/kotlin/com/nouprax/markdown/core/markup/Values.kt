@@ -63,6 +63,9 @@ public data class Scope(
 
 public enum class ListFlavor { BULLET, ORDERED }
 
+/** The status a list item's task check gives it: `[ ]`, `[x]` or `[X]`, `[?]` and `[-]`. */
+public enum class TaskStatus { OPEN, DONE, QUESTION, CANCELLED }
+
 public sealed interface OrderedListVariant {
     public data object Decimal : OrderedListVariant
 

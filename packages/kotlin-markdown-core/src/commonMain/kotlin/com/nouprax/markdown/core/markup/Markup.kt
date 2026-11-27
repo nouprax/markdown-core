@@ -230,7 +230,7 @@ public sealed class Markup {
             }
 
             is ListItem -> {
-                other is ListItem && marker == other.marker
+                other is ListItem && status == other.status
             }
 
             is CodeBlock -> {

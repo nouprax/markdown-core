@@ -185,7 +185,7 @@ class AstTest {
         val ordered = document.content[0] as List
         assertEquals(ListFlavor.ORDERED, ordered.flavor)
         assertEquals(3, ordered.start)
-        assertEquals("x", (document.content[1] as List).items.single().marker)
+        assertEquals(TaskStatus.DONE, (document.content[1] as List).items.single().status)
         val table = document.content[2] as Table
         assertEquals(listOf(Flow.CENTER), table.columns.map { it.flow })
         assertEquals(1, table.head.size)

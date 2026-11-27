@@ -2,7 +2,7 @@
 
 use crate::ast::{
     Attributes, Delimiter, Destination, Dimensions, Fields, Flavor, Flow, Item, Kind, Mode, Node,
-    Note, Placement, Referent, Scalar, Span, Value, Variant,
+    Note, Placement, Referent, Scalar, Span, Status, Value, Variant,
 };
 use alloc::{format, string::String, vec::Vec};
 use core::fmt::Write;
@@ -271,9 +271,14 @@ fn fields<'a>(line: &mut String, kind: &'a Kind) -> (usize, Vec<Row<'a>>) {
             let _ = write!(line, " tight={}", tight);
             (items.len(), nodes(items))
         }
-        Kind::ListItem { marker, content } => {
-            line.push_str(" marker=");
-            opt_text(line, marker.as_deref());
+        Kind::ListItem { status, content } => {
+            line.push_str(match status {
+                None => " status=null",
+                Some(Status::Open) => " status=open",
+                Some(Status::Done) => " status=done",
+                Some(Status::Question) => " status=question",
+                Some(Status::Cancelled) => " status=cancelled",
+            });
             (content.len(), nodes(content))
         }
         Kind::CodeBlock {

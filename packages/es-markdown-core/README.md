@@ -126,12 +126,11 @@ runtime-frozen. The package exposes parsing and typed AST inspection, not
 rendering or AST mutation.
 Ordered lists expose their `variant` and `delimiter`.
 
-Task prefixes accept exactly one authored Unicode scalar, such as `- [?]`,
-`- [✓]`, or `- [🚀]`, followed by a space, tab, vertical tab, or form feed.
-The item preserves that scalar in `marker`; completion is derived. Recognition
-is limited to the item's opening line and removes the prefix before deciding
-its first block. Empty or multi-scalar markers and a missing separator remain
-literal text.
+A task prefix is `[ ]`, `[x]` or `[X]`, `[?]` or `[-]`, followed by a space or
+tab; the item's `status` is open, done, question or cancelled, and null for
+an ordinary item. Recognition is limited to the item's opening line and
+removes the prefix before deciding its first block. Any other character
+between the brackets, and a missing separator, remain literal text.
 
 Bracketed spans (`[text]{.class}`) produce `Span(content)` with the shared
 anchor and attributes. Superscript (`^text^`) and subscript (`~text~`) retain

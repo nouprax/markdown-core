@@ -7,26 +7,33 @@ Start a list item's opening content with a bracketed marker followed by a space.
 ```markdown
 - [ ] Write the draft
 - [x] Review the draft
-- [✓] Publish it
+- [?] Ask about the deadline
+- [-] Drop the appendix
 ```
 
-Each line is a `ListItem`. Its `marker` stores exactly the scalar inside the
-brackets: a space, `x`, or `✓`. The marker and following separator are removed
-from the item's content. A space means incomplete; any other marker is complete
-for the completion convenience value. Applications can give custom markers
-more specific meanings without losing the authored character.
+Each line is a `ListItem` with a `status`, taken from the character inside the
+brackets:
 
-## Custom markers and nesting
+| Marker | `status` |
+| --- | --- |
+| `[ ]` | `open` |
+| `[x]`, `[X]` | `done` |
+| `[?]` | `question` |
+| `[-]` | `cancelled` |
+
+An ordinary item's `status` is null. The marker and following separator are
+removed from the item's content. Any other character between the brackets,
+such as `[!]` or `[✓]`, is not a task marker: the line stays ordinary text.
+
+## Nesting
 
 ```markdown
 1. [?] Needs a decision
-2. [🚀] Ready to ship
+2. [x] Ready to ship
    - [ ] Follow up
 ```
 
-Task prefixes work in ordered and nested lists. A marker must be exactly one
-Unicode scalar. Combining sequences and multi-scalar emoji do not qualify,
-even when they appear as one displayed character.
+Task prefixes work in ordered and nested lists.
 
 ## Required separator
 
@@ -38,6 +45,7 @@ not separators. These are ordinary list-item text, not tasks:
 - [x]missing separator
 - [] empty marker
 - [ab] two characters
+- [!] not a task marker
 ```
 
 Only the opening line is checked, at the first non-space position after list

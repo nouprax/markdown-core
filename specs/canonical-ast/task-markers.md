@@ -1,18 +1,14 @@
-- [ ] incomplete
+- [ ] open
 - [x] done
-- [X] uppercase
-- [?] custom
-- [é] two bytes
-- [✓] three bytes
-- [🚀] four bytes
-- [́] combining scalar
-- [é] two scalars stay literal
+- [X] done in upper case
+- [?] question
+- [-] cancelled
+- [é] other scalars stay literal
+- [!] punctuation stays literal
 - [] empty stays literal
 
-> 1) [🚀] ordered
->    - [✓] nested
+> 1) [-] ordered
+>    - [?] nested
 
 - [?] - 	child
-- [é] - 	child
-- [✓] - 	child
-- [🚀] - 	child
+- [x] - 	child

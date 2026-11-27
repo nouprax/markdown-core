@@ -41,7 +41,7 @@ test("headings, ordinary references and opaque brackets retain differential cove
 });
 
 test("custom task and definition envelopes belong to their extension oracles", () => {
-    for (const input of ["- [🚀]   - [ ] b\n", "1. [!] task\n"]) {
+    for (const input of ["- [?]   - [ ] b\n", "1. [-] task\n"]) {
         assert.equal(outsideSharedFuzzScope(input), "custom-task-markers");
     }
     for (const input of ["Use [a]\n:\n:name[label]\n", "term\n: body\n", "term\n~ body\n"]) {
@@ -51,6 +51,8 @@ test("custom task and definition envelopes belong to their extension oracles", (
         "- [x] task\n",
         "- [ ] task\n",
         "[🚀] prose\n",
+        "- [🚀] not a task\n",
+        "1. [!] not a task\n",
         "- [ab] text\n",
         "    term\n    : body\n",
         "~~~\n- [🚀] task\nterm\n: body\n~~~\n",

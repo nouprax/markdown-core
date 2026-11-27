@@ -17083,6 +17083,76 @@
             ]
         },
         {
+            "id": "task-cancelled",
+            "certificate": "task-cancelled-grammar-v2",
+            "scope": "paired-document-grammar",
+            "feature": "task-lists",
+            "facets": ["cancelled-marker", "authored-marker"],
+            "identity": false,
+            "outputDifference": null,
+            "reference": "cmark-gfm",
+            "rejection": null,
+            "theorem": "T3",
+            "normalForm": {
+                "repetition": "+",
+                "fields": [
+                    {
+                        "name": "body",
+                        "grammar": "inline"
+                    }
+                ]
+            },
+            "grammars": {
+                "dialect": "Document = Unit+ ; Unit = \"- [-] \" body:inline \"\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = Letter+ ; Letter = [a-z] | [а-и] | [一-丈] | [𠀀-𠀇] ; AsciiWord = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = Letter+ ; Letter = [a-z] | [а-и] | [一-丈] | [𠀀-𠀇] ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = Letter+ ; Letter = [a-z] | [а-и] | [一-丈] | [𠀀-𠀇] ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = Letter+ ; Letter = [a-z] | [а-и] | [一-丈] | [𠀀-𠀇] ; Empty = epsilon ; UnicodeWord = (Letter | 'é' | '字')+ ; Letter = [a-z] | [а-и] | [一-丈] | [𠀀-𠀇] ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
+                "common": "Document = Unit+ ; Unit = \"- [x] \" body:inline \"\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = Letter+ ; Letter = [a-z] | [а-и] | [一-丈] | [𠀀-𠀇] ; AsciiWord = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = Letter+ ; Letter = [a-z] | [а-и] | [一-丈] | [𠀀-𠀇] ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = Letter+ ; Letter = [a-z] | [а-и] | [一-丈] | [𠀀-𠀇] ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = Letter+ ; Letter = [a-z] | [а-и] | [一-丈] | [𠀀-𠀇] ; Empty = epsilon ; UnicodeWord = (Letter | 'é' | '字')+ ; Letter = [a-z] | [а-и] | [一-丈] | [𠀀-𠀇] ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
+            },
+            "rewrite": [
+                "inline-administrative-productions",
+                "invertible-fixed-terminal-encoding",
+                "label-preserving-product-permutation",
+                "common-normal-form"
+            ],
+            "residual": null,
+            "examples": [
+                {
+                    "dialect": "- [-] b **uu mbmb qbqb** ac\n\n",
+                    "common": "- [x] b **uu mbmb qbqb** ac\n\n",
+                    "derivation": [
+                        [
+                            [
+                                "body",
+                                {
+                                    "grammar": "inline",
+                                    "value": ["b", ["uu", "mbmb", "qbqb"], "ac"]
+                                }
+                            ]
+                        ]
+                    ]
+                },
+                {
+                    "dialect": "- [-] lblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc\n\n",
+                    "common": "- [x] lblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc\n\n",
+                    "derivation": [
+                        [
+                            [
+                                "body",
+                                {
+                                    "grammar": "inline",
+                                    "value": [
+                                        "lblblb",
+                                        ["agag", "ububububub", "ok"],
+                                        "vc",
+                                        ["qiqi", "ybybybyb", "apap"],
+                                        "tctctc"
+                                    ]
+                                }
+                            ]
+                        ]
+                    ]
+                }
+            ]
+        },
+        {
             "id": "task-heading",
             "certificate": "task-heading-grammar-v2",
             "scope": "paired-document-grammar",
@@ -17265,76 +17335,6 @@
             ]
         },
         {
-            "id": "task-unicode",
-            "certificate": "task-unicode-grammar-v2",
-            "scope": "paired-document-grammar",
-            "feature": "task-lists",
-            "facets": ["unicode-marker", "authored-marker"],
-            "identity": false,
-            "outputDifference": null,
-            "reference": "cmark-gfm",
-            "rejection": null,
-            "theorem": "T3",
-            "normalForm": {
-                "repetition": "+",
-                "fields": [
-                    {
-                        "name": "body",
-                        "grammar": "inline"
-                    }
-                ]
-            },
-            "grammars": {
-                "dialect": "Document = Unit+ ; Unit = \"- [✓] \" body:inline \"\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = Letter+ ; Letter = [a-z] | [а-и] | [一-丈] | [𠀀-𠀇] ; AsciiWord = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = Letter+ ; Letter = [a-z] | [а-и] | [一-丈] | [𠀀-𠀇] ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = Letter+ ; Letter = [a-z] | [а-и] | [一-丈] | [𠀀-𠀇] ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = Letter+ ; Letter = [a-z] | [а-и] | [一-丈] | [𠀀-𠀇] ; Empty = epsilon ; UnicodeWord = (Letter | 'é' | '字')+ ; Letter = [a-z] | [а-и] | [一-丈] | [𠀀-𠀇] ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
-                "common": "Document = Unit+ ; Unit = \"- [x] \" body:inline \"\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = Letter+ ; Letter = [a-z] | [а-и] | [一-丈] | [𠀀-𠀇] ; AsciiWord = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = Letter+ ; Letter = [a-z] | [а-и] | [一-丈] | [𠀀-𠀇] ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = Letter+ ; Letter = [a-z] | [а-и] | [一-丈] | [𠀀-𠀇] ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = Letter+ ; Letter = [a-z] | [а-и] | [一-丈] | [𠀀-𠀇] ; Empty = epsilon ; UnicodeWord = (Letter | 'é' | '字')+ ; Letter = [a-z] | [а-и] | [一-丈] | [𠀀-𠀇] ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
-            },
-            "rewrite": [
-                "inline-administrative-productions",
-                "invertible-fixed-terminal-encoding",
-                "label-preserving-product-permutation",
-                "common-normal-form"
-            ],
-            "residual": null,
-            "examples": [
-                {
-                    "dialect": "- [✓] b **uu mbmb qbqb** ac\n\n",
-                    "common": "- [x] b **uu mbmb qbqb** ac\n\n",
-                    "derivation": [
-                        [
-                            [
-                                "body",
-                                {
-                                    "grammar": "inline",
-                                    "value": ["b", ["uu", "mbmb", "qbqb"], "ac"]
-                                }
-                            ]
-                        ]
-                    ]
-                },
-                {
-                    "dialect": "- [✓] lblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc\n\n",
-                    "common": "- [x] lblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc\n\n",
-                    "derivation": [
-                        [
-                            [
-                                "body",
-                                {
-                                    "grammar": "inline",
-                                    "value": [
-                                        "lblblb",
-                                        ["agag", "ububububub", "ok"],
-                                        "vc",
-                                        ["qiqi", "ybybybyb", "apap"],
-                                        "tctctc"
-                                    ]
-                                }
-                            ]
-                        ]
-                    ]
-                }
-            ]
-        },
-        {
             "id": "task-value",
             "certificate": "task-value-grammar-v2",
             "scope": "paired-document-grammar",
@@ -17350,7 +17350,7 @@
                 "grammar": "task-value"
             },
             "grammars": {
-                "dialect": "Document = Item (LF* Item)* LF+ ; Item = \"- [~] \" Body LF ; Decimal = [1-9][0-9]{0,8} ; OPEN = CLOSE = '**' ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = Letter+ ; Letter = [a-z] | [а-и] | [一-丈] | [𠀀-𠀇] ;",
+                "dialect": "Document = Item (LF* Item)* LF+ ; Item = \"- [?] \" Body LF ; Decimal = [1-9][0-9]{0,8} ; OPEN = CLOSE = '**' ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = Letter+ ; Letter = [a-z] | [а-и] | [一-丈] | [𠀀-𠀇] ;",
                 "common": "Document = Item (LF* Item)* LF+ ; Item = \"- [x] \" Body LF ; Decimal = [1-9][0-9]{0,8} ; OPEN = CLOSE = '**' ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = Letter+ ; Letter = [a-z] | [а-и] | [一-丈] | [𠀀-𠀇] ;"
             },
             "rewrite": [
@@ -17361,7 +17361,7 @@
             "residual": null,
             "examples": [
                 {
-                    "dialect": "- [~] b **uu mbmb qbqb** ac\n- [~] epepepep **tttttt pc zhb** qd **jwjwjw tctctctctc lmblmb** eabeabeab\n\n",
+                    "dialect": "- [?] b **uu mbmb qbqb** ac\n- [?] epepepep **tttttt pc zhb** qd **jwjwjw tctctctctc lmblmb** eabeabeab\n\n",
                     "common": "- [x] b **uu mbmb qbqb** ac\n- [x] epepepep **tttttt pc zhb** qd **jwjwjw tctctctctc lmblmb** eabeabeab\n\n",
                     "derivation": [
                         {
@@ -17383,7 +17383,7 @@
                     ]
                 },
                 {
-                    "dialect": "- [~] lblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc\n- [~] vp **kukukuku **zyzyzy xcxcxcxc xqbxqbxqb** yd **pbbpbbpbb bdbdbd jvb** cjbcjb** rd **axaxaxax **pbbpbbpbb bdbdbd jvb** ce **febfebfeb fdfd vzbvzb** onbonbonb** hbb\n\n",
+                    "dialect": "- [?] lblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc\n- [?] vp **kukukuku **zyzyzy xcxcxcxc xqbxqbxqb** yd **pbbpbbpbb bdbdbd jvb** cjbcjb** rd **axaxaxax **pbbpbbpbb bdbdbd jvb** ce **febfebfeb fdfd vzbvzb** onbonbonb** hbb\n\n",
                     "common": "- [x] lblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc\n- [x] vp **kukukuku **zyzyzy xcxcxcxc xqbxqbxqb** yd **pbbpbbpbb bdbdbd jvb** cjbcjb** rd **axaxaxax **pbbpbbpbb bdbdbd jvb** ce **febfebfeb fdfd vzbvzb** onbonbonb** hbb\n\n",
                     "derivation": [
                         {

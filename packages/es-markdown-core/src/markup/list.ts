@@ -1,4 +1,4 @@
-import type { ListFlavor, OrderedListDelimiter, OrderedListVariant } from "./values.js";
+import type { ListFlavor, OrderedListDelimiter, OrderedListVariant, TaskStatus } from "./values.js";
 import type { MarkupBase } from "./base.js";
 import type { Markup } from "./markup.js";
 
@@ -12,8 +12,6 @@ export interface List extends MarkupBase<"list"> {
 }
 
 export interface ListItem extends MarkupBase<"listItem"> {
-    readonly marker: string | null;
-    readonly tasked: boolean;
-    readonly completed: boolean;
+    readonly status: TaskStatus | null;
     readonly content: readonly Markup[];
 }

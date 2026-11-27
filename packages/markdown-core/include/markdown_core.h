@@ -319,6 +319,17 @@ typedef enum markdown_core_slot_kind {
     /* END GENERATED */
 } markdown_core_slot_kind;
 
+/* The status a list item's task check gives it: `[ ]` is open, `[x]` and
+ * `[X]` done, `[?]` a question and `[-]` cancelled. NONE is an item with no
+ * check. */
+typedef enum markdown_core_task_status {
+    MARKDOWN_CORE_TASK_STATUS_NONE = 0,
+    MARKDOWN_CORE_TASK_STATUS_OPEN = 1,
+    MARKDOWN_CORE_TASK_STATUS_DONE = 2,
+    MARKDOWN_CORE_TASK_STATUS_QUESTION = 3,
+    MARKDOWN_CORE_TASK_STATUS_CANCELLED = 4
+} markdown_core_task_status;
+
 typedef enum markdown_core_list_flavor {
     MARKDOWN_CORE_LIST_FLAVOR_BULLET = 1,
     MARKDOWN_CORE_LIST_FLAVOR_ORDERED = 2
@@ -757,9 +768,9 @@ MARKDOWN_CORE_API markdown_core_status markdown_core_node_heading_level(const ma
 MARKDOWN_CORE_API markdown_core_status markdown_core_node_list_properties(
     const markdown_core_node *node, markdown_core_list_flavor *flavor, markdown_core_optional_i64 *start,
     markdown_core_ordered_list_variant *variant, markdown_core_ordered_list_delimiter *delimiter, bool *tight);
-/** A `ListItem`. */
-MARKDOWN_CORE_API markdown_core_status markdown_core_node_list_item_marker(const markdown_core_node *node,
-                                                                           markdown_core_optional_string *marker);
+/** A `ListItem`: the status of its task check, NONE without one. */
+MARKDOWN_CORE_API markdown_core_status markdown_core_node_list_item_status(const markdown_core_node *node,
+                                                                           markdown_core_task_status *status);
 /** A `CodeBlock`. `info` and `language` are OPTIONAL: a fence with nothing
  * but whitespace after it wrote no info string, and an indented block has no
  * fence to write one on. `language` is the info string's first word and is

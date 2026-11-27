@@ -540,11 +540,16 @@ static void put_record(wire_buffer *buffer, const markdown_core_node *node) {
         put_list_fields(buffer, node);
         put_nodes_count(buffer, &edges[0]);
         break;
-    case MARKDOWN_CORE_KIND_LIST_ITEM:
-        markdown_core_node_list_item_marker(node, &first);
-        put_optional_string(buffer, first);
+    case MARKDOWN_CORE_KIND_LIST_ITEM: {
+        markdown_core_task_status status;
+        markdown_core_node_list_item_status(node, &status);
+        put_bool(buffer, status != MARKDOWN_CORE_TASK_STATUS_NONE);
+        if (status != MARKDOWN_CORE_TASK_STATUS_NONE) {
+            put_index(buffer, status, MARKDOWN_CORE_TASK_STATUS_OPEN);
+        }
         put_nodes_count(buffer, &edges[0]);
         break;
+    }
     case MARKDOWN_CORE_KIND_CODE_BLOCK: {
         bool fenced, closed;
         if (markdown_core_node_code_block_properties(node, &first, &second, &literal, &fenced, &closed) !=

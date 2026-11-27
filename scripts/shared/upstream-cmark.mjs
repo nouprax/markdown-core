@@ -699,13 +699,13 @@ export function unknownKinds(node, found = new Set()) {
     return found;
 }
 
-/** The completion fact shared by boolean-only oracles and authored markers.
- * Absence stays distinct from incomplete and complete; spelling is tested by
- * the canonical fixtures rather than fabricated from an oracle boolean. */
+/** The completion fact shared by boolean-only oracles and task statuses.
+ * Absence stays distinct from incomplete and complete: every status but
+ * `open` is a checked box. */
 export function taskCompletion(fields) {
     if (fields.completed !== undefined) return fields.completed;
-    const marker = fields.marker;
-    return marker === undefined || marker === "null" ? "null" : String(marker !== " ");
+    const status = fields.status;
+    return status === undefined || status === "null" ? "null" : String(status !== "open");
 }
 
 /** The dump's universal attribute value, independent of source tokenization. */

@@ -28,9 +28,8 @@ typedef struct {
     markdown_core_ordered_list_delimiter delimiter;
     unsigned char bullet_char;
     bool tight;
-    /* The authored UTF-8 task marker, owned by the item; absent on ordinary
-     * items. Completion is derived by consumers, not stored by the tree. */
-    markdown_core_optional_chunk task_marker;
+    /* The status of the item's task check; NONE on ordinary items. */
+    markdown_core_task_status task;
 } markdown_core_list;
 
 typedef struct {

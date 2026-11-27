@@ -23,6 +23,7 @@ import type {
     Destination,
     Extent,
     ListFlavor,
+    TaskStatus,
     OrderedListDelimiter,
     OrderedListVariant,
     Placement,
@@ -49,6 +50,7 @@ const flows: readonly Flow[] = ["none", "left", "center", "right"];
 const placements: readonly Placement[] = ["embedded", "standalone"];
 const bibModes: readonly BibMode[] = ["normal", "authorInText", "suppressAuthor"];
 const flavors: readonly ListFlavor[] = ["bullet", "ordered"];
+const statuses: readonly TaskStatus[] = ["open", "done", "question", "cancelled"];
 /** `markdown_core_status` by value; 0, success, is never a failure message's. */
 export const errorCodes: { readonly [status: number]: ErrorCode } = {
     1: "allocationFailed",
@@ -204,17 +206,11 @@ export class Decoder {
                 };
             }
             case "listItem": {
-                const marker = this.optional(() => this.string());
+                const status = this.optional(() => this.index(statuses));
                 const content = this.count();
                 return {
                     ...(base as Base<"listItem">),
-                    marker,
-                    get tasked() {
-                        return marker !== null;
-                    },
-                    get completed() {
-                        return marker !== null && marker !== " ";
-                    },
+                    status,
                     content: this.nodes(content).take(content)
                 };
             }

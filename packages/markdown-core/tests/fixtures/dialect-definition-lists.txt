@@ -231,7 +231,7 @@ Document scope=1:1..9:3 anchor=null attributes={} children=4
 │           └── Paragraph scope=2:3..2:6 anchor=null attributes={} children=1
 │               └── Text scope=2:3..2:6 anchor=null attributes={} literal="body" children=0
 ├── List scope=3:1..4:0 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
-│   └── ListItem scope=3:1..4:0 anchor=null attributes={} marker=null children=1
+│   └── ListItem scope=3:1..4:0 anchor=null attributes={} status=null children=1
 │       └── Paragraph scope=3:3..3:6 anchor=null attributes={} children=1
 │           └── Text scope=3:3..3:6 anchor=null attributes={} literal="list" children=0
 ├── DefinitionList scope=5:1..6:3 anchor=null attributes={} children=1
@@ -277,7 +277,7 @@ Document scope=1:1..15:6 anchor=null attributes={} children=1
     │       │   └── Paragraph scope=5:5..5:8 anchor=null attributes={} children=1
     │       │       └── Text scope=5:5..5:8 anchor=null attributes={} literal="body" children=0
     │       ├── List scope=7:3..8:0 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
-    │       │   └── ListItem scope=7:3..8:0 anchor=null attributes={} marker=null children=1
+    │       │   └── ListItem scope=7:3..8:0 anchor=null attributes={} status=null children=1
     │       │       └── Paragraph scope=7:5..7:8 anchor=null attributes={} children=1
     │       │           └── Text scope=7:5..7:8 anchor=null attributes={} literal="list" children=0
     │       └── Table scope=9:3..11:11 anchor=null attributes={} columns=[none,none] children=2
@@ -529,7 +529,7 @@ Document scope=1:1..11:10 anchor=null attributes={} children=4
 │               └── Paragraph scope=2:5..2:8 anchor=null attributes={} children=1
 │                   └── Text scope=2:5..2:8 anchor=null attributes={} literal="body" children=0
 ├── List scope=4:1..6:0 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
-│   └── ListItem scope=4:1..6:0 anchor=null attributes={} marker=null children=1
+│   └── ListItem scope=4:1..6:0 anchor=null attributes={} status=null children=1
 │       └── DefinitionList scope=4:3..5:8 anchor=null attributes={} children=1
 │           └── Definition scope=4:3..5:8 anchor=null attributes={} compact=true children=1
 │               ├── DefinitionTerm children=1

@@ -558,7 +558,7 @@ static void check_dialect_is_whole(void) {
         {"| a |\n| --- |\n| b |\n", "Table scope="},
         {"~~x~~\n", "Strikethrough scope="},
         {"www.example.com\n", "Link scope="},
-        {"- [x] task\n", "marker=\"x\""},
+        {"- [x] task\n", "status=done"},
         {"ref[^a]\n\n[^a]: note\n", "Cite scope="},
         {"$x$\n", "Formula scope="},
         {":badge[label]\n", "Directive scope="},
@@ -700,6 +700,7 @@ static void check_kind_boundary(void) {
     markdown_core_ordered_list_variant variant;
     markdown_core_ordered_list_delimiter delimiter;
     markdown_core_optional_string optional = {true, {NULL, 7}};
+    markdown_core_task_status task = MARKDOWN_CORE_TASK_STATUS_DONE;
     markdown_core_optional_bool optional_bool;
     markdown_core_string string = {NULL, 7};
     markdown_core_placement placement;
@@ -713,7 +714,7 @@ static void check_kind_boundary(void) {
     const markdown_core_status statuses[] = {
         markdown_core_node_heading_level(paragraph, &level),
         markdown_core_node_list_properties(paragraph, &flavor, &start, &variant, &delimiter, &flag),
-        markdown_core_node_list_item_marker(paragraph, &optional),
+        markdown_core_node_list_item_status(paragraph, &task),
         markdown_core_node_code_block_properties(paragraph, &optional, &optional, &string, &flag, &flag),
         markdown_core_node_literal(paragraph, &string),
         markdown_core_node_formula_properties(paragraph, &placement, &string),
@@ -756,7 +757,8 @@ static void check_kind_boundary(void) {
         check(statuses[index] == MARKDOWN_CORE_KIND_MISMATCH, "a kind accessor refuses a node of another kind");
     }
     check(node == paragraph && !nodes.items && nodes.count == 7 && !dimensions && !value && level == 7 &&
-              start.value == 7 && optional.value.length == 7 && string.length == 7,
+              start.value == 7 && optional.value.length == 7 && string.length == 7 &&
+              task == MARKDOWN_CORE_TASK_STATUS_DONE,
           "a refused accessor writes none of its out-parameters");
     /* The kind is the node's own, not its neighbour's: a Text answers the
      * literal its Paragraph does not. */

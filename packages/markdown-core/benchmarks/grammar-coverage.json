@@ -918,7 +918,7 @@
         {
             "feature": "conflicts",
             "specification": "docs/specs/dialect/conflicts.md",
-            "sha256": "fdcf9647b9525062241284fb292652048e5d9f306aed7fe0d763607edacb74fa",
+            "sha256": "8748711613a59885498630f44b4d979d8a7cabc62b03835065f20b28921f38f8",
             "sections": [
                 {
                     "title": "Compatibility and precedence",
@@ -934,7 +934,7 @@
                     "title": "Differences to know",
                     "line": 10,
                     "level": 2,
-                    "sha256": "9fa04cdec6112775c703af38afc19fe07b440826154fd9e82afade9fed86edb3",
+                    "sha256": "5763fc814edae3d1bb26c21eafed9f5f26d3b653dab34b28137e28b302100820",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": [
@@ -948,7 +948,7 @@
                             "attribute-bare",
                             "named-container",
                             "formula-parenthesis",
-                            "task-unicode",
+                            "task-cancelled",
                             "common-html-comment",
                             "common-inline-html",
                             "decimal-list",
@@ -2685,33 +2685,33 @@
         {
             "feature": "task-lists",
             "specification": "docs/specs/dialect/task-lists.md",
-            "sha256": "5a83f0898937ab47cb79fb4e39a64f83d5b91da8ca5b18b0728bb777e5dd5417",
+            "sha256": "b538a34c462db60b8c63ed669043c868a241849d250fde47f4eba828088b1b80",
             "sections": [
                 {
                     "title": "Task lists",
                     "line": 1,
                     "level": 1,
-                    "sha256": "e62a7bee107c78bfcf5ac4a99f22b669e2b2fa2b184820d40f39557d98a9d756",
+                    "sha256": "f0dd35250043e911243d41218bde7c4cee4d2e98a34897782ab3d0c827f41e95",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["gfm-task-open", "gfm-task-lower", "gfm-task-upper"]
                     }
                 },
                 {
-                    "title": "Custom markers and nesting",
-                    "line": 19,
+                    "title": "Nesting",
+                    "line": 28,
                     "level": 2,
-                    "sha256": "83e608e2845916e457f4f7d63af5d68b385f552a815e350fa03493aeaa11b88c",
+                    "sha256": "e15da89b60c289c1f6dc35a6964d1f9419b0d99ebc907b761cfaae605955a0d0",
                     "disposition": {
                         "kind": "grammar",
-                        "certificates": ["task-value", "task-unicode", "task-nested"]
+                        "certificates": ["task-value", "task-cancelled", "task-nested"]
                     }
                 },
                 {
                     "title": "Required separator",
-                    "line": 31,
+                    "line": 38,
                     "level": 2,
-                    "sha256": "bb35ff1477455d73b45630cf8d6ec64cd18ba9a267f526d5f05638e68d678422",
+                    "sha256": "edcb52ecf31bee986181f28c2855dadad8534dd573eba07e9728a8c48db5719d",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["fallback-task-separator", "task-heading"]
@@ -2745,6 +2745,12 @@
                     "facets": ["standard-markers", "opening-content"]
                 },
                 {
+                    "id": "task-cancelled",
+                    "scope": "paired-document-grammar",
+                    "identity": false,
+                    "facets": ["cancelled-marker", "authored-marker"]
+                },
+                {
                     "id": "task-heading",
                     "scope": "paired-document-grammar",
                     "identity": false,
@@ -2755,12 +2761,6 @@
                     "scope": "paired-document-grammar",
                     "identity": true,
                     "facets": ["nested-tasks", "ordered-task"]
-                },
-                {
-                    "id": "task-unicode",
-                    "scope": "paired-document-grammar",
-                    "identity": false,
-                    "facets": ["unicode-marker", "authored-marker"]
                 },
                 {
                     "id": "task-value",

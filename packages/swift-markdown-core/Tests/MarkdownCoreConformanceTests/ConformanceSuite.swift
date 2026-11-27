@@ -58,9 +58,7 @@ private typealias Comment = Testing.Comment
         let parenthesized = try #require(try Document.parse("1) item\n").content[0] as? MarkdownCore.List)
         #expect(parenthesized.delimiter == .parenthesis(closed: false))
         let task = try #require(document.content[1] as? MarkdownCore.List)
-        #expect(task.items.first?.marker == "x")
-        #expect(task.items.first?.tasked == true)
-        #expect(task.items.first?.completed == true)
+        #expect(task.items.first?.status == .done)
         let table = try #require(document.content[2] as? Table)
         #expect(table.columns.map(\.flow) == [.center])
         #expect(table.head.count == 1)
@@ -73,19 +71,19 @@ private typealias Comment = Testing.Comment
         #expect(image.dest == .url("/image") && image.title == "title")
     }
 
-    @Test("task markers preserve scalars and derive completion")
-    func taskMarkers() throws {
-        for marker in [" ", "x", "X", "?", "é", "✓", "🚀", "́", "]"] {
+    @Test("task checks give their five statuses, and other scalars stay text")
+    func taskStatuses() throws {
+        let statuses: [(String, TaskStatus)] = [
+            (" ", .open), ("x", .done), ("X", .done), ("?", .question), ("-", .cancelled),
+        ]
+        for (marker, status) in statuses {
             let list = try #require(try Document.parse("- [\(marker)] body\n").content.first as? MarkdownCore.List)
-            let item = try #require(list.items.first)
-            #expect(item.marker == marker)
-            #expect(item.tasked)
-            #expect(item.completed == (marker != " "))
+            #expect(list.items.first?.status == status)
         }
-        let list = try #require(try Document.parse("- [é] body\n").content.first as? MarkdownCore.List)
-        #expect(list.items.first?.marker == nil)
-        #expect(list.items.first?.tasked == false)
-        #expect(list.items.first?.completed == false)
+        for marker in ["é", "✓", "🚀", "!", "]"] {
+            let list = try #require(try Document.parse("- [\(marker)] body\n").content.first as? MarkdownCore.List)
+            #expect(list.items.first?.status == nil)
+        }
     }
 
     @Test("all manifest cases match the shared canonical AST spec")
