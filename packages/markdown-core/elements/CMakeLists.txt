@@ -6,14 +6,12 @@ set(LIBRARY_SOURCES
     ast.c
     attributes.c
     autolink.c
-    autolink_scanners.c
     block_identifier.c
     callout.c
     citation.c
     code.c
     code_block.c
     comment.c
-    comment_scanners.c
     core-elements.c
     cross_link.c
     definition_list.c
@@ -27,7 +25,6 @@ set(LIBRARY_SOURCES
     heading.c
     html.c
     html_block.c
-    html_scanners.c
     houdini_html_u.c
     session.c
     parts.c
@@ -47,7 +44,6 @@ set(LIBRARY_SOURCES
     table.c
     tasklist.c
     text.c
-    text_scanners.c
     thematic_break.c
     topic.c)
 
@@ -61,10 +57,6 @@ set(CMAKE_LINKER_PROFILE "${CMAKE_LINKER_FLAGS_RELEASE} -pg")
 
 if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
     set_source_files_properties(
-        autolink_scanners.c
-        comment_scanners.c
-        html_scanners.c
-        text_scanners.c
         PROPERTIES COMPILE_FLAGS "-Wno-unused-variable")
 endif()
 

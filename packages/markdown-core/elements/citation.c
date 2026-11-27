@@ -1,7 +1,6 @@
 #include <string.h>
 #include "alloc.h"
 #include "label.h"
-#include "autolink_scanners.h"
 #include "citation.h"
 #include "services.h"
 #include "inline_internal.h"
@@ -11,12 +10,6 @@
 #include "tokenizer.h"
 #include "compile.h"
 
-/* The services this element asks, as `self->needs` holds them: the spans a
- * citation's brace steps over whole. */
-enum { CITATION_CODE_SPANS, CITATION_HTML_TAGS };
-static const char *const CITATION_NEEDS[] = {[CITATION_CODE_SPANS] = MARKDOWN_CORE_SERVICE_CODE_SPANS,
-                                             [CITATION_HTML_TAGS] = MARKDOWN_CORE_SERVICE_HTML_TAGS,
-                                             NULL};
 /* The spaces this element looks labels up in, as `self->spaces` numbers
  * them: the specimens' (a space is its name, element.h). */
 enum { CITATION_SPECIMENS };
@@ -66,104 +59,6 @@ static bool source_escaped(const markdown_core_element_instance *self, markdown_
     }
     citation_work(self)->work += (size_t)(at - escape);
     return (at - escape) % 2 != 0;
-}
-
-static void prepare_citation_braces(const markdown_core_element_instance *self,
-                                    markdown_core_inline_state *inline_state) {
-    citation_brace_index *index = &citation_run(self, inline_state)->braces;
-    markdown_core_citation_work *counts = citation_work(self);
-    index->ready = true;
-    size_t capacity = 0;
-    bufsize_t top = -1;
-    markdown_core_skip_memo html = {0};
-    /* The index reads the run from where it starts: a run from a seam
-     * reads none of the content before it, which its view may not hold
-     * (blocks.c, THE BACK OF A PARAGRAPH), and no citation it reads starts
-     * there. */
-    for (bufsize_t at = inline_state->settle ? inline_state->settle->from : 0;
-         at < markdown_core_inline_size(inline_state);) {
-        bufsize_t opaque_end = at;
-        unsigned char c = markdown_core_inline_char_at(inline_state, at);
-        bool escaped = (c == '`' || c == '<') && source_escaped(self, inline_state, at, 0);
-        /* A backtick run is opaque where the dialect reads code spans. */
-        bufsize_t open;
-        if (c == '`' && !escaped && self->needs[CITATION_CODE_SPANS].ops) {
-            /* A backtick run no closer closes is text, read past whole. */
-            opaque_end = markdown_core_skip(self->needs[CITATION_CODE_SPANS], inline_state, at, &index->ticks, &open);
-            if (!opaque_end) {
-                opaque_end = open;
-                if (top >= 0) {
-                    index->entries[top].cut = true;
-                }
-            }
-        } else if (c == '<' && !escaped) {
-            const bufsize_t end = markdown_core_skip(self->needs[CITATION_HTML_TAGS], inline_state, at, &html, &open);
-            bufsize_t width = end ? end - at - 1 : 0;
-            if (!width) {
-                width = scan_autolink_uri(markdown_core_inline_window(inline_state, 0).data,
-                                          markdown_core_inline_window(inline_state, 0).len, at + 1);
-            }
-            if (!width) {
-                width = scan_autolink_email(markdown_core_inline_window(inline_state, 0).data,
-                                            markdown_core_inline_window(inline_state, 0).len, at + 1);
-            }
-            if (width) {
-                opaque_end = at + 1 + width;
-            } else if (top >= 0 && open > at) {
-                index->entries[top].cut = true;
-            }
-        }
-        if (opaque_end > at) {
-            for (; at < opaque_end; at++) {
-                counts->work++;
-                if (top >= 0) {
-                    index->entries[top].content = true;
-                    if (markdown_core_is_whitespace(markdown_core_inline_char_at(inline_state, at))) {
-                        index->entries[top].valid = false;
-                    }
-                }
-            }
-            continue;
-        }
-        counts->work++;
-        if (c == '{') {
-            if (index->count == capacity) {
-                if (capacity > SIZE_MAX / sizeof(*index->entries) / 2) {
-                    inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
-                    return;
-                }
-                size_t grown = capacity ? capacity * 2 : 8;
-                void *entries = markdown_core_realloc(index->entries, grown * sizeof(*index->entries));
-                if (!entries) {
-                    inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
-                    return;
-                }
-                index->entries = entries;
-                counts->brace_bytes += (grown - capacity) * sizeof(*index->entries);
-                capacity = grown;
-            }
-            index->entries[index->count] = (citation_brace){.start = at++, .previous = top, .valid = true};
-            top = (bufsize_t)index->count++;
-        } else if (c == '}' && top >= 0) {
-            citation_brace *brace = &index->entries[top];
-            bool valid = brace->valid && brace->content;
-            brace->end = valid ? at + 1 : 0;
-            top = brace->previous;
-            if (top >= 0) {
-                index->entries[top].valid &= valid;
-                index->entries[top].content = true;
-            }
-            at++;
-        } else {
-            if (top >= 0) {
-                index->entries[top].content = true;
-                if (markdown_core_is_whitespace(c)) {
-                    index->entries[top].valid = false;
-                }
-            }
-            at++;
-        }
-    }
 }
 
 /* Where the bare key read from `data` stops: key characters, with single
@@ -315,7 +210,6 @@ struct markdown_core_citation_entry {
 static void dispose_inline(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state) {
     markdown_core_citation_run *run = markdown_core_run_state(inline_state, self);
     markdown_core_free(run->braces.entries);
-    markdown_core_skip_release(self->needs[CITATION_CODE_SPANS], &run->braces.ticks);
     run->braces = (citation_brace_index){0};
     for (size_t i = 0; i < run->entry_count; i++) {
         if (run->entries[i].held) {
@@ -554,8 +448,8 @@ static void S_give_key(markdown_core_tokenizer *tokenizer, bufsize_t start, bufs
     markdown_core_text_give_up(tokenizer, MARKDOWN_CORE_KIND_CITE, start, at, fields, count);
 }
 
-/* The key at `start` as the reading reads it (scan_citation_key): where
- * it ends, or 0. */
+/* The bare key at `start` as the reading reads it (scan_citation_key):
+ * where it ends, or 0. */
 static bufsize_t S_scan(const markdown_core_element_instance *self, markdown_core_tokenizer *tokenizer,
                         bufsize_t start) {
     markdown_core_inline_state *inline_state = tokenizer->reader;
@@ -573,35 +467,223 @@ static bufsize_t S_scan(const markdown_core_element_instance *self, markdown_cor
         return 0;
     }
     pos++;
-    if (data[pos] == '{') {
-        citation_brace_index *index = &citation_run(self, inline_state)->braces;
-        if (!index->ready) {
-            prepare_citation_braces(self, inline_state);
-        }
-        if (inline_state->error) {
-            return 0;
-        }
-        while (index->cursor < index->count && index->entries[index->cursor].start < pos) {
-            counts->work++;
-            index->cursor++;
-        }
-        if (index->cursor == index->count || index->entries[index->cursor].start != pos ||
-            !index->entries[index->cursor].end) {
-            markdown_core_met_end(tokenizer);
-            const bool open = index->cursor < index->count && index->entries[index->cursor].start == pos &&
-                              index->entries[index->cursor].valid;
-            if (open) {
-                const bool empty = data[pos + 1] == '}';
-                S_give_key(tokenizer, start, pos, pos + 1, empty ? pos + 1 : len, true);
-            }
-            return 0;
-        }
-        return index->entries[index->cursor].end;
-    }
     const bufsize_t key_start = pos;
     pos += key_end(data + pos, len - pos);
     counts->work += (size_t)(pos - key_start) + 1;
     return pos > key_start ? pos : 0;
+}
+
+/* THE BRACED KEY, code by code: `{`, then bytes to the `}` that closes
+ * it, braces nesting; a code span, a tag or an autolink in it, which the
+ * text's constructs at its first byte read (markdown_core_skim), is read
+ * past whole, its bytes the key's. A brace is a key when it holds
+ * something, no white space, and no brace that is no key. Every brace the
+ * reading reads is kept in the run's index (citation_brace_index), in the
+ * order of their starts, so that a key whose brace a reading read is
+ * answered from it: each byte is read once. Checked, it leaves where it
+ * ends in the run record (`brace_end`); a brace no `}` closes, or one
+ * that is no key, gives its key up when no white space makes it none.
+ * The frame's words: the key's brace and the innermost open one, by index,
+ * whether the last byte was a backslash that escapes, and where a skimmed
+ * span began. */
+enum { BRACE_OUTER, BRACE_TOP, BRACE_ESCAPED, BRACE_FROM };
+
+static markdown_core_state S_brace(markdown_core_tokenizer *tokenizer, int code);
+
+static inline citation_brace_index *S_index(markdown_core_tokenizer *tokenizer) {
+    return &citation_run(markdown_core_self(tokenizer), tokenizer->reader)->braces;
+}
+
+/* A brace at `start` in `previous` kept: its index, or UINT32_MAX with the
+ * reading failed. */
+static uint32_t S_brace_keep(markdown_core_tokenizer *tokenizer, uint32_t start, uint32_t previous) {
+    citation_brace_index *index = S_index(tokenizer);
+    if (index->count == index->room) {
+        if (index->room > SIZE_MAX / sizeof(*index->entries) / 2) {
+            tokenizer->events.failed = true;
+            return UINT32_MAX;
+        }
+        const size_t grown = index->room ? index->room * 2 : 8;
+        citation_brace *entries = markdown_core_realloc(index->entries, grown * sizeof(*index->entries));
+        if (!entries) {
+            tokenizer->events.failed = true;
+            return UINT32_MAX;
+        }
+        citation_work(markdown_core_self(tokenizer))->brace_bytes += (grown - index->room) * sizeof(*entries);
+        index->entries = entries;
+        index->room = grown;
+    }
+    index->entries[index->count] = (citation_brace){.start = start, .previous = previous, .valid = true};
+    return (uint32_t)index->count++;
+}
+
+/* What the innermost open brace holds: a byte, white space or not. */
+static inline void S_brace_holds(markdown_core_tokenizer *tokenizer, bool space) {
+    citation_brace *brace = &S_index(tokenizer)->entries[markdown_core_frame_local(tokenizer)[BRACE_TOP]];
+    brace->content = true;
+    brace->valid &= !space;
+}
+
+/* The key at the brace at `at` is none, as `valid` says it is so far. */
+static markdown_core_state S_brace_none(markdown_core_tokenizer *tokenizer, uint32_t at, bool valid) {
+    const markdown_core_citation_run *run = citation_run(markdown_core_self(tokenizer), tokenizer->reader);
+    markdown_core_met_end(tokenizer);
+    if (valid) {
+        const bool empty = tokenizer->data[at + 1] == '}';
+        S_give_key(tokenizer, (bufsize_t)run->key_at, (bufsize_t)at, (bufsize_t)at + 1,
+                   empty ? (bufsize_t)at + 1 : (bufsize_t)tokenizer->size, true);
+    }
+    return markdown_core_nok(tokenizer);
+}
+
+static markdown_core_state S_brace_lost(markdown_core_tokenizer *tokenizer) {
+    const citation_brace *outer = &S_index(tokenizer)->entries[markdown_core_frame_local(tokenizer)[BRACE_OUTER]];
+    return S_brace_none(tokenizer, outer->start, outer->valid);
+}
+
+/* A span skimmed: its bytes are the brace's. */
+static markdown_core_state S_brace_span(markdown_core_tokenizer *tokenizer, int code) {
+    uint32_t *words = markdown_core_frame_local(tokenizer);
+    citation_work(markdown_core_self(tokenizer))->work += (size_t)(tokenizer->position - words[BRACE_FROM]);
+    bool space = false;
+    for (uint32_t at = words[BRACE_FROM]; at < tokenizer->position && !space; at++) {
+        space = markdown_core_is_whitespace(tokenizer->data[at]);
+    }
+    S_brace_holds(tokenizer, space);
+    words[BRACE_ESCAPED] = false;
+    return S_brace(tokenizer, code);
+}
+
+/* A byte of the key no construct read. */
+static markdown_core_state S_brace_byte(markdown_core_tokenizer *tokenizer, int code) {
+    uint32_t *words = markdown_core_frame_local(tokenizer);
+    S_brace_holds(tokenizer, code >= 0 && markdown_core_is_whitespace((unsigned char)code));
+    words[BRACE_ESCAPED] = code == '\\' && !words[BRACE_ESCAPED];
+    markdown_core_consume(tokenizer);
+    return markdown_core_state_of(S_brace);
+}
+
+static markdown_core_state S_brace(markdown_core_tokenizer *tokenizer, int code) {
+    uint32_t *words = markdown_core_frame_local(tokenizer);
+    citation_work(markdown_core_self(tokenizer))->work++;
+    if (code == MARKDOWN_CORE_EOF) {
+        return S_brace_lost(tokenizer);
+    }
+    if ((code == '`' || code == '<') && !words[BRACE_ESCAPED]) {
+        words[BRACE_FROM] = tokenizer->position;
+        return markdown_core_skim(tokenizer, markdown_core_state_of(S_brace_span), markdown_core_state_of(S_brace_byte),
+                                  code);
+    }
+    words[BRACE_ESCAPED] = false;
+    if (code == '{') {
+        const uint32_t kept = S_brace_keep(tokenizer, tokenizer->position, words[BRACE_TOP]);
+        if (kept == UINT32_MAX) {
+            return markdown_core_nok(tokenizer);
+        }
+        words[BRACE_TOP] = kept;
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_brace);
+    }
+    if (code != '}') {
+        return S_brace_byte(tokenizer, code);
+    }
+    markdown_core_consume(tokenizer);
+    citation_brace_index *index = S_index(tokenizer);
+    citation_brace *brace = &index->entries[words[BRACE_TOP]];
+    const bool valid = brace->valid && brace->content;
+    brace->end = valid ? tokenizer->position : 0;
+    if (words[BRACE_TOP] == words[BRACE_OUTER]) {
+        if (!valid) {
+            return S_brace_none(tokenizer, brace->start, brace->valid);
+        }
+        citation_run(markdown_core_self(tokenizer), tokenizer->reader)->brace_end = tokenizer->position;
+        return markdown_core_ok(tokenizer);
+    }
+    words[BRACE_TOP] = brace->previous;
+    index->entries[words[BRACE_TOP]].valid &= valid;
+    index->entries[words[BRACE_TOP]].content = true;
+    return markdown_core_state_of(S_brace);
+}
+
+static markdown_core_state S_brace_open(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    uint32_t *words = markdown_core_frame_local(tokenizer);
+    const uint32_t kept = S_brace_keep(tokenizer, tokenizer->position, UINT32_MAX);
+    if (kept == UINT32_MAX) {
+        return markdown_core_nok(tokenizer);
+    }
+    words[BRACE_OUTER] = words[BRACE_TOP] = kept;
+    markdown_core_consume(tokenizer);
+    return markdown_core_state_of(S_brace);
+}
+
+static const markdown_core_construct CITATION_BRACES = {.start = S_brace_open};
+
+/* THE KEY'S TOKEN, from the `@` or `-` at the frame's KEY_AT through
+ * where the reading stands, entered at KEY_TOKEN: a `[` after it, past
+ * white space, may be its tail. */
+enum { KEY_AT, KEY_TOKEN };
+
+static markdown_core_state S_key_end(markdown_core_tokenizer *tokenizer) {
+    const markdown_core_element_instance *self = markdown_core_self(tokenizer);
+    markdown_core_citation_run *run = citation_run(self, tokenizer->reader);
+    const unsigned char *data = tokenizer->data;
+    const bufsize_t size = (bufsize_t)tokenizer->size, end = (bufsize_t)tokenizer->position;
+    const uint32_t token = markdown_core_frame_local(tokenizer)[KEY_TOKEN];
+    const bufsize_t after = markdown_core_skip_spaces_and_line_end(data, end, size);
+    citation_work(self)->work += (size_t)(after - end);
+    const uint32_t tail = data[after] == '[' && data[after + 1] != '^' ? (uint32_t)after : UINT32_MAX;
+    markdown_core_exit(tokenizer, (uint16_t)(self->token_base + CITATION_KEY));
+    if (token != UINT32_MAX) {
+        tokenizer->events.tokens[token].data = tail;
+    }
+    if (!markdown_core_opener_last(tokenizer)) {
+        run->held = true;
+    }
+    return markdown_core_ok(tokenizer);
+}
+
+static markdown_core_state S_braced(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    markdown_core_consume_to(tokenizer, citation_run(markdown_core_self(tokenizer), tokenizer->reader)->brace_end);
+    return S_key_end(tokenizer);
+}
+
+static markdown_core_state S_unbraced(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    return markdown_core_nok(tokenizer);
+}
+
+/* Up to the key's `{`: a brace a reading read before answers from the
+ * index; any other is read, the index kept from it on. */
+static markdown_core_state S_key_brace(markdown_core_tokenizer *tokenizer, int code) {
+    if (code != '{') {
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_key_brace);
+    }
+    citation_brace_index *index = S_index(tokenizer);
+    const uint32_t at = tokenizer->position;
+    size_t low = 0, high = index->count;
+    while (low < high) {
+        const size_t mid = low + (high - low) / 2;
+        if (index->entries[mid].start < at) {
+            low = mid + 1;
+        } else {
+            high = mid;
+        }
+    }
+    citation_work(markdown_core_self(tokenizer))->work++;
+    if (low < index->count && index->entries[low].start == at) {
+        const citation_brace *brace = &index->entries[low];
+        if (!brace->end) {
+            return S_brace_none(tokenizer, at, brace->valid);
+        }
+        citation_run(markdown_core_self(tokenizer), tokenizer->reader)->brace_end = brace->end;
+        return S_braced(tokenizer, code);
+    }
+    index->count = low;
+    return markdown_core_check(tokenizer, &CITATION_BRACES, markdown_core_state_of(S_braced),
+                               markdown_core_state_of(S_unbraced), code);
 }
 
 static markdown_core_state S_start(markdown_core_tokenizer *tokenizer, int code) {
@@ -612,6 +694,7 @@ static markdown_core_state S_start(markdown_core_tokenizer *tokenizer, int code)
     const bufsize_t size = (bufsize_t)tokenizer->size;
     const bufsize_t at = (bufsize_t)tokenizer->position;
     const bool open = markdown_core_opener_last(tokenizer) != NULL;
+    uint32_t *words = markdown_core_frame_local(tokenizer);
     if (code == ';') {
         if (!open) {
             return markdown_core_nok(tokenizer);
@@ -643,24 +726,23 @@ static markdown_core_state S_start(markdown_core_tokenizer *tokenizer, int code)
             return markdown_core_nok(tokenizer);
         }
     }
+    const bufsize_t brace = at + (code == '-' ? 2 : 1);
+    if (brace < size && data[brace] == '{' && markdown_core_inline_citation_opener(inline_state, at)) {
+        run->key_at = (uint32_t)at;
+        run->brace_at = (uint32_t)brace;
+        words[KEY_AT] = (uint32_t)at;
+        words[KEY_TOKEN] = markdown_core_enter(tokenizer, (uint16_t)(self->token_base + CITATION_KEY));
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_key_brace);
+    }
     const bufsize_t end = S_scan(self, tokenizer, at);
     if (!end) {
         return markdown_core_nok(tokenizer);
     }
-    /* A `[` after the key, past white space, may be its tail. */
-    const bufsize_t after = markdown_core_skip_spaces_and_line_end(data, end, size);
-    citation_work(self)->work += (size_t)(after - end);
-    const uint32_t tail = data[after] == '[' && data[after + 1] != '^' ? (uint32_t)after : UINT32_MAX;
-    const uint32_t token = markdown_core_enter(tokenizer, (uint16_t)(self->token_base + CITATION_KEY));
+    words[KEY_AT] = (uint32_t)at;
+    words[KEY_TOKEN] = markdown_core_enter(tokenizer, (uint16_t)(self->token_base + CITATION_KEY));
     markdown_core_consume_to(tokenizer, (uint32_t)end);
-    markdown_core_exit(tokenizer, (uint16_t)(self->token_base + CITATION_KEY));
-    if (token != UINT32_MAX) {
-        tokenizer->events.tokens[token].data = tail;
-    }
-    if (!open) {
-        run->held = true;
-    }
-    return markdown_core_ok(tokenizer);
+    return S_key_end(tokenizer);
 }
 
 /* A token read outside every label, which the reading's end decides. */
@@ -1096,7 +1178,6 @@ const markdown_core_facet MARKDOWN_CORE_CITATION_FACETS[] = {
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CITATION = {
     .facets = MARKDOWN_CORE_CITATION_FACETS,
-    .needs = CITATION_NEEDS,
     .spaces = CITATION_SPACES,
     .state_size = sizeof(markdown_core_citation_work),
     .run_state_size = sizeof(markdown_core_citation_run),

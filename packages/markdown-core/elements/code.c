@@ -2,59 +2,6 @@
 #include "code.h"
 #include "inline_internal.h"
 #include "services.h"
-#define advance(inline_state) markdown_core_inline_seek((inline_state), markdown_core_inline_offset(inline_state) + 1)
-
-#define MAXBACKTICKS 80
-
-bufsize_t markdown_core_inline_scan_backticks(markdown_core_backticks *backticks,
-                                              markdown_core_inline_state *inline_state, bufsize_t openticklength) {
-
-    bool found = false;
-    if (openticklength > MAXBACKTICKS) {
-        // we limit backtick string length because of the positions array:
-        return 0;
-    }
-    if (!backticks->positions) {
-        backticks->capacity = markdown_core_inline_size(inline_state) < MAXBACKTICKS
-                                  ? markdown_core_inline_size(inline_state)
-                                  : MAXBACKTICKS;
-        backticks->positions = markdown_core_alloc((size_t)backticks->capacity + 1, sizeof(*backticks->positions));
-        if (!backticks->positions) {
-            inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
-            return 0;
-        }
-    }
-    if (backticks->scanned && backticks->positions[openticklength] <= markdown_core_inline_offset(inline_state)) {
-        // return if we already know there's no closer
-        return 0;
-    }
-    while (!found) {
-        // read non backticks
-        unsigned char c;
-        while (!markdown_core_inline_is_eof(inline_state) &&
-               (c = markdown_core_inline_peek_char(inline_state)) != '`') {
-            advance(inline_state);
-        }
-        if (markdown_core_inline_is_eof(inline_state)) {
-            break;
-        }
-        bufsize_t numticks = 0;
-        while (markdown_core_inline_peek_char(inline_state) == '`') {
-            advance(inline_state);
-            numticks++;
-        }
-        // store position of ender
-        if (numticks <= backticks->capacity) {
-            backticks->positions[numticks] = markdown_core_inline_offset(inline_state) - numticks;
-        }
-        if (numticks == openticklength) {
-            return (markdown_core_inline_offset(inline_state));
-        }
-    }
-    // got through whole input without finding closer
-    backticks->scanned = true;
-    return 0;
-}
 
 // Destructively modify string, converting newlines to
 // spaces, then removing a single leading + trailing space,
@@ -90,98 +37,154 @@ static void S_normalize_code(markdown_core_strbuf *s) {
     }
 }
 
-void markdown_core_backticks_free(markdown_core_backticks *backticks) {
+static void dispose_inline(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state) {
+    markdown_core_backticks *backticks = markdown_core_run_state(inline_state, self);
     markdown_core_free(backticks->positions);
     *backticks = (markdown_core_backticks){0};
 }
 
-static void dispose_inline(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state) {
-    markdown_core_backticks_free(markdown_core_run_state(inline_state, self));
+/* THE CODE SPAN (plan symbols-cleanroom.md 23, micromark's code text),
+ * code by code: a backtick run, then, checked, the bytes up to the first
+ * run as long (CODE_BODY), and that run, one token whose `data` is the
+ * run's length; a run no closer follows, an opening token, which is text
+ * and the code span it opens once a closer follows. A run over 80 long
+ * has no closer. The frame's words: where the opener starts, and its token. */
+enum { CODE_SPAN, CODE_OPEN };
+enum { SPAN_FROM, SPAN_TOKEN };
+enum { BODY_RUN };
+#define MAXBACKTICKS 80
+
+static inline markdown_core_backticks *S_ticks(markdown_core_tokenizer *tokenizer) {
+    return markdown_core_read_record(
+        tokenizer, ((const markdown_core_element_instance *)markdown_core_self(tokenizer))->run_offset);
 }
 
-/* THE CODE SPAN (plan symbols-cleanroom.md 23): a backtick run, the bytes
- * up to the first run as long, and that run, one token whose `data` is the
- * run's length; a run no closer follows, an opening token, which is text
- * and the code span it opens once a closer follows. */
-enum { CODE_SPAN, CODE_OPEN };
+/* No closer: the reading read on to the end from where it began. */
+static markdown_core_state S_body_end(markdown_core_tokenizer *tokenizer) {
+    markdown_core_backticks *backticks = S_ticks(tokenizer);
+    const uint32_t from = tokenizer->frames[tokenizer->frame_count - 1].position;
+    if (from < backticks->from) {
+        backticks->from = from;
+    }
+    markdown_core_met_end(tokenizer);
+    return markdown_core_nok(tokenizer);
+}
 
-/* The end of the first backtick run `length` long from `from` in the `size`
- * bytes at `data`, or 0, with the memo of what earlier scans found. */
-static uint32_t S_closer(markdown_core_backticks *backticks, const unsigned char *data, uint32_t size, uint32_t from,
-                         uint32_t length, bool *error) {
-    if (length > MAXBACKTICKS) {
-        return 0;
+static markdown_core_state S_body(markdown_core_tokenizer *tokenizer, int code);
+
+static markdown_core_state S_body_run(markdown_core_tokenizer *tokenizer, int code) {
+    if (code == '`') {
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_body_run);
+    }
+    markdown_core_backticks *backticks = S_ticks(tokenizer);
+    const uint32_t run = markdown_core_frame_local(tokenizer)[BODY_RUN], ticks = tokenizer->position - run;
+    /* The last run of each length: readings may run in any order. */
+    if (ticks <= (uint32_t)backticks->capacity && (bufsize_t)run > backticks->positions[ticks]) {
+        backticks->positions[ticks] = (bufsize_t)run;
+    }
+    if (ticks == backticks->want) {
+        backticks->close = tokenizer->position;
+        return markdown_core_ok(tokenizer);
+    }
+    return S_body(tokenizer, code);
+}
+
+static markdown_core_state S_body(markdown_core_tokenizer *tokenizer, int code) {
+    if (code == MARKDOWN_CORE_EOF) {
+        return S_body_end(tokenizer);
+    }
+    if (code == '`') {
+        markdown_core_frame_local(tokenizer)[BODY_RUN] = tokenizer->position;
+    }
+    markdown_core_consume(tokenizer);
+    return code == '`' ? markdown_core_state_of(S_body_run) : markdown_core_state_of(S_body);
+}
+
+static markdown_core_state S_body_start(markdown_core_tokenizer *tokenizer, int code) {
+    markdown_core_backticks *backticks = S_ticks(tokenizer);
+    const uint32_t from = tokenizer->position, want = backticks->want;
+    if (want > MAXBACKTICKS) {
+        return markdown_core_nok(tokenizer);
     }
     if (!backticks->positions) {
+        const uint32_t size = tokenizer->size;
         backticks->capacity = (bufsize_t)(size < MAXBACKTICKS ? size : MAXBACKTICKS);
         backticks->positions = markdown_core_alloc((size_t)backticks->capacity + 1, sizeof(*backticks->positions));
+        backticks->from = UINT32_MAX;
         if (!backticks->positions) {
-            *error = true;
-            return 0;
+            tokenizer->events.failed = true;
+            return markdown_core_nok(tokenizer);
         }
     }
-    if (backticks->scanned && (uint32_t)backticks->positions[length] <= from) {
-        return 0;
+    if (backticks->from <= from && (uint32_t)backticks->positions[want] <= from) {
+        markdown_core_met_end(tokenizer);
+        return markdown_core_nok(tokenizer);
     }
-    uint32_t at = from;
-    for (;;) {
-        while (at < size && data[at] != '`') {
-            at++;
-        }
-        if (at >= size) {
-            break;
-        }
-        uint32_t ticks = 0;
-        while (at < size && data[at] == '`') {
-            at++;
-            ticks++;
-        }
-        if (ticks <= (uint32_t)backticks->capacity) {
-            backticks->positions[ticks] = (bufsize_t)(at - ticks);
-        }
-        if (ticks == length) {
-            return at;
-        }
+    return S_body(tokenizer, code);
+}
+
+static const markdown_core_construct CODE_BODY = {.start = S_body_start};
+
+/* The span's token ends, of `kind`. */
+static markdown_core_state S_span_end(markdown_core_tokenizer *tokenizer, unsigned kind) {
+    const markdown_core_element_instance *self = markdown_core_self(tokenizer);
+    const uint32_t token = markdown_core_frame_local(tokenizer)[SPAN_TOKEN];
+    const uint16_t made = (uint16_t)(self->token_base + kind);
+    if (token != UINT32_MAX) {
+        tokenizer->events.tokens[token].kind = made;
     }
-    backticks->scanned = true;
-    return 0;
+    markdown_core_exit(tokenizer, made);
+    return markdown_core_ok(tokenizer);
+}
+
+static markdown_core_state S_closed(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    const uint32_t close = S_ticks(tokenizer)->close;
+    /* A closer found reads the byte after it only to know where its run
+     * ends. */
+    if (close >= tokenizer->size) {
+        markdown_core_met_end(tokenizer);
+    }
+    markdown_core_consume_to(tokenizer, close);
+    const markdown_core_state next = S_span_end(tokenizer, CODE_SPAN);
+    /* What follows a code span may update it (no-flush.md 10.13). */
+    markdown_core_text_made(tokenizer, MARKDOWN_CORE_NODE_CODE);
+    return next;
+}
+
+/* A run with no closer opens a code span once one follows. */
+static markdown_core_state S_unclosed(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    const uint32_t from = markdown_core_frame_local(tokenizer)[SPAN_FROM];
+    markdown_core_text_give_up(tokenizer, MARKDOWN_CORE_KIND_CODE, (bufsize_t)from, (bufsize_t)tokenizer->position,
+                               NULL, 0);
+    return S_span_end(tokenizer, CODE_OPEN);
+}
+
+static markdown_core_state S_opener(markdown_core_tokenizer *tokenizer, int code) {
+    if (code == '`') {
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_opener);
+    }
+    const uint32_t *words = markdown_core_frame_local(tokenizer);
+    const uint32_t length = tokenizer->position - words[SPAN_FROM];
+    if (words[SPAN_TOKEN] != UINT32_MAX) {
+        tokenizer->events.tokens[words[SPAN_TOKEN]].data = length;
+    }
+    S_ticks(tokenizer)->want = length;
+    return markdown_core_check(tokenizer, &CODE_BODY, markdown_core_state_of(S_closed),
+                               markdown_core_state_of(S_unclosed), code);
 }
 
 static markdown_core_state S_span(markdown_core_tokenizer *tokenizer, int code) {
     (void)code;
     const markdown_core_element_instance *self = markdown_core_self(tokenizer);
-    const uint32_t start = tokenizer->position;
-    uint32_t open = start;
-    while (open < tokenizer->size && tokenizer->data[open] == '`') {
-        open++;
-    }
-    bool error = false;
-    const uint32_t end = S_closer(markdown_core_read_record(tokenizer, self->run_offset), tokenizer->data,
-                                  tokenizer->size, open, open - start, &error);
-    if (error) {
-        tokenizer->events.failed = true;
-    }
-    /* Reading to the end without a closer reads the end; one found before
-     * it reads the byte after it only to know where its run ends. */
-    if (!end || end >= tokenizer->size) {
-        markdown_core_met_end(tokenizer);
-    }
-    const uint16_t kind = (uint16_t)(self->token_base + (end ? CODE_SPAN : CODE_OPEN));
-    /* A run with no closer opens a code span once one follows. */
-    if (!end) {
-        markdown_core_text_give_up(tokenizer, MARKDOWN_CORE_KIND_CODE, (bufsize_t)start, (bufsize_t)open, NULL, 0);
-    }
-    const uint32_t token = markdown_core_enter(tokenizer, kind);
-    if (token != UINT32_MAX) {
-        tokenizer->events.tokens[token].data = open - start;
-    }
-    markdown_core_consume_to(tokenizer, end ? end : open);
-    markdown_core_exit(tokenizer, kind);
-    if (end) {
-        /* What follows a code span may update it (no-flush.md 10.13). */
-        markdown_core_text_made(tokenizer, MARKDOWN_CORE_NODE_CODE);
-    }
-    return markdown_core_ok(tokenizer);
+    uint32_t *words = markdown_core_frame_local(tokenizer);
+    words[SPAN_FROM] = tokenizer->position;
+    words[SPAN_TOKEN] = markdown_core_enter(tokenizer, (uint16_t)(self->token_base + CODE_SPAN));
+    markdown_core_consume(tokenizer);
+    return markdown_core_state_of(S_opener);
 }
 static const markdown_core_text_construct CODE_CONSTRUCTS[] = {{"`", {.start = S_span}}};
 
@@ -245,38 +248,7 @@ const markdown_core_facet MARKDOWN_CORE_CODE_FACETS[] = {
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 
-/* (services.h, MARKDOWN_CORE_SERVICE_CODE_SPANS) A code span another
- * element's scan reads ahead of the run's own, from a backtick run the run
- * may not take as an opener, on a backtick index of the scan's own, its
- * memo. */
-/* C99 has no _Static_assert: an array of negative size fails the build. */
-typedef char S_backticks_fit[sizeof(markdown_core_backticks) <= sizeof(markdown_core_skip_memo) ? 1 : -1];
-
-static bufsize_t S_skip(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state,
-                        bufsize_t at, markdown_core_skip_memo *memo, bufsize_t *open) {
-    (void)self;
-    bufsize_t run = at;
-    while (run < markdown_core_inline_size(inline_state) && markdown_core_inline_char_at(inline_state, run) == '`') {
-        run++;
-    }
-    const bufsize_t saved = markdown_core_inline_offset(inline_state);
-    markdown_core_inline_seek(inline_state, run);
-    const bufsize_t end = markdown_core_inline_scan_backticks((markdown_core_backticks *)memo, inline_state, run - at);
-    markdown_core_inline_seek(inline_state, saved);
-    *open = end ? at : run;
-    return end;
-}
-
-static void S_release(const markdown_core_element_instance *self, markdown_core_skip_memo *memo) {
-    (void)self;
-    markdown_core_backticks_free((markdown_core_backticks *)memo);
-}
-
-static const markdown_core_skip_ops CODE_SPANS = {.skip = S_skip, .release = S_release};
-static const markdown_core_service CODE_SERVICES[] = {{MARKDOWN_CORE_SERVICE_CODE_SPANS, &CODE_SPANS}, {0}};
-
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CODE = {
-    .provides = CODE_SERVICES,
     .facets = MARKDOWN_CORE_CODE_FACETS,
     .run_state_size = sizeof(markdown_core_backticks),
     .name = "code",

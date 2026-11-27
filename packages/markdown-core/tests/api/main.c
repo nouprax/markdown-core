@@ -1,7 +1,3 @@
-#include "autolink_scanners.h"
-#include "comment_scanners.h"
-#include "html_scanners.h"
-#include "text_scanners.h"
 #include <stdio.h>
 #include "table.h"
 #include "autolink.h"
@@ -8006,59 +8002,6 @@ static void block_identifier_ownership(test_batch_runner *runner) {
     }
 }
 
-/* Exact slices may be read-only and need neither a NUL nor padding. Every
- * scanner exercises successful syntax and all truncated prefixes, with ASan
- * guarding an allocation that ends precisely at each prefix boundary. */
-static void bounded_scanners(test_batch_runner *runner) {
-    typedef bufsize_t (*scanner)(const unsigned char *, bufsize_t, bufsize_t);
-    const struct {
-        scanner scan;
-        const char *text;
-        int expected;
-    } cases[] = {{scan_scheme, "https:", -1},
-                 {scan_autolink_uri, "https://example.com>", -1},
-                 {scan_autolink_email, "a@example.com>", -1},
-                 {scan_html_tag, "x a='b'>", -1},
-                 {scan_html_comment, "--hi-->", -1},
-                 {scan_html_pi, "x?>", 1},
-                 {scan_html_declaration, "DOCTYPE html>", 12},
-                 {scan_html_cdata, "CDATA[x]]>", 7},
-                 {scan_html_block_start, "<script>", 1},
-                 {scan_html_block_start_7, "<x>\n", 7},
-                 {scan_html_block_end_1, "body</script>", -1},
-                 {scan_html_block_end_2, "x-->", -1},
-                 {scan_html_block_end_3, "x?>", -1},
-                 {scan_html_block_end_4, "x>", -1},
-                 {scan_html_block_end_5, "x]]>", -1},
-                 {scan_entity, "&amp;", -1}};
-    for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); i++) {
-        size_t length = strlen(cases[i].text);
-        int expected = cases[i].expected < 0 ? (int)length : cases[i].expected;
-        const unsigned char *literal = (const unsigned char *)cases[i].text;
-        INT_EQ(runner, cases[i].scan(literal, (bufsize_t)length, 0), expected, "read-only scan: case=%zu", i);
-        INT_EQ(runner, cases[i].scan(NULL, (bufsize_t)length, 0), 0, "absent source is not scanned: case=%zu", i);
-        INT_EQ(runner, cases[i].scan(literal, -1, 0), 0, "negative length is not scanned: case=%zu", i);
-        const bufsize_t invalid_offsets[] = {-1, (bufsize_t)length, (bufsize_t)length + 1, INT_MAX};
-        for (size_t offset = 0; offset < sizeof(invalid_offsets) / sizeof(*invalid_offsets); offset++) {
-            INT_EQ(runner, cases[i].scan(literal, (bufsize_t)length, invalid_offsets[offset]), 0,
-                   "invalid or empty suffix is not scanned: case=%zu offset=%d", i, invalid_offsets[offset]);
-        }
-        for (size_t end = 0; end <= length; end++) {
-            unsigned char *exact = malloc(end ? end : 1);
-            memcpy(exact, cases[i].text, end);
-            for (size_t start = 0; start < end; start++) {
-                INT_EQ(runner, cases[i].scan(exact, (bufsize_t)end, (bufsize_t)start),
-                       cases[i].scan(literal + start, (bufsize_t)(end - start), 0),
-                       "bytes outside slice are invisible: case=%zu start=%zu end=%zu", i, start, end);
-            }
-            INT_EQ(runner, cases[i].scan(exact, (bufsize_t)end, (bufsize_t)end), 0,
-                   "an empty slice needs no sentinel: case=%zu end=%zu", i, end);
-            OK(runner, !memcmp(exact, cases[i].text, end), "scanning never changes borrowed bytes");
-            free(exact);
-        }
-    }
-}
-
 /* Oracle-confirmed simple-body ownership is invariant under line ending,
  * EOF termination and block-looking inline cell content. */
 /* A BUFFER WALK MUST TERMINATE, whatever the bytes are.
@@ -12702,7 +12645,6 @@ int main(void) {
     autolink_source_pos(runner);
     table_source_map_growth(runner);
     table_values(runner);
-    bounded_scanners(runner);
     malformed_scalar_terminates(runner);
     stray_byte_columns(runner);
     inline_hook_projection_ignores_non_owners(runner);

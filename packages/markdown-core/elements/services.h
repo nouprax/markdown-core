@@ -196,42 +196,6 @@ typedef struct markdown_core_label_ops {
 
 #define MARKDOWN_CORE_SERVICE_LABELS "labels"
 
-/* AN OPAQUE SPAN another element's scan steps over whole, its bytes no
- * syntax of the asker's: a code span, an HTML tag. `skip`: where the span
- * whose first byte is at `at` of the run ends, one past it, or 0 when none
- * does; then `*open`, else `at`, is where an opener that no closer of the
- * run closes ends, which the input's end may yet close. `memo`, zeroed
- * before a scan's first ask, keeps what the asks of one scan share, and
- * `release`, NULL when there is nothing to let go, lets it go. */
-typedef union markdown_core_skip_memo {
-    void *pointer;
-    uint64_t words[3];
-} markdown_core_skip_memo;
-
-typedef struct markdown_core_skip_ops {
-    bufsize_t (*skip)(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state,
-                      bufsize_t at, markdown_core_skip_memo *memo, bufsize_t *open);
-    void (*release)(const markdown_core_element_instance *self, markdown_core_skip_memo *memo);
-} markdown_core_skip_ops;
-
-#define MARKDOWN_CORE_SERVICE_CODE_SPANS "code spans"
-#define MARKDOWN_CORE_SERVICE_HTML_TAGS "html tags"
-
-/* None skips nothing. */
-static inline bufsize_t markdown_core_skip(markdown_core_need need, markdown_core_inline_state *inline_state,
-                                           bufsize_t at, markdown_core_skip_memo *memo, bufsize_t *open) {
-    const markdown_core_skip_ops *ops = need.ops;
-    *open = at;
-    return ops ? ops->skip(need.instance, inline_state, at, memo, open) : 0;
-}
-static inline void markdown_core_skip_release(markdown_core_need need, markdown_core_skip_memo *memo) {
-    const markdown_core_skip_ops *ops = need.ops;
-    if (ops && ops->release) {
-        ops->release(need.instance, memo);
-    }
-    *memo = (markdown_core_skip_memo){0};
-}
-
 /* A CONSTRUCT ANOTHER ELEMENT'S GRAMMAR READS and this element makes its
  * node of: `make` gives the node of the `size` bytes after the run's byte
  * at `at`, past which it moves the run's cursor -- an HTML comment the raw

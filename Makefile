@@ -6,7 +6,6 @@
 # test graph is a runner one preset change away from gating a merge.
 
 SRCDIR=packages/markdown-core/core
-ELEMENTSDIR=packages/markdown-core/elements
 BUILDDIR=build/cmake
 ASAN_BUILDDIR=build/asan
 UBSAN_BUILDDIR=build/ubsan
@@ -87,7 +86,3 @@ distclean: clean
 	-rm -rf *.dSYM
 	-rm -f README.html
 
-# Maintenance-only source generation; the generated files are tracked, so
-# these never run during normal build or test.
-$(ELEMENTSDIR)/%_scanners.c: $(ELEMENTSDIR)/%_scanners.re $(ELEMENTSDIR)/scanner_common.re
-	scripts/tooling/check-generated-scanners.sh --write $<

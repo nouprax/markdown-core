@@ -1,148 +1,358 @@
 #include <string.h>
-#include "html_scanners.h"
 #include "html.h"
 #include "inline_internal.h"
-#define advance(inline_state) markdown_core_inline_seek((inline_state), markdown_core_inline_offset(inline_state) + 1)
-
-#include "comment_scanners.h"
 #include "services.h"
 
 /* The services this element asks, as `self->needs` holds them. */
 enum { HTML_COMMENTS };
 static const char *const HTML_NEEDS[] = {[HTML_COMMENTS] = MARKDOWN_CORE_SERVICE_HTML_COMMENTS, NULL};
 
-/* The bytes an HTML scan reads, and whether it read their end. */
-typedef struct {
-    const unsigned char *data;
-    bufsize_t size;
-    bool end;
-} S_view;
-static unsigned char S_at(S_view *view, bufsize_t at) {
-    if (at >= view->size) {
-        view->end = true;
-        return 0;
-    }
-    return view->data[at];
-}
-
-/* An HTML comment (CommonMark 0.31.2, 6.6) after the `<` at `pos - 1`:
- * whether one opens there, and then its `length`, 0 when no closer follows
- * through the end of the input. */
-static bool S_scan_comment(S_view *view, bufsize_t pos, bufsize_t *length) {
-    if (S_at(view, pos) != '!' || S_at(view, pos + 1) != '-' || S_at(view, pos + 2) != '-') {
-        return false;
-    }
-    if (S_at(view, pos + 3) == '>') {
-        *length = 4;
-    } else if (S_at(view, pos + 3) == '-' && S_at(view, pos + 4) == '>') {
-        *length = 5;
-    } else {
-        *length = scan_html_comment(view->data, view->size, pos + 1);
-        /* 0 when no closer follows through the end of the input. */
-        if (*length > 0) {
-            *length += 1; // prefix "<"
-        }
-    }
-    return true;
-}
-
-static bufsize_t S_scan_html(S_view *view, bufsize_t pos, unsigned *flags, bool *is_comment) {
-    bufsize_t matchlen = 0;
-    bool comment = false;
-    // finally, try to match an html tag
-    if (pos + 2 <= view->size) {
-        int c = S_at(view, pos);
-        if (c == '!' && (*flags & FLAG_SKIP_HTML_COMMENT) == 0) {
-            c = S_at(view, pos + 1);
-            if (S_scan_comment(view, pos, &matchlen)) {
-                /* No closer through the end of the input: later scans
-                 * would not find one either. */
-                comment = matchlen > 0;
-                if (!comment) {
-                    *flags |= FLAG_SKIP_HTML_COMMENT;
-                }
-            } else if (c == '[') {
-                if ((*flags & FLAG_SKIP_HTML_CDATA) == 0) {
-                    matchlen = scan_html_cdata(view->data, view->size, pos + 2);
-                    if (matchlen > 0) {
-                        // The regex doesn't require the final "]]>". But if we're not at
-                        // the end of input, it must come after the match. Otherwise,
-                        // disable subsequent scans to avoid quadratic behavior.
-                        matchlen += 5; // prefix "![", suffix "]]>"
-                        if (pos + matchlen > view->size) {
-                            *flags |= FLAG_SKIP_HTML_CDATA;
-                            matchlen = 0;
-                        }
-                    }
-                }
-            } else if ((*flags & FLAG_SKIP_HTML_DECLARATION) == 0) {
-                matchlen = scan_html_declaration(view->data, view->size, pos + 1);
-                if (matchlen > 0) {
-                    matchlen += 2; // prefix "!", suffix ">"
-                    if (pos + matchlen > view->size) {
-                        *flags |= FLAG_SKIP_HTML_DECLARATION;
-                        matchlen = 0;
-                    }
-                }
-            }
-        } else if (c == '?') {
-            if ((*flags & FLAG_SKIP_HTML_PI) == 0) {
-                // Note that we allow an empty match.
-                matchlen = scan_html_pi(view->data, view->size, pos + 1);
-                matchlen += 3; // prefix "?", suffix "?>"
-                if (pos + matchlen > view->size) {
-                    *flags |= FLAG_SKIP_HTML_PI;
-                    matchlen = 0;
-                }
-            }
-        } else {
-            matchlen = scan_html_tag(view->data, view->size, pos);
-            /* A tag ends at its `>`; one a name or `/` begins may end once
-             * the input goes on. */
-            if (!matchlen && (markdown_core_isalpha((char)c) || c == '/')) {
-                view->end = true;
-            }
-        }
-        /* A declaration, processing instruction or CDATA section that does
-         * not close may close once the input goes on. */
-        if (!matchlen && (S_at(view, pos) == '!' || S_at(view, pos) == '?')) {
-            view->end = true;
-        }
-    } else {
-        view->end = true;
-    }
-    if (is_comment) {
-        *is_comment = comment;
-    }
-    return matchlen;
-}
-
-/* THE RAW HTML (plan symbols-cleanroom.md 23): `<` and a tag, a comment,
- * a processing instruction, a declaration or a CDATA section, one token;
- * a comment one the dialect's comments make (`data` 1). A `<` none
- * follows is data. The constructs that never close are noted in the
- * read's record, so no later `<` scans for them again. */
+/* THE RAW HTML (plan symbols-cleanroom.md 23, micromark's html text),
+ * code by code: `<` and a tag, a comment, a processing instruction, a
+ * declaration or a CDATA section, one token; a comment one the dialect's
+ * comments make (`data` 1). A `<` none follows is data. A comment, an
+ * instruction, a declaration or a CDATA section that finds no closer
+ * through the end is noted in the read's record (HTML_NEVER), where its
+ * body began plus one: from there on none of its kind closes, so no later
+ * one reads to the end again. The frame's words: the token, where the
+ * body began, the bytes of a closer matched so far, a closing quote, and
+ * where white space began. */
 enum { HTML_RAW };
-static markdown_core_state S_raw(markdown_core_tokenizer *tokenizer, int code) {
-    (void)code;
+enum { NEVER_COMMENT, NEVER_CDATA, NEVER_DECLARATION, NEVER_INSTRUCTION, NEVER_KINDS };
+typedef struct {
+    uint32_t never[NEVER_KINDS];
+} S_run;
+enum { RAW_TOKEN, RAW_BODY, RAW_MATCHED, RAW_QUOTE, RAW_SPACE, RAW_KIND };
+
+static inline S_run *S_run_of(markdown_core_tokenizer *tokenizer) {
+    return markdown_core_read_record(
+        tokenizer, ((const markdown_core_element_instance *)markdown_core_self(tokenizer))->run_offset);
+}
+
+static inline bool S_ascii(int code, int (*is)(char)) { return code >= 0 && code < 0x80 && is((char)code); }
+static int S_letter(char c) { return markdown_core_isalpha(c); }
+static int S_name_byte(char c) { return markdown_core_isalnum(c) || c == '-'; }
+static int S_attribute_first(char c) { return markdown_core_isalpha(c) || c == '_' || c == ':'; }
+static int S_attribute_byte(char c) { return markdown_core_isalnum(c) || c == '_' || c == ':' || c == '.' || c == '-'; }
+
+/* The end read: what follows decides. */
+static markdown_core_state S_end(markdown_core_tokenizer *tokenizer) {
+    markdown_core_met_end(tokenizer);
+    return markdown_core_nok(tokenizer);
+}
+
+/* The construct read through its `>`, a comment when `comment`. */
+static markdown_core_state S_done(markdown_core_tokenizer *tokenizer, bool comment) {
     const markdown_core_element_instance *self = markdown_core_self(tokenizer);
-    S_view view = {tokenizer->data, (bufsize_t)tokenizer->size, false};
-    bool comment = false;
-    const bufsize_t length = S_scan_html(&view, (bufsize_t)tokenizer->position + 1,
-                                         markdown_core_read_record(tokenizer, self->run_offset), &comment);
-    if (view.end) {
-        markdown_core_met_end(tokenizer);
-    }
-    if (!length) {
-        return markdown_core_nok(tokenizer);
-    }
-    const uint32_t token = markdown_core_enter(tokenizer, (uint16_t)(self->token_base + HTML_RAW));
+    const uint32_t token = markdown_core_frame_local(tokenizer)[RAW_TOKEN];
+    markdown_core_consume(tokenizer);
     if (token != UINT32_MAX) {
         tokenizer->events.tokens[token].data = comment && self->needs[HTML_COMMENTS].ops;
     }
-    markdown_core_consume_to(tokenizer, tokenizer->position + 1 + (uint32_t)length);
     markdown_core_exit(tokenizer, (uint16_t)(self->token_base + HTML_RAW));
     return markdown_core_ok(tokenizer);
+}
+
+/* A BODY THAT RUNS TO A CLOSER, the first `-->`, `]]>`, `?>` or `>`
+ * after it (the closer's last byte `>`, its others all one byte, as many
+ * as the kind's `closer` says), of kind RAW_KIND. */
+static const struct {
+    unsigned char byte, count;
+} CLOSERS[NEVER_KINDS] = {
+    [NEVER_COMMENT] = {'-', 2}, [NEVER_CDATA] = {']', 2}, [NEVER_DECLARATION] = {0, 0}, [NEVER_INSTRUCTION] = {'?', 1}};
+
+static markdown_core_state S_body(markdown_core_tokenizer *tokenizer, int code) {
+    uint32_t *words = markdown_core_frame_local(tokenizer);
+    const uint32_t kind = words[RAW_KIND];
+    if (code == MARKDOWN_CORE_EOF) {
+        S_run *run = S_run_of(tokenizer);
+        if (!run->never[kind] || words[RAW_BODY] + 1 < run->never[kind]) {
+            run->never[kind] = words[RAW_BODY] + 1;
+        }
+        return S_end(tokenizer);
+    }
+    const unsigned char byte = CLOSERS[kind].byte, count = CLOSERS[kind].count;
+    if (code == '>' && words[RAW_MATCHED] >= count) {
+        return S_done(tokenizer, kind == NEVER_COMMENT);
+    }
+    if (byte && code == byte) {
+        words[RAW_MATCHED] += words[RAW_MATCHED] < count;
+    } else {
+        words[RAW_MATCHED] = 0;
+    }
+    markdown_core_consume(tokenizer);
+    return markdown_core_state_of(S_body);
+}
+
+/* The body of kind `kind` begins, unless one of its kind found no closer
+ * from here. */
+static markdown_core_state S_body_start(markdown_core_tokenizer *tokenizer, uint32_t kind, uint32_t matched, int code) {
+    uint32_t *words = markdown_core_frame_local(tokenizer);
+    const uint32_t never = S_run_of(tokenizer)->never[kind];
+    words[RAW_KIND] = kind;
+    words[RAW_BODY] = tokenizer->position - matched;
+    words[RAW_MATCHED] = matched;
+    if (never && words[RAW_BODY] + 1 >= never) {
+        return S_end(tokenizer);
+    }
+    return S_body(tokenizer, code);
+}
+
+/* `<!--` read: `>` and `->` close at once (`<!-->`, `<!--->`). */
+static markdown_core_state S_comment_short(markdown_core_tokenizer *tokenizer, int code) {
+    if (code == '>') {
+        return S_done(tokenizer, true);
+    }
+    return S_body_start(tokenizer, NEVER_COMMENT, 1, code);
+}
+
+static markdown_core_state S_comment_open(markdown_core_tokenizer *tokenizer, int code) {
+    if (code == '>') {
+        return S_done(tokenizer, true);
+    }
+    if (code == '-') {
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_comment_short);
+    }
+    return S_body_start(tokenizer, NEVER_COMMENT, 0, code);
+}
+
+static markdown_core_state S_comment_dash(markdown_core_tokenizer *tokenizer, int code) {
+    if (code != '-') {
+        return code == MARKDOWN_CORE_EOF ? S_end(tokenizer) : markdown_core_nok(tokenizer);
+    }
+    markdown_core_consume(tokenizer);
+    return markdown_core_state_of(S_comment_open);
+}
+
+/* `<![` and `CDATA[`. */
+static markdown_core_state S_cdata(markdown_core_tokenizer *tokenizer, int code) {
+    static const char CDATA[] = "CDATA[";
+    uint32_t *words = markdown_core_frame_local(tokenizer);
+    if (words[RAW_MATCHED] == sizeof(CDATA) - 1) {
+        return S_body_start(tokenizer, NEVER_CDATA, 0, code);
+    }
+    if (code == MARKDOWN_CORE_EOF) {
+        return S_end(tokenizer);
+    }
+    if (code != CDATA[words[RAW_MATCHED]]) {
+        return markdown_core_nok(tokenizer);
+    }
+    words[RAW_MATCHED]++;
+    markdown_core_consume(tokenizer);
+    return markdown_core_state_of(S_cdata);
+}
+
+/* `<!` and a letter: a declaration, to its `>`. */
+static markdown_core_state S_declaration(markdown_core_tokenizer *tokenizer, int code) {
+    return S_body_start(tokenizer, NEVER_DECLARATION, 0, code);
+}
+
+static markdown_core_state S_bang(markdown_core_tokenizer *tokenizer, int code) {
+    if (code == '-') {
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_comment_dash);
+    }
+    if (code == '[') {
+        markdown_core_consume(tokenizer);
+        markdown_core_frame_local(tokenizer)[RAW_MATCHED] = 0;
+        return markdown_core_state_of(S_cdata);
+    }
+    if (S_ascii(code, S_letter)) {
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_declaration);
+    }
+    return code == MARKDOWN_CORE_EOF ? S_end(tokenizer) : markdown_core_nok(tokenizer);
+}
+
+/* SPACE IN A TAG: spaces and tabs, at most one line ending, spaces and
+ * tabs; none at all too. */
+static markdown_core_state S_space_more(markdown_core_tokenizer *tokenizer, int code) {
+    if (code == ' ' || code == '\t') {
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_space_more);
+    }
+    return markdown_core_ok(tokenizer);
+}
+
+static markdown_core_state S_space_feed(markdown_core_tokenizer *tokenizer, int code) {
+    if (code == '\n') {
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_space_more);
+    }
+    return S_space_more(tokenizer, code);
+}
+
+static markdown_core_state S_space(markdown_core_tokenizer *tokenizer, int code) {
+    if (code == ' ' || code == '\t') {
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_space);
+    }
+    if (code == '\r') {
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_space_feed);
+    }
+    if (code == '\n') {
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_space_more);
+    }
+    return markdown_core_ok(tokenizer);
+}
+
+static const markdown_core_construct HTML_SPACE = {.start = S_space};
+
+static markdown_core_state S_tag_spaced(markdown_core_tokenizer *tokenizer, int code);
+
+static inline markdown_core_state S_spaces(markdown_core_tokenizer *tokenizer, markdown_core_state next, int code) {
+    markdown_core_frame_local(tokenizer)[RAW_SPACE] = tokenizer->position;
+    return markdown_core_attempt(tokenizer, &HTML_SPACE, next, next, code);
+}
+
+static markdown_core_state S_tag_after(markdown_core_tokenizer *tokenizer, int code) {
+    return S_spaces(tokenizer, markdown_core_state_of(S_tag_spaced), code);
+}
+
+static markdown_core_state S_quoted(markdown_core_tokenizer *tokenizer, int code) {
+    if (code == MARKDOWN_CORE_EOF) {
+        return S_end(tokenizer);
+    }
+    markdown_core_consume(tokenizer);
+    return (uint32_t)code == markdown_core_frame_local(tokenizer)[RAW_QUOTE] ? markdown_core_state_of(S_tag_after)
+                                                                             : markdown_core_state_of(S_quoted);
+}
+
+static inline bool S_unquoted(int code) { return code >= 0 && !strchr(" \t\r\n\"'=<>`", code ? code : 1); }
+
+static markdown_core_state S_unquoted_more(markdown_core_tokenizer *tokenizer, int code) {
+    if (S_unquoted(code)) {
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_unquoted_more);
+    }
+    return S_tag_after(tokenizer, code);
+}
+
+static markdown_core_state S_value(markdown_core_tokenizer *tokenizer, int code) {
+    if (code == '"' || code == '\'') {
+        markdown_core_frame_local(tokenizer)[RAW_QUOTE] = (uint32_t)code;
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_quoted);
+    }
+    if (S_unquoted(code)) {
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_unquoted_more);
+    }
+    return code == MARKDOWN_CORE_EOF ? S_end(tokenizer) : markdown_core_nok(tokenizer);
+}
+
+static markdown_core_state S_value_before(markdown_core_tokenizer *tokenizer, int code) {
+    return S_spaces(tokenizer, markdown_core_state_of(S_value), code);
+}
+
+/* After an attribute's name and white space: its value, or what follows a
+ * name without one. */
+static markdown_core_state S_named(markdown_core_tokenizer *tokenizer, int code) {
+    if (code == '=') {
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_value_before);
+    }
+    return S_tag_spaced(tokenizer, code);
+}
+
+static markdown_core_state S_attribute(markdown_core_tokenizer *tokenizer, int code) {
+    if (S_ascii(code, S_attribute_byte)) {
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_attribute);
+    }
+    return S_spaces(tokenizer, markdown_core_state_of(S_named), code);
+}
+
+static markdown_core_state S_slash(markdown_core_tokenizer *tokenizer, int code) {
+    if (code == '>') {
+        return S_done(tokenizer, false);
+    }
+    return code == MARKDOWN_CORE_EOF ? S_end(tokenizer) : markdown_core_nok(tokenizer);
+}
+
+/* An open tag after its name or an attribute and white space: an
+ * attribute after some, `/>` or `>`. */
+static markdown_core_state S_tag_spaced(markdown_core_tokenizer *tokenizer, int code) {
+    const bool spaced = tokenizer->position > markdown_core_frame_local(tokenizer)[RAW_SPACE];
+    if (code == '>') {
+        return S_done(tokenizer, false);
+    }
+    if (code == '/') {
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_slash);
+    }
+    if (spaced && S_ascii(code, S_attribute_first)) {
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_attribute);
+    }
+    return code == MARKDOWN_CORE_EOF ? S_end(tokenizer) : markdown_core_nok(tokenizer);
+}
+
+static markdown_core_state S_tag_name(markdown_core_tokenizer *tokenizer, int code) {
+    if (S_ascii(code, S_name_byte)) {
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_tag_name);
+    }
+    return S_tag_after(tokenizer, code);
+}
+
+static markdown_core_state S_close_end(markdown_core_tokenizer *tokenizer, int code) {
+    if (code == '>') {
+        return S_done(tokenizer, false);
+    }
+    return code == MARKDOWN_CORE_EOF ? S_end(tokenizer) : markdown_core_nok(tokenizer);
+}
+
+static markdown_core_state S_close_name(markdown_core_tokenizer *tokenizer, int code) {
+    if (S_ascii(code, S_name_byte)) {
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_close_name);
+    }
+    return S_spaces(tokenizer, markdown_core_state_of(S_close_end), code);
+}
+
+static markdown_core_state S_close(markdown_core_tokenizer *tokenizer, int code) {
+    if (S_ascii(code, S_letter)) {
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_close_name);
+    }
+    return code == MARKDOWN_CORE_EOF ? S_end(tokenizer) : markdown_core_nok(tokenizer);
+}
+
+static markdown_core_state S_instruction(markdown_core_tokenizer *tokenizer, int code) {
+    return S_body_start(tokenizer, NEVER_INSTRUCTION, 0, code);
+}
+
+static markdown_core_state S_open(markdown_core_tokenizer *tokenizer, int code) {
+    if (code == '!') {
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_bang);
+    }
+    if (code == '?') {
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_instruction);
+    }
+    if (code == '/') {
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_close);
+    }
+    if (S_ascii(code, S_letter)) {
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_tag_name);
+    }
+    return code == MARKDOWN_CORE_EOF ? S_end(tokenizer) : markdown_core_nok(tokenizer);
+}
+
+static markdown_core_state S_raw(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    const markdown_core_element_instance *self = markdown_core_self(tokenizer);
+    markdown_core_frame_local(tokenizer)[RAW_TOKEN] =
+        markdown_core_enter(tokenizer, (uint16_t)(self->token_base + HTML_RAW));
+    markdown_core_consume(tokenizer);
+    return markdown_core_state_of(S_open);
 }
 static const markdown_core_text_construct HTML_CONSTRUCTS[] = {{"<", {.start = S_raw}}};
 
@@ -175,37 +385,10 @@ const markdown_core_facet MARKDOWN_CORE_HTML_FACETS[] = {
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 
-/* (services.h, MARKDOWN_CORE_SERVICE_HTML_TAGS) A tag another element's
- * scan steps over, the flags of the constructs that never close shared by
- * its asks, its memo. */
-static bufsize_t S_skip(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state,
-                        bufsize_t at, markdown_core_skip_memo *memo, bufsize_t *open) {
-    (void)self;
-    unsigned flags = (unsigned)memo->words[0];
-    S_view view = {markdown_core_inline_window(inline_state, 0).data, markdown_core_inline_size(inline_state), false};
-    const bufsize_t width = S_scan_html(&view, at + 1, &flags, NULL);
-    if (view.end) {
-        markdown_core_inline_saw_end(inline_state);
-    }
-    memo->words[0] = flags;
-    if (width) {
-        return at + 1 + width;
-    }
-    if (markdown_core_inline_size(inline_state) - at >= 4 &&
-        !memcmp(markdown_core_inline_window(inline_state, 0).data + at, "<!--", 4)) {
-        *open = at + 4;
-    }
-    return 0;
-}
-
-static const markdown_core_skip_ops HTML_TAGS = {.skip = S_skip};
-static const markdown_core_service HTML_SERVICES[] = {{MARKDOWN_CORE_SERVICE_HTML_TAGS, &HTML_TAGS}, {0}};
-
 const markdown_core_element MARKDOWN_CORE_ELEMENT_HTML = {
     .facets = MARKDOWN_CORE_HTML_FACETS,
     .name = "html",
-    .run_state_size = sizeof(unsigned),
-    .provides = HTML_SERVICES,
+    .run_state_size = sizeof(S_run),
     .needs = HTML_NEEDS,
     .inlines = &HTML_INLINES,
 };

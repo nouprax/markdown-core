@@ -115,7 +115,7 @@ typedef struct markdown_core_frame {
     /* The notes when the attempt began, and when the alternative being
      * tried began. */
     size_t given, notes;
-    bool check;
+    bool check, skim;
     uint32_t words[MARKDOWN_CORE_FRAME_WORDS];
     /* The reading's cursor, where it stood, and where its line starts in
      * the data (the reading's `cursor`, `base`): a look reads its lines
@@ -348,6 +348,12 @@ markdown_core_state markdown_core_attempt_list(markdown_core_tokenizer *tokenize
 /* Runs `construct` and keeps nothing of it either way. */
 markdown_core_state markdown_core_check(markdown_core_tokenizer *tokenizer, const markdown_core_construct *construct,
                                         markdown_core_state ok, markdown_core_state nok, int code);
+/* Reads past what the text's constructs at `code` read, as the text would
+ * try them, keeping none of what they made: a span another construct
+ * holds whole (a code span or a tag inside a citation's braced key). The
+ * reading stands past it at `ok`; at `nok` none read it. */
+markdown_core_state markdown_core_skim(markdown_core_tokenizer *tokenizer, markdown_core_state ok,
+                                       markdown_core_state nok, int code);
 
 /* The counts of the construct the innermost attempt runs. */
 static inline uint32_t *markdown_core_frame_local(markdown_core_tokenizer *tokenizer) {

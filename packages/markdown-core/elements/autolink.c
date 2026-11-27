@@ -1,4 +1,3 @@
-#include "autolink_scanners.h"
 #include "inline_internal.h"
 #include "autolink.h"
 #include "services.h"
@@ -648,33 +647,151 @@ static S_scan S_scan_of(markdown_core_tokenizer *tokenizer) {
     return scan;
 }
 
-static markdown_core_state S_angle(markdown_core_tokenizer *tokenizer, int code) {
-    (void)code;
-    const uint32_t from = tokenizer->position + 1;
-    const unsigned char *data = tokenizer->data;
-    bufsize_t length = scan_autolink_uri(data, (bufsize_t)tokenizer->size, (bufsize_t)from);
-    bool email = false;
-    if (!length) {
-        length = scan_autolink_email(data, (bufsize_t)tokenizer->size, (bufsize_t)from);
-        email = true;
-    }
-    if (!length) {
-        /* Either scan may still match once the input goes on, unless the
-         * byte after `<` starts neither a scheme nor a local part: its `<`
-         * opens an autolink or HTML once the text goes on. */
-        const unsigned char first = from < tokenizer->size ? data[from] : 0;
-        if (!first || markdown_core_isalnum((char)first) ||
-            (first > ' ' && first < 0x7f && strchr(".!#$%&'*+/=?^_`{|}~-", first))) {
-            markdown_core_met_end(tokenizer);
-            markdown_core_text_give_up(tokenizer, MARKDOWN_CORE_KIND_NONE, (bufsize_t)from - 1, (bufsize_t)from, NULL,
-                                       0);
-        }
+/* THE ANGLE AUTOLINK, code by code (micromark's autolink): `<`, then a
+ * URI, a scheme of 2 to 32 letters, digits, `+`, `-` and `.` that a
+ * letter starts, `:` and bytes that are no control, space, `<` or `>`; or
+ * an address, a local part, `@` and labels of at most 63 letters, digits
+ * and `-` that start and end with a letter or digit, joined by `.`; and
+ * `>`. The frame's words: the token, a count, and whether the last byte
+ * of a label was `-`. */
+enum { ANGLE_TOKEN, ANGLE_COUNT, ANGLE_DASH };
+
+static markdown_core_state S_uri_body(markdown_core_tokenizer *tokenizer, int code) {
+    if (code == MARKDOWN_CORE_EOF || code <= 0x20 || code == 0x7F || code == '<') {
         return markdown_core_nok(tokenizer);
     }
-    const markdown_core_state next = S_token(tokenizer, AUTOLINK_ANGLE, from + (uint32_t)length, email);
+    markdown_core_consume(tokenizer);
+    return code == '>' ? markdown_core_ok(tokenizer) : markdown_core_state_of(S_uri_body);
+}
+
+static markdown_core_state S_scheme(markdown_core_tokenizer *tokenizer, int code) {
+    uint32_t *words = markdown_core_frame_local(tokenizer);
+    if (code == ':' && words[ANGLE_COUNT] >= 2) {
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_uri_body);
+    }
+    if (code >= 0 && code < 0x80 && (markdown_core_isalnum((char)code) || code == '+' || code == '-' || code == '.') &&
+        words[ANGLE_COUNT] < 32) {
+        words[ANGLE_COUNT]++;
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_scheme);
+    }
+    return markdown_core_nok(tokenizer);
+}
+
+static markdown_core_state S_uri(markdown_core_tokenizer *tokenizer, int code) {
+    if (code < 0 || code >= 0x80 || !markdown_core_isalpha((char)code)) {
+        return markdown_core_nok(tokenizer);
+    }
+    markdown_core_frame_local(tokenizer)[ANGLE_COUNT] = 1;
+    markdown_core_consume(tokenizer);
+    return markdown_core_state_of(S_scheme);
+}
+
+static const markdown_core_construct ANGLE_URI = {.start = S_uri};
+
+static inline bool S_alnum(int code) { return code >= 0 && code < 0x80 && markdown_core_isalnum((char)code); }
+
+static markdown_core_state S_host(markdown_core_tokenizer *tokenizer, int code);
+
+static markdown_core_state S_host_label(markdown_core_tokenizer *tokenizer, int code) {
+    uint32_t *words = markdown_core_frame_local(tokenizer);
+    if ((S_alnum(code) || code == '-') && words[ANGLE_COUNT] < 63) {
+        words[ANGLE_COUNT]++;
+        words[ANGLE_DASH] = code == '-';
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_host_label);
+    }
+    if ((code == '.' || code == '>') && !words[ANGLE_DASH]) {
+        markdown_core_consume(tokenizer);
+        return code == '>' ? markdown_core_ok(tokenizer) : markdown_core_state_of(S_host);
+    }
+    return markdown_core_nok(tokenizer);
+}
+
+static markdown_core_state S_host(markdown_core_tokenizer *tokenizer, int code) {
+    uint32_t *words = markdown_core_frame_local(tokenizer);
+    if (!S_alnum(code)) {
+        return markdown_core_nok(tokenizer);
+    }
+    words[ANGLE_COUNT] = 1;
+    words[ANGLE_DASH] = false;
+    markdown_core_consume(tokenizer);
+    return markdown_core_state_of(S_host_label);
+}
+
+static inline bool S_atext(int code) {
+    return S_alnum(code) || (code > ' ' && code < 0x7F && strchr(".!#$%&'*+/=?^_`{|}~-", code));
+}
+
+static markdown_core_state S_local(markdown_core_tokenizer *tokenizer, int code) {
+    uint32_t *words = markdown_core_frame_local(tokenizer);
+    if (S_atext(code)) {
+        words[ANGLE_COUNT]++;
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_local);
+    }
+    if (code == '@' && words[ANGLE_COUNT]) {
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_host);
+    }
+    return markdown_core_nok(tokenizer);
+}
+
+static const markdown_core_construct ANGLE_ADDRESS = {.start = S_local};
+
+/* The autolink read through its `>`, an address when `email`. */
+static markdown_core_state S_angled(markdown_core_tokenizer *tokenizer, bool email) {
+    const markdown_core_element_instance *self = markdown_core_self(tokenizer);
+    const uint32_t token = markdown_core_frame_local(tokenizer)[ANGLE_TOKEN];
+    if (token != UINT32_MAX) {
+        tokenizer->events.tokens[token].data = email;
+    }
+    markdown_core_exit(tokenizer, (uint16_t)(self->token_base + AUTOLINK_ANGLE));
     /* What follows an autolink may update it (no-flush.md 10.13). */
     markdown_core_text_made(tokenizer, MARKDOWN_CORE_NODE_LINK);
-    return next;
+    return markdown_core_ok(tokenizer);
+}
+
+static markdown_core_state S_angle_uri(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    return S_angled(tokenizer, false);
+}
+
+static markdown_core_state S_angle_address(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    return S_angled(tokenizer, true);
+}
+
+/* Neither: either may still be read once the input goes on, unless the
+ * byte after `<` starts neither a scheme nor a local part; its `<` opens
+ * an autolink or HTML once the text goes on. */
+static markdown_core_state S_angle_none(markdown_core_tokenizer *tokenizer, int code) {
+    if (code == MARKDOWN_CORE_EOF || S_atext(code)) {
+        const bufsize_t from = (bufsize_t)tokenizer->position;
+        markdown_core_met_end(tokenizer);
+        markdown_core_text_give_up(tokenizer, MARKDOWN_CORE_KIND_NONE, from - 1, from, NULL, 0);
+    }
+    return markdown_core_nok(tokenizer);
+}
+
+static markdown_core_state S_angle_next(markdown_core_tokenizer *tokenizer, int code) {
+    return markdown_core_attempt(tokenizer, &ANGLE_ADDRESS, markdown_core_state_of(S_angle_address),
+                                 markdown_core_state_of(S_angle_none), code);
+}
+
+static markdown_core_state S_angle_open(markdown_core_tokenizer *tokenizer, int code) {
+    return markdown_core_attempt(tokenizer, &ANGLE_URI, markdown_core_state_of(S_angle_uri),
+                                 markdown_core_state_of(S_angle_next), code);
+}
+
+static markdown_core_state S_angle(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    const markdown_core_element_instance *self = markdown_core_self(tokenizer);
+    markdown_core_frame_local(tokenizer)[ANGLE_TOKEN] =
+        markdown_core_enter(tokenizer, (uint16_t)(self->token_base + AUTOLINK_ANGLE));
+    markdown_core_consume(tokenizer);
+    return markdown_core_state_of(S_angle_open);
 }
 
 static markdown_core_state S_url(markdown_core_tokenizer *tokenizer) {

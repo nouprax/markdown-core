@@ -10,30 +10,31 @@ typedef struct citation_token {
     bool key, suppress;
 } citation_token;
 
-/* A brace of a run: where it starts, where it closes, the brace around it,
- * whether it may be a key and holds anything, and whether a code span or a
- * comment in it is cut short, which may close past its `}` once the input
- * goes on. */
+/* A BRACE a braced key's reading read (citation.c, THE BRACED KEY): where
+ * it starts, where its key ends past its `}`, 0 when it is no key or no
+ * `}` closes it, the brace it is in (UINT32_MAX for none), whether no
+ * white space or faulty brace in it makes it no key so far, and whether it
+ * holds anything. */
 typedef struct {
-    bufsize_t start, end, previous;
-    bool valid, content, cut;
+    uint32_t start, end, previous;
+    bool valid, content;
 } citation_brace;
 
-/* The index's code spans read ahead of the run's own, from backtick runs the
- * run may not take as openers, so they keep a memo of their own
- * (services.h, MARKDOWN_CORE_SERVICE_CODE_SPANS). */
+/* What the readings of a run's braced keys read, every brace they read in
+ * the order of their starts, so that a key in a brace read before is not
+ * read again: `count` of them, room for `room`. */
 typedef struct {
     citation_brace *entries;
-    size_t count, cursor;
-    markdown_core_skip_memo ticks;
-    bool ready;
+    size_t count, room;
 } citation_brace_index;
 
-/* ONE RUN'S CITATIONS (the citation element's run record): the run's
- * brace index, built the first time a braced key is read. */
+/* ONE RUN'S CITATIONS (the citation element's run record): the braces read,
+ * and where the braced key being read starts, its `{`, and where its `}`
+ * ends it (citation.c, THE BRACED KEY). */
 typedef struct markdown_core_citation_entry markdown_core_citation_entry;
 typedef struct {
     citation_brace_index braces;
+    uint32_t key_at, brace_at, brace_end;
     /* The reading's (citation.c, THE CITATION'S TEXT): whether it read a
      * token outside every label; the label whose end is read again and
      * the author it is read with (markdown_core_label_again); and, as it
@@ -45,8 +46,8 @@ typedef struct {
 } markdown_core_citation_run;
 
 /* THE CITATION GRAMMAR'S WORK (the citation element's parse record):
- * the bytes and entries its scans visited, and the capacity reserved for
- * brace records, for its complexity gates. */
+ * the bytes and entries its readings visited, and the capacity reserved
+ * for brace records, for its complexity gates. */
 typedef struct {
     size_t work, brace_bytes;
 } markdown_core_citation_work;

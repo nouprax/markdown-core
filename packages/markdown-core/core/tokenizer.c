@@ -294,9 +294,12 @@ static const markdown_core_construct *S_tried(const markdown_core_frame *frame) 
 
 /* Starts an attempt: false when storage could not be had, which ends the
  * reading. */
+/* How an attempt ends (markdown_core_attempt, _check, _skim). */
+enum { S_ATTEMPT, S_CHECK, S_SKIM };
+
 static bool S_push_frame(markdown_core_tokenizer *tokenizer, markdown_core_state ok, markdown_core_state nok,
                          const markdown_core_construct *const *list, const markdown_core_construct *one, size_t count,
-                         bool check) {
+                         int mode) {
     markdown_core_frame *frames =
         markdown_core_reserve(tokenizer->frames, &tokenizer->frame_room, tokenizer->frame_count + 1, sizeof(*frames));
     if (!frames) {
@@ -316,7 +319,8 @@ static bool S_push_frame(markdown_core_tokenizer *tokenizer, markdown_core_state
                                                              .opens = tokenizer->open_count,
                                                              .given = tokenizer->note_count,
                                                              .notes = tokenizer->note_count,
-                                                             .check = check,
+                                                             .check = mode == S_CHECK,
+                                                             .skim = mode == S_SKIM,
                                                              .cursor = tokenizer->cursor,
                                                              .base = tokenizer->base,
                                                              .column = tokenizer->column,
@@ -331,9 +335,9 @@ static bool S_push_frame(markdown_core_tokenizer *tokenizer, markdown_core_state
 
 static markdown_core_state S_begin(markdown_core_tokenizer *tokenizer, markdown_core_state ok, markdown_core_state nok,
                                    const markdown_core_construct *const *list, const markdown_core_construct *one,
-                                   size_t count, bool check, int code) {
+                                   size_t count, int mode, int code) {
     assert(count);
-    if (!S_push_frame(tokenizer, ok, nok, list, one, count, check)) {
+    if (!S_push_frame(tokenizer, ok, nok, list, one, count, mode)) {
         return markdown_core_state_of(S_end_step);
     }
     /* The construct is handed the code where the reading stands, which it
@@ -348,17 +352,27 @@ static markdown_core_state S_begin(markdown_core_tokenizer *tokenizer, markdown_
 markdown_core_state markdown_core_attempt_list(markdown_core_tokenizer *tokenizer,
                                                const markdown_core_construct *const *list, size_t count,
                                                markdown_core_state ok, markdown_core_state nok, int code) {
-    return S_begin(tokenizer, ok, nok, list, NULL, count, false, code);
+    return S_begin(tokenizer, ok, nok, list, NULL, count, S_ATTEMPT, code);
 }
 
 markdown_core_state markdown_core_attempt(markdown_core_tokenizer *tokenizer, const markdown_core_construct *construct,
                                           markdown_core_state ok, markdown_core_state nok, int code) {
-    return S_begin(tokenizer, ok, nok, NULL, construct, 1, false, code);
+    return S_begin(tokenizer, ok, nok, NULL, construct, 1, S_ATTEMPT, code);
 }
 
 markdown_core_state markdown_core_check(markdown_core_tokenizer *tokenizer, const markdown_core_construct *construct,
                                         markdown_core_state ok, markdown_core_state nok, int code) {
-    return S_begin(tokenizer, ok, nok, NULL, construct, 1, true, code);
+    return S_begin(tokenizer, ok, nok, NULL, construct, 1, S_CHECK, code);
+}
+
+markdown_core_state markdown_core_skim(markdown_core_tokenizer *tokenizer, markdown_core_state ok,
+                                       markdown_core_state nok, int code) {
+    const markdown_core_constructs *text = &tokenizer->text;
+    if (code < 0 || text->offsets[code] == text->offsets[code + 1]) {
+        return nok.step(tokenizer, code);
+    }
+    return S_begin(tokenizer, ok, nok, text->items + text->offsets[code], NULL,
+                   (size_t)(text->offsets[code + 1] - text->offsets[code]), S_SKIM, code);
 }
 
 /* Goes back to where the innermost attempt began, nothing it made kept. */
@@ -434,6 +448,27 @@ static markdown_core_state S_settle(markdown_core_tokenizer *tokenizer, markdown
             }
             if (done.check) {
                 S_restore(tokenizer, &done);
+            } else if (done.skim) {
+                /* Where the reading stands stays; what it made goes, its
+                 * notes too. */
+                const markdown_core_frame here = {.position = tokenizer->position,
+                                                  .base = tokenizer->base,
+                                                  .column = tokenizer->column,
+                                                  .ending = tokenizer->ending,
+                                                  .counted = tokenizer->counted,
+                                                  .split = tokenizer->split,
+                                                  .cursor = tokenizer->cursor};
+                const size_t rewound = tokenizer->rewound;
+                S_restore(tokenizer, &done);
+                tokenizer->rewound = rewound;
+                tokenizer->position = here.position;
+                tokenizer->base = here.base;
+                tokenizer->column = here.column;
+                tokenizer->ending = here.ending;
+                tokenizer->counted = here.counted;
+                tokenizer->split = here.split;
+                tokenizer->cursor = here.cursor;
+                tokenizer->note_count = done.given;
             } else {
                 S_resolved(tokenizer, S_tried(&done), done.events);
             }
@@ -852,7 +887,7 @@ static const markdown_core_construct S_SPACE = {.start = S_space};
 
 markdown_core_state markdown_core_spaces(markdown_core_tokenizer *tokenizer, markdown_core_state ok, uint16_t kind,
                                          uint32_t most, int code) {
-    if (!S_push_frame(tokenizer, ok, ok, NULL, &S_SPACE, 1, false)) {
+    if (!S_push_frame(tokenizer, ok, ok, NULL, &S_SPACE, 1, S_ATTEMPT)) {
         return markdown_core_state_of(S_end_step);
     }
     uint32_t *words = markdown_core_frame_local(tokenizer);
@@ -876,7 +911,7 @@ static const markdown_core_construct S_INDENT = {.start = S_indent_end};
 
 markdown_core_state markdown_core_indent(markdown_core_tokenizer *tokenizer, markdown_core_state ok,
                                          markdown_core_state nok, uint32_t columns, int code) {
-    if (!S_push_frame(tokenizer, ok, nok, NULL, &S_INDENT, 1, false)) {
+    if (!S_push_frame(tokenizer, ok, nok, NULL, &S_INDENT, 1, S_ATTEMPT)) {
         return markdown_core_state_of(S_end_step);
     }
     uint32_t *words = markdown_core_frame_local(tokenizer);
