@@ -7,7 +7,7 @@
  * is one the engine sees. This audit reads the element sources, the only
  * place the fact exists, and fails on a field access of an inline state's
  * `input` or `pos`. The block phase's line has its stream already (reader.h:
- * `peek`, `rest`, `advance`, each noting how far the reading read); an
+ * `rest`, `length`, `advance`, each noting how far the reading read); an
  * element reads the line's facts (`indent`, `nonspace`, ...) but never its
  * bytes (`line`) or how far it was read (`far`) by field.
  *

@@ -1244,3 +1244,18 @@ Document scope=1:1..1:9 anchor=null attributes={} children=1
     ├── Text scope=1:5..1:6 anchor=null attributes={} literal="@{" children=0
     └── Code scope=1:7..1:9 anchor=null attributes={} literal="D" children=0
 ````````````````````````````````
+
+A bare citation key's letters stay the key's: the `https` after `@` is
+the key, so it starts no URL and no Link overlaps the Cite.
+
+```````````````````````````````` example
+@https://a
+.
+Document scope=1:1..1:10 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:10 anchor=null attributes={} children=2
+    ├── Cite scope=1:1..1:6 anchor=null attributes={} children=1
+    │   └── Citation scope=1:1..1:6 anchor=null attributes={} referent=bib(key="https",mode=authorInText) children=0
+    │       ├── CitationPrefix children=0
+    │       └── CitationSuffix children=0
+    └── Text scope=1:7..1:10 anchor=null attributes={} literal="://a" children=0
+````````````````````````````````

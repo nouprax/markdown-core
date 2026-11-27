@@ -19,7 +19,7 @@ MARKDOWN_CORE_BLOCK_FOUND_FITS(specimen_found, specimen_found_fits);
 
 static bool markdown_core_specimen_open(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                         markdown_core_node **container, markdown_core_reader *reader,
-                                        block_start *start) {
+                                        const unsigned char *line, block_start *start) {
     const specimen_found *found = MARKDOWN_CORE_BLOCK_FOUND(start, specimen_found);
     markdown_core_specimen_value specimen = found->value;
     /* Its start number, a field of no slot kind, and its label, after the
@@ -29,7 +29,7 @@ static bool markdown_core_specimen_open(const markdown_core_element_instance *se
     const bufsize_t label = found->end;
     if (label > sign + 1) {
         specimen.label = markdown_core_optional_chunk_present(
-            (markdown_core_chunk){(unsigned char *)markdown_core_reader_bytes(reader, sign + 1), label - sign - 1, 0});
+            (markdown_core_chunk){(unsigned char *)line + sign + 1, label - sign - 1, 0});
         if (!markdown_core_chunk_to_cstr(&specimen.label.value)) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             return false;
@@ -69,7 +69,7 @@ static void S_specimen_open(markdown_core_compiler *compiler, const markdown_cor
     (void)index;
     markdown_core_block_turn *turn = markdown_core_block_turned(compiler);
     turn->opened = markdown_core_specimen_open(markdown_core_compile_self(compiler), turn->parser, turn->container,
-                                               turn->context->reader, turn->start);
+                                               turn->context->reader, compiler->data + turn->base, turn->start);
 }
 
 /* THE MARKER (code by code): up to three spaces, `(`, up to nine digits

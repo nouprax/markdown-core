@@ -260,11 +260,11 @@ MARKDOWN_CORE_BLOCK_FOUND_FITS(note_found, note_found_fits);
 
 static bool markdown_core_footnote_open(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                         markdown_core_node **container, markdown_core_reader *reader,
-                                        block_start *start) {
+                                        const unsigned char *line, block_start *start) {
     const note_found *found = MARKDOWN_CORE_BLOCK_FOUND(start, note_found);
     const bufsize_t matched = found->matched;
     const bufsize_t label = found->marker + 2;
-    markdown_core_chunk c = {(unsigned char *)markdown_core_reader_bytes(reader, label), found->label - label, 0};
+    markdown_core_chunk c = {(unsigned char *)line + label, found->label - label, 0};
     if (!markdown_core_chunk_to_cstr(&c)) {
         /* The label would keep borrowing the transient line buffer. */
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
@@ -327,7 +327,7 @@ static void S_footnote_open(markdown_core_compiler *compiler, const markdown_cor
     (void)index;
     markdown_core_block_turn *turn = markdown_core_block_turned(compiler);
     turn->opened = markdown_core_footnote_open(markdown_core_compile_self(compiler), turn->parser, turn->container,
-                                               turn->context->reader, turn->start);
+                                               turn->context->reader, compiler->data + turn->base, turn->start);
 }
 
 /* THE MARKER (code by code): up to three spaces, `[^`, a label of no

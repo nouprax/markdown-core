@@ -150,12 +150,12 @@ static bufsize_t info_word(const unsigned char *data, bufsize_t length, bufsize_
  * written. References and escapes are decoded after the trim, so a space one
  * of them spells is the info string's own. */
 static void S_fence_info(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                         markdown_core_node *b, markdown_core_reader *reader) {
-    const unsigned char *rest = markdown_core_reader_rest(reader, reader->offset);
-    const bufsize_t length = markdown_core_reader_length(reader) - reader->offset;
-    const unsigned char *line_end = memchr(rest, '\n', (size_t)length);
-    assert(line_end);
-    const bufsize_t pos = (bufsize_t)(line_end - rest);
+                         markdown_core_node *b, markdown_core_reader *reader, const unsigned char *line) {
+    /* The info's check read the rest of the line, to its ending: the line
+     * in hand ends with a line feed, its last byte, which an input that
+     * ends without one is given. */
+    const unsigned char *rest = line + reader->offset;
+    const bufsize_t pos = markdown_core_reader_length(reader) - 1 - reader->offset;
     /* The line's end is offered (element.h, markdown_core_follow): the
      * info string ends where what is taken begins. */
     const bufsize_t offset = reader->offset;
@@ -258,7 +258,7 @@ static void S_code_block_fenced(markdown_core_compiler *compiler, const markdown
     block->as.code->fence_length = (matched > 255) ? 255 : (uint8_t)matched;
     block->as.code->fence_offset = (int8_t)(fence->first - (bufsize_t)(token->start - turn->base));
     block->as.code->fence_closed = false;
-    S_fence_info(markdown_core_compile_self(compiler), turn->parser, block, turn->reader);
+    S_fence_info(markdown_core_compile_self(compiler), turn->parser, block, turn->reader, compiler->data + turn->base);
     turn->opened = true;
 }
 

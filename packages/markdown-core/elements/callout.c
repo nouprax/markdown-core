@@ -19,9 +19,8 @@ static bool variant_byte(unsigned char c) {
 
 /* Builds the header the start read on the callout `node`. */
 static void S_callout_build(markdown_core_parser *parser, markdown_core_node *node, markdown_core_reader *reader,
-                            const markdown_core_callout_header *header) {
-    markdown_core_chunk variant = {(unsigned char *)markdown_core_reader_bytes(reader, header->variant),
-                                   header->variant_end - header->variant, 0};
+                            const unsigned char *line, const markdown_core_callout_header *header) {
+    markdown_core_chunk variant = {(unsigned char *)line + header->variant, header->variant_end - header->variant, 0};
     if (!markdown_core_chunk_to_cstr(&variant)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return;
@@ -41,7 +40,7 @@ static markdown_core_node **callout_title(markdown_core_node *node) { return &no
  * cut short, and the header, after which the line is the header's. */
 static bool markdown_core_callout_open(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                        markdown_core_node **container, markdown_core_reader *reader,
-                                       block_start *start) {
+                                       const unsigned char *line, block_start *start) {
     (void)self;
     const markdown_core_callout_header *header = MARKDOWN_CORE_BLOCK_FOUND(start, markdown_core_callout_header);
     bufsize_t blockquote_startpos = header->marker;
@@ -58,7 +57,7 @@ static bool markdown_core_callout_open(const markdown_core_element_instance *sel
                                    &variant, 1);
     }
     if (header->metadata) {
-        S_callout_build(parser, *container, reader, header);
+        S_callout_build(parser, *container, reader, line, header);
         return false;
     }
     return true;
@@ -67,39 +66,56 @@ static bool markdown_core_callout_open(const markdown_core_element_instance *sel
 enum { CALLOUT_OPEN, CALLOUT_TITLE, CALLOUT_BLOCKS };
 
 /* THE TEXT OF ITS LINE (element.h, `text`): the text of the line a callout
- * with a variant opened on, past its header, is its title, to the line's
- * end and without the whitespace there, its token's bytes. A callout the
- * edit reopens inside the line makes it anew: the engine let the old one
- * go. */
+ * with a variant opened on, past its header, is its title, code by code to
+ * the line's ending, one token; the title is its bytes without the
+ * whitespace at their end. A callout the edit reopens inside the line
+ * makes it anew: the engine let the old one go. */
+static markdown_core_state S_title_text(markdown_core_tokenizer *tokenizer, int code) {
+    if (code == MARKDOWN_CORE_EOF || markdown_core_code_ending(code)) {
+        if (code == MARKDOWN_CORE_EOF) {
+            markdown_core_met_end(tokenizer);
+        }
+        markdown_core_exit(tokenizer, markdown_core_block_token(tokenizer, CALLOUT_TITLE));
+        return markdown_core_ok(tokenizer);
+    }
+    ((markdown_core_callout_work *)((const markdown_core_element_instance *)markdown_core_self(tokenizer))->state)
+        ->scan++;
+    markdown_core_consume(tokenizer);
+    return markdown_core_state_of(S_title_text);
+}
+
 static markdown_core_state S_title(markdown_core_tokenizer *tokenizer, int code) {
-    (void)code;
     const markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
-    markdown_core_callout_work *counts = ((const markdown_core_element_instance *)markdown_core_self(tokenizer))->state;
     if (!turn->node->as.callout->variant.has_value) {
         return markdown_core_nok(tokenizer);
     }
-    markdown_core_reader *reader = turn->reader;
-    bufsize_t length;
-    const unsigned char *text = markdown_core_reader_handed(reader, reader->offset, &length);
-    while (length && markdown_core_is_whitespace(text[length - 1])) {
-        length--;
-        counts->scan++;
-    }
-    if (!length) {
+    /* The title reads from where the cursor stands. */
+    markdown_core_cursor_move(tokenizer);
+    code = markdown_core_code_at(tokenizer, 0);
+    if (code == MARKDOWN_CORE_EOF || markdown_core_code_ending(code)) {
         return markdown_core_ok(tokenizer);
     }
-    return markdown_core_block_span(tokenizer, CALLOUT_TITLE, reader->offset + length);
+    markdown_core_enter(tokenizer, markdown_core_block_token(tokenizer, CALLOUT_TITLE));
+    return S_title_text(tokenizer, code);
 }
 
-/* The title, made of its token's bytes, from where the reader stands. */
+/* The title, made of its token's bytes without the whitespace at their
+ * end. */
 static void S_callout_title(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
     (void)index;
     markdown_core_block_turn *turn = markdown_core_block_turned(compiler);
     markdown_core_parser *parser = turn->parser;
     markdown_core_node *node = turn->node;
     markdown_core_reader *reader = turn->reader;
-    const bufsize_t length = (bufsize_t)(token->end - token->start);
-    const bufsize_t pos = reader->offset;
+    const bufsize_t pos = (bufsize_t)(token->start - turn->base);
+    const unsigned char *bytes = compiler->data + token->start;
+    bufsize_t length = (bufsize_t)(token->end - token->start);
+    while (length && markdown_core_is_whitespace(bytes[length - 1])) {
+        length--;
+    }
+    if (!length) {
+        return;
+    }
     markdown_core_node *title = markdown_core_parser_make_node(parser, MARKDOWN_CORE_NODE_PARAGRAPH);
     if (!title) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
@@ -107,7 +123,7 @@ static void S_callout_title(markdown_core_compiler *compiler, const markdown_cor
     }
     node->as.callout->title = title;
     title->place = markdown_core_reader_span(reader, parser, pos, pos + length);
-    markdown_core_strbuf_put(&title->content, markdown_core_reader_bytes(reader, pos), length);
+    markdown_core_strbuf_put(&title->content, bytes, length);
     if (title->content.oom || !markdown_core_reader_marks(reader, parser, title, pos, title->content.size, 0)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
@@ -119,7 +135,7 @@ static void S_callout_open(markdown_core_compiler *compiler, const markdown_core
     (void)index;
     markdown_core_block_turn *turn = markdown_core_block_turned(compiler);
     turn->opened = markdown_core_callout_open(markdown_core_compile_self(compiler), turn->parser, turn->container,
-                                              turn->context->reader, turn->start);
+                                              turn->context->reader, compiler->data + turn->base, turn->start);
 }
 
 /* THE MARKER (micromark's blockQuote, code by code): up to three spaces,

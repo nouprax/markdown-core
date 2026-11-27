@@ -525,18 +525,18 @@ static void properties_close(properties *p) { markdown_core_yaml_close(&p->yaml)
  * lines, and the next line that is "---", its line ending or the end after
  * it. A carriage return ends a line as a line feed does. It is read over
  * the input's text alone, before line 1; what it found is the asker's
- * (S_envelope): where the closing fence starts, and how far the reading
- * read. The reading's words: the dashes of a fence line. */
+ * (S_envelope): where the closing fence starts, where its line ending
+ * ends, and how far the reading read. The reading's words: the dashes of a fence line. */
 typedef struct {
     markdown_core_properties_work *work;
-    size_t fence, far;
+    size_t fence, past, ahead;
 } S_envelope;
 
 enum { ENVELOPE_DASHES };
 
 static S_envelope *S_envelope_of(markdown_core_tokenizer *tokenizer) {
     S_envelope *envelope = (S_envelope *)markdown_core_self(tokenizer);
-    envelope->far = tokenizer->position + 1;
+    envelope->ahead = tokenizer->position + 1;
     return envelope;
 }
 
@@ -554,6 +554,32 @@ static markdown_core_state S_envelope_body(markdown_core_tokenizer *tokenizer, i
     return markdown_core_state_of(S_line_end(code) ? S_envelope_line : S_envelope_body);
 }
 
+/* The closing fence's line ending, a carriage return with the line feed
+ * after it, is the envelope's. */
+static markdown_core_state S_envelope_shut(markdown_core_tokenizer *tokenizer, int code) {
+    S_envelope *envelope = S_envelope_of(tokenizer);
+    if (code == '\n') {
+        markdown_core_consume(tokenizer);
+        envelope = S_envelope_of(tokenizer);
+    }
+    envelope->past = tokenizer->position;
+    return markdown_core_ok(tokenizer);
+}
+
+static markdown_core_state S_envelope_close(markdown_core_tokenizer *tokenizer, int code) {
+    S_envelope *envelope = S_envelope_of(tokenizer);
+    if (code == MARKDOWN_CORE_EOF) {
+        envelope->past = tokenizer->position;
+        return markdown_core_ok(tokenizer);
+    }
+    markdown_core_consume(tokenizer);
+    if (code == '\r') {
+        return markdown_core_state_of(S_envelope_shut);
+    }
+    envelope->past = tokenizer->position;
+    return markdown_core_ok(tokenizer);
+}
+
 /* A line's dashes: three and its end close the envelope. */
 static markdown_core_state S_envelope_dash(markdown_core_tokenizer *tokenizer, int code) {
     S_envelope *envelope = S_envelope_of(tokenizer);
@@ -566,7 +592,7 @@ static markdown_core_state S_envelope_dash(markdown_core_tokenizer *tokenizer, i
     }
     if (words[ENVELOPE_DASHES] == 3 && (code == MARKDOWN_CORE_EOF || S_line_end(code))) {
         envelope->fence = tokenizer->position - 3;
-        return markdown_core_ok(tokenizer);
+        return S_envelope_close(tokenizer, code);
     }
     return S_envelope_body(tokenizer, code);
 }
@@ -609,7 +635,7 @@ bool markdown_core_properties_stops(const markdown_core_element_instance *self, 
 
 bool markdown_core_properties_closed(markdown_core_properties_work *work, markdown_core_parser *parser,
                                      markdown_core_reader *reader, const markdown_core_element_instance *owner,
-                                     size_t *fence) {
+                                     size_t *fence, size_t *past) {
     size_t size;
     const unsigned char *text = markdown_core_parser_input_text(parser, &size);
     S_envelope envelope = {.work = work};
@@ -618,11 +644,11 @@ bool markdown_core_properties_closed(markdown_core_properties_work *work, markdo
     const bool read = markdown_core_alone_read(parser, &alone, &construct, text, (uint32_t)size);
     const bool closed = read && alone.found;
     markdown_core_alone_end(parser, &alone);
-    if (envelope.far > size) {
+    if (envelope.ahead > size) {
         (void)markdown_core_parser_input_ends(parser, text + size);
     }
-    markdown_core_reader_reads(reader, parser, 0, envelope.far);
-    if (!read || envelope.far <= 4) {
+    markdown_core_reader_reads(reader, parser, 0, envelope.ahead);
+    if (!read || envelope.ahead <= 4) {
         /* No "---" line opens the input. */
         return false;
     }
@@ -635,15 +661,14 @@ bool markdown_core_properties_closed(markdown_core_properties_work *work, markdo
     }
     markdown_core_reader_opens(reader, owner, closed);
     *fence = envelope.fence;
+    *past = envelope.past;
     return closed;
 }
 
 size_t markdown_core_properties_parse(markdown_core_properties_work *work, markdown_core_parser *parser,
-                                      markdown_core_reader *reader, size_t close) {
-    /* The envelope is its lines through the closing fence's line ending. */
-    const int end = markdown_core_reader_byte(reader, parser, close + 3);
-    const size_t consumed =
-        close + 3 + (end >= 0) + (end == '\r' && markdown_core_reader_byte(reader, parser, close + 4) == '\n');
+                                      markdown_core_reader *reader, size_t close, size_t consumed) {
+    /* The envelope is its lines through the closing fence's line ending,
+     * which its reading consumed. */
     const unsigned char *source = markdown_core_reader_text(reader, parser, consumed);
     markdown_core_node *node = markdown_core_parser_make_node(parser, MARKDOWN_CORE_NODE_METADATA);
     if (!node) {

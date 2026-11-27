@@ -6,18 +6,18 @@
 enum { DEFINITION_LABELS };
 static const char *const DEFINITION_NEEDS[] = {[DEFINITION_LABELS] = MARKDOWN_CORE_SERVICE_LABELS, NULL};
 
-static inline bool markdown_core_block_definition_marker(markdown_core_reader *reader);
-static markdown_core_node *markdown_core_block_open_definition(markdown_core_definition_list_work *counts,
-                                                               markdown_core_parser *parser, markdown_core_node *parent,
-                                                               markdown_core_reader *reader, bool compact);
-/* Whether the reader's line holds a definition marker at its first
- * non-space byte. */
-static inline bool markdown_core_block_definition_marker(markdown_core_reader *reader) {
-    const bufsize_t at = reader->nonspace;
-    return reader->indent < 4 && !markdown_core_reader_ends(reader, at + 1) &&
-           (markdown_core_reader_peek(reader, at) == ':' || markdown_core_reader_peek(reader, at) == '~') &&
-           markdown_core_is_whitespace(markdown_core_reader_peek(reader, at + 1));
-}
+/* What a term's start found (WHAT THE START FOUND, block_internal.h):
+ * whether no blank line comes before its definition marker, and where its
+ * text stands on the line, past its trailing whitespace. */
+typedef struct {
+    bool compact;
+    bufsize_t begin, end;
+} term_found;
+MARKDOWN_CORE_BLOCK_FOUND_FITS(term_found, term_found_fits);
+
+static markdown_core_node *markdown_core_block_open_definition(markdown_core_parser *parser, markdown_core_node *parent,
+                                                               markdown_core_reader *reader, const unsigned char *line,
+                                                               const term_found *found);
 
 /* A definition marker is ':' or '~' followed by a space, a tab or the line
  * end. Asking whether the NEXT line carries one used to mean opening a full
@@ -96,25 +96,6 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool definition_next_line
     return false;
 }
 
-/* THE TERM'S ADMISSION of the reader's line in `parent`, which reads the
- * line and the first bytes of the two lines after it, and so can read the
- * end: whether a term can start there at all. The reading
- * (definition_term_reads) is begun only on a line it admits. The next lines
- * refuse almost every line, and cost the container depth where the
- * reading's reference re-parse costs the line; both are conjuncts of one
- * decision, so the order changes nothing else. */
-static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool definition_term_admits(
-    const markdown_core_element_instance *self, markdown_core_parser *parser, const markdown_core_node *parent,
-    markdown_core_reader *reader) {
-    ((markdown_core_definition_list_work *)self->state)->work++;
-    if (reader->blank || reader->indent >= 4 || markdown_core_block_definition_marker(reader)) {
-        return false;
-    }
-    /* What the key reads of the lines after decides the line: the reader
-     * notes it (THE REACH). */
-    return definition_next_lines_admit(parser, reader, parent);
-}
-
 /* THE TERM'S READING of the reader's line in `parent` its admission admits
  * begins: no reference definition. Its look (S_term) reads whether a
  * definition marker line follows it, after one blank line at most
@@ -137,45 +118,39 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool definition_term_reads(const mark
     return true;
 }
 
-static markdown_core_node *markdown_core_block_open_definition(markdown_core_definition_list_work *counts,
-                                                               markdown_core_parser *parser, markdown_core_node *parent,
-                                                               markdown_core_reader *reader, bool compact) {
+static markdown_core_node *markdown_core_block_open_definition(markdown_core_parser *parser, markdown_core_node *parent,
+                                                               markdown_core_reader *reader, const unsigned char *line,
+                                                               const term_found *found) {
     /* A new term requires the separating blank run. If the preceding body's
      * prefix declined it, append at the existing list's definition boundary. */
     if (parent->kind == MARKDOWN_CORE_NODE_DEFINITION) {
         parent = markdown_core_block_close(parser, parent);
     }
     if (parent->kind != MARKDOWN_CORE_NODE_DEFINITION_LIST) {
-        parent =
-            markdown_core_parser_add_child(parser, parent, MARKDOWN_CORE_NODE_DEFINITION_LIST, reader->nonspace + 1);
+        parent = markdown_core_parser_add_child(parser, parent, MARKDOWN_CORE_NODE_DEFINITION_LIST, found->begin + 1);
         if (!parent) {
             return NULL;
         }
     }
     markdown_core_node *definition =
-        markdown_core_parser_add_child(parser, parent, MARKDOWN_CORE_NODE_DEFINITION, reader->nonspace + 1);
+        markdown_core_parser_add_child(parser, parent, MARKDOWN_CORE_NODE_DEFINITION, found->begin + 1);
     if (!definition) {
         return NULL;
     }
-    definition->as.definition->compact = compact;
+    definition->as.definition->compact = found->compact;
     markdown_core_node *term = markdown_core_parser_make_node(parser, MARKDOWN_CORE_NODE_PARAGRAPH);
     if (!term) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return definition;
     }
     definition->as.definition->term = term;
-    int begin = reader->nonspace, end = markdown_core_reader_length(reader);
-    while (end > begin && markdown_core_is_whitespace(markdown_core_reader_peek(reader, end - 1))) {
-        end--;
-    }
-    counts->work += end - begin;
+    const bufsize_t begin = found->begin, end = found->end;
     term->place = markdown_core_reader_span(reader, parser, begin, end);
-    markdown_core_strbuf_put(&term->content, markdown_core_reader_bytes(reader, begin), end - begin);
+    markdown_core_strbuf_put(&term->content, line + begin, end - begin);
     if (term->content.oom || !markdown_core_reader_marks(reader, parser, term, begin, term->content.size, 0)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
     markdown_core_block_settle_field(parser, term, definition);
-    markdown_core_reader_end(reader);
     return definition;
 }
 
@@ -307,7 +282,7 @@ static markdown_core_state S_term_line(markdown_core_tokenizer *tokenizer, int c
     if (parser->look->blanks > 1) {
         return markdown_core_nok(tokenizer);
     }
-    *MARKDOWN_CORE_BLOCK_FOUND(turn->start, bool) = parser->look->blanks == 0;
+    MARKDOWN_CORE_BLOCK_FOUND(turn->start, term_found)->compact = parser->look->blanks == 0;
     return markdown_core_spaces(tokenizer, markdown_core_state_of(S_term_marker), 0, 3, code);
 }
 
@@ -318,32 +293,64 @@ static markdown_core_state S_term_next(markdown_core_tokenizer *tokenizer, int c
 
 static const markdown_core_construct TERM_LOOK = {.start = S_term_next};
 
-static markdown_core_state S_term_read(markdown_core_tokenizer *tokenizer, bool matched) {
+/* The term's text: the line, its trailing whitespace left out. */
+static markdown_core_state S_term_text(markdown_core_tokenizer *tokenizer, int code) {
+    term_found *found = MARKDOWN_CORE_BLOCK_FOUND(markdown_core_block_turn_of(tokenizer)->start, term_found);
+    if (markdown_core_code_ending(code)) {
+        return markdown_core_block_found(tokenizer, DEFINITION_LIST_TERM);
+    }
+    ((markdown_core_definition_list_work *)((const markdown_core_element_instance *)markdown_core_self(tokenizer))
+         ->state)
+        ->work++;
+    markdown_core_consume(tokenizer);
+    if (!markdown_core_code_space(code)) {
+        found->end = (bufsize_t)(tokenizer->position - tokenizer->base);
+    }
+    return markdown_core_state_of(S_term_text);
+}
+
+static markdown_core_state S_term_read(markdown_core_tokenizer *tokenizer, bool matched, int code) {
     markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
     if (!matched || turn->parser->error) {
         return markdown_core_nok(tokenizer);
     }
-    return markdown_core_block_found(tokenizer, DEFINITION_LIST_TERM);
+    return S_term_text(tokenizer, code);
 }
 
 static markdown_core_state S_term_matched(markdown_core_tokenizer *tokenizer, int code) {
-    (void)code;
-    return S_term_read(tokenizer, true);
+    return S_term_read(tokenizer, true, code);
 }
 
 static markdown_core_state S_term_unmatched(markdown_core_tokenizer *tokenizer, int code) {
-    (void)code;
-    return S_term_read(tokenizer, false);
+    return S_term_read(tokenizer, false, code);
 }
 
-static markdown_core_state S_term(markdown_core_tokenizer *tokenizer, int code) {
+/* THE TERM'S ADMISSION, at the line's first non-space byte in `parent`,
+ * past at most three columns of indentation (the start's `indent`): the
+ * line is not blank, holds no definition marker there, and the first bytes
+ * of the two lines after it may hold one (definition_next_lines_admit);
+ * the reading (definition_term_reads) and its look are begun only on a
+ * line it admits. The next lines refuse almost every line, and cost the
+ * container depth where the reading's reference re-parse costs the line;
+ * both are conjuncts of one decision, so the order changes nothing else. */
+static markdown_core_state S_term_open(markdown_core_tokenizer *tokenizer, int code) {
     const markdown_core_element_instance *self = markdown_core_self(tokenizer);
     markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
     markdown_core_parser *parser = turn->parser;
     markdown_core_node *parent = turn->context->container;
     markdown_core_reader *reader = turn->context->reader;
-    *MARKDOWN_CORE_BLOCK_FOUND(turn->start, bool) = false;
-    if (!definition_term_admits(self, parser, parent, reader) || !definition_term_reads(self, parser, parent, reader) ||
+    term_found *found = MARKDOWN_CORE_BLOCK_FOUND(turn->start, term_found);
+    *found = (term_found){.begin = (bufsize_t)(tokenizer->position - tokenizer->base)};
+    found->end = found->begin;
+    ((markdown_core_definition_list_work *)self->state)->work++;
+    if (markdown_core_code_ending(code) ||
+        ((code == ':' || code == '~') &&
+         markdown_core_is_whitespace((unsigned char)markdown_core_code_at(tokenizer, 1)))) {
+        return markdown_core_nok(tokenizer);
+    }
+    /* What the key reads of the lines after decides the line: the reader
+     * notes it (THE REACH). */
+    if (!definition_next_lines_admit(parser, reader, parent) || !definition_term_reads(self, parser, parent, reader) ||
         parser->error) {
         return markdown_core_nok(tokenizer);
     }
@@ -353,14 +360,23 @@ static markdown_core_state S_term(markdown_core_tokenizer *tokenizer, int code) 
                               markdown_core_state_of(S_term_unmatched), code);
 }
 
+/* The line's indentation, which the start's bound keeps under four
+ * columns, is the container's: the term begins past it. */
+static markdown_core_state S_term(markdown_core_tokenizer *tokenizer, int code) {
+    if (markdown_core_code_space(code)) {
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_term);
+    }
+    return S_term_open(tokenizer, code);
+}
+
 static void S_definition_list_term(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
     (void)token;
     (void)index;
-    const markdown_core_element_instance *self = markdown_core_compile_self(compiler);
     markdown_core_block_turn *turn = markdown_core_block_turned(compiler);
-    markdown_core_node *opened =
-        markdown_core_block_open_definition(self->state, turn->parser, *turn->container, turn->context->reader,
-                                            *MARKDOWN_CORE_BLOCK_FOUND(turn->start, bool));
+    markdown_core_node *opened = markdown_core_block_open_definition(
+        turn->parser, *turn->container, turn->context->reader, compiler->data + turn->base,
+        MARKDOWN_CORE_BLOCK_FOUND(turn->start, term_found));
     if (opened) {
         *turn->container = opened;
         turn->opened = true;
@@ -445,7 +461,7 @@ static const markdown_core_edit_ops DEFINITION_LIST_EDIT = {
 
 static const markdown_core_block_construct DEFINITION_LIST_STARTS[] = {
     {.bytes = ":~", .indent = 3, .construct = {.start = markdown_core_definition_list_scan}},
-    {.indent = INT_MAX, .precedence = 2, .last = true, .construct = {.start = S_term}},
+    {.indent = 3, .precedence = 2, .last = true, .construct = {.start = S_term}},
 };
 
 static const markdown_core_compile_ops DEFINITION_LIST_TOKENS[DEFINITION_LIST_BLOCKS] = {

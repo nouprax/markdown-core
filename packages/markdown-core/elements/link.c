@@ -876,7 +876,8 @@ static markdown_core_bracket_match S_end_explicit(const markdown_core_element_in
 static markdown_core_bracket_match S_end_shortcut(const markdown_core_element_instance *self,
                                                   markdown_core_tokenizer *tokenizer, markdown_core_opener *label,
                                                   markdown_core_label_made *made);
-static const markdown_core_construct LINK_AFTER;
+static markdown_core_state S_after(markdown_core_tokenizer *tokenizer, int code);
+static const markdown_core_construct LINK_AFTER = {.start = S_after};
 static const markdown_core_close_rule LINK_CLOSES[] = {
     {.precedence = -20, .tail = &LINK_AFTER, .end = S_end_explicit},
     {.precedence = 10, .end = S_end_shortcut},
@@ -1049,8 +1050,6 @@ static markdown_core_state S_after(markdown_core_tokenizer *tokenizer, int code)
     }
     return markdown_core_nok(tokenizer);
 }
-
-static const markdown_core_construct LINK_AFTER = {.start = S_after};
 
 /* What follows the `]` of `label` at `after`, as its tail read it
  * (S_after): an inline tail, a reference by a label, or the label's own

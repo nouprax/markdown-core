@@ -6,6 +6,8 @@
  * item's facts, then where its marker and numeral stand on the line, the
  * column it started at and the numeral's first byte. */
 typedef struct {
+    /* First: the task marker's construct writes it (tasklist.h). */
+    markdown_core_task_found task;
     markdown_core_list list;
     bufsize_t marker, begin, end;
     /* The columns where the start began, its marker, and past the marker. */
@@ -129,7 +131,8 @@ static markdown_core_node_internal_flags fold_child(const markdown_core_element_
  * continues or in a list it opens, and the task marker after it. The
  * reading stands past the item's padding. */
 static bool markdown_core_list_open(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                    markdown_core_node **container, markdown_core_reader *reader, block_start *start) {
+                                    markdown_core_node **container, markdown_core_reader *reader, block_start *start,
+                                    const unsigned char *line) {
     (void)self;
     list_found *found = MARKDOWN_CORE_BLOCK_FOUND(start, list_found);
     markdown_core_list *data = &found->list;
@@ -151,8 +154,7 @@ static bool markdown_core_list_open(const markdown_core_element_instance *self, 
         return false;
     }
     memcpy((*container)->as.list, data, sizeof(*data));
-    markdown_core_reader_find(reader);
-    markdown_core_parse_task_prefix(parser, *container, reader);
+    markdown_core_task_take(parser, *container, reader, line, &found->task);
     return !parser->error;
 }
 
@@ -163,7 +165,7 @@ static void S_list_item(markdown_core_compiler *compiler, const markdown_core_to
     (void)index;
     markdown_core_block_turn *turn = markdown_core_block_turned(compiler);
     turn->opened = markdown_core_list_open(markdown_core_compile_self(compiler), turn->parser, turn->container,
-                                           turn->context->reader, turn->start);
+                                           turn->context->reader, turn->start, compiler->data + turn->base);
 }
 
 /* THE MARKER (micromark's list, code by code): up to three spaces, a
@@ -183,23 +185,29 @@ static inline void S_count(markdown_core_tokenizer *tokenizer) {
         ->markers++;
 }
 
-/* The item's padding is its marker's columns and the columns of space
- * past it, or one when the padding is refused. */
-static markdown_core_state S_item_at(markdown_core_tokenizer *tokenizer, uint32_t space) {
-    list_found *found = S_found(tokenizer);
-    found->list.marker_offset = (int)(found->column - found->from);
-    found->list.padding = (int)(found->past - found->column + space);
+/* The item, past its task marker if it has one. */
+static markdown_core_state S_item_found(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
     return markdown_core_block_found(tokenizer, LIST_ITEM);
 }
 
+/* The item's padding is its marker's columns and the columns of space
+ * past it, or one when the padding is refused. */
+static markdown_core_state S_item_at(markdown_core_tokenizer *tokenizer, uint32_t space, int code) {
+    list_found *found = S_found(tokenizer);
+    found->list.marker_offset = (int)(found->column - found->from);
+    found->list.padding = (int)(found->past - found->column + space);
+    found->task.end = 0;
+    return markdown_core_attempt(tokenizer, &markdown_core_task_marker, markdown_core_state_of(S_item_found),
+                                 markdown_core_state_of(S_item_found), code);
+}
+
 static markdown_core_state S_item(markdown_core_tokenizer *tokenizer, int code) {
-    (void)code;
-    return S_item_at(tokenizer, markdown_core_column(tokenizer) - S_found(tokenizer)->past);
+    return S_item_at(tokenizer, markdown_core_column(tokenizer) - S_found(tokenizer)->past, code);
 }
 
 static markdown_core_state S_item_one(markdown_core_tokenizer *tokenizer, int code) {
-    (void)code;
-    return S_item_at(tokenizer, 1);
+    return S_item_at(tokenizer, 1, code);
 }
 
 static markdown_core_state S_padded(markdown_core_tokenizer *tokenizer, int code) {

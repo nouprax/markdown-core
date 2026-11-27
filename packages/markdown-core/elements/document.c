@@ -41,11 +41,11 @@ static void publish_document(const markdown_core_element_instance *self, markdow
  * document's properties. */
 static size_t read_document_prefix(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                    markdown_core_reader *reader) {
-    size_t fence = 0;
-    if (!markdown_core_properties_closed(self->state, parser, reader, self, &fence) || parser->error) {
+    size_t fence = 0, past = 0;
+    if (!markdown_core_properties_closed(self->state, parser, reader, self, &fence, &past) || parser->error) {
         return 0;
     }
-    return markdown_core_properties_parse(self->state, parser, reader, fence);
+    return markdown_core_properties_parse(self->state, parser, reader, fence, past);
 }
 
 static const markdown_core_edit_ops DOCUMENT_EDIT = {

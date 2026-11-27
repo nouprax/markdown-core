@@ -222,9 +222,9 @@ static int attach_label_node(const markdown_core_element *element, markdown_core
 }
 
 static int apply_parsed_directive(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                  markdown_core_node *node, markdown_core_reader *reader, parsed_directive *parsed) {
+                                  markdown_core_node *node, markdown_core_reader *reader, const unsigned char *data,
+                                  parsed_directive *parsed) {
     const markdown_core_element *element = self->element;
-    const unsigned char *data = markdown_core_reader_bytes(reader, 0);
     node_directive *directive = get_directive(node);
 
     if (!directive) {
@@ -554,7 +554,8 @@ static void S_block_open(markdown_core_compiler *compiler, const markdown_core_t
 
     markdown_core_node_set_element(node, self->element);
     node->opaque = markdown_core_alloc(1, sizeof(node_directive));
-    if (!node->opaque || !apply_parsed_directive(self, parser, node, reader, &found->parsed)) {
+    if (!node->opaque ||
+        !apply_parsed_directive(self, parser, node, reader, compiler->data + turn->base, &found->parsed)) {
         /* The suffix already validated; failure here is allocation loss.
          * The block is the parse's builder from its opening and goes with
          * the parse. */
@@ -568,7 +569,6 @@ static void S_block_open(markdown_core_compiler *compiler, const markdown_core_t
     if (directive->label) {
         markdown_core_block_settle_field(parser, directive->label, node);
     }
-    markdown_core_reader_advance(reader, markdown_core_reader_length(reader) - reader->offset, false);
     *turn->container = node;
     turn->opened = true;
 

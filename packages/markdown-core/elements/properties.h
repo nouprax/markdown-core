@@ -19,18 +19,19 @@ typedef struct {
  * a "---" line and closes at the next line that is "---", counting into
  * `work`. `closed` answers whether the
  * input opens with one that closes, with where the closing fence starts in
- * `*fence`; `parse` reads the envelope that closes at `fence` and answers
- * the bytes it takes. An envelope its text leaves open notes its opener
+ * `*fence` and where its line ending ends in `*past`; `parse` reads the
+ * envelope that closes at `fence` through `past` and answers the bytes it
+ * takes. An envelope its text leaves open notes its opener
  * for `owner` (blocks.c, AN OPENER READ TO THE END). */
 bool markdown_core_properties_closed(markdown_core_properties_work *work, markdown_core_parser *parser,
                                      markdown_core_reader *reader, const markdown_core_element_instance *owner,
-                                     size_t *fence);
+                                     size_t *fence, size_t *past);
 /* THE STOP LINES of the envelope's opener (element.h, `stops`): a line that
  * begins with "---", which takes in every fence. */
 bool markdown_core_properties_stops(const markdown_core_element_instance *self, const unsigned char *line,
                                     size_t length);
 size_t markdown_core_properties_parse(markdown_core_properties_work *work, markdown_core_parser *parser,
-                                      markdown_core_reader *reader, size_t fence);
+                                      markdown_core_reader *reader, size_t fence, size_t past);
 
 /* A PLACE of an envelope's payload, as the places' reader finds it: a
  * member's name, of slot kind FIELD, or one of its values, of slot kind

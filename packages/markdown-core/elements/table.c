@@ -600,35 +600,33 @@ static markdown_core_node *S_head_open(const markdown_core_element_instance *sel
     }
     markdown_core_block_settle(parser, table_header, node);
 
-    markdown_core_reader_end(reader);
-
     return node;
 }
 
 /* The cells a row writes past its table's width, from `start`, where its
  * last cell ends, to `end`, where its line's content ends: one field of no
  * slot kind, past the pipe after that cell, without the row's closing pipe
- * and the whitespace around them. */
+ * and the whitespace around them, read from the row's line, which its
+ * reading read whole. */
 static void S_extra_field(markdown_core_parser *parser, markdown_core_reader *reader, markdown_core_node *row,
-                          bufsize_t start, bufsize_t end) {
-    while (start < end && markdown_core_is_space_or_tab(markdown_core_reader_peek(reader, start))) {
+                          const unsigned char *line, bufsize_t start, bufsize_t end) {
+    while (start < end && markdown_core_is_space_or_tab(line[start])) {
         start++;
     }
-    if (start >= end || markdown_core_reader_peek(reader, start) != '|') {
+    if (start >= end || line[start] != '|') {
         return;
     }
     start++;
-    while (end > start && markdown_core_is_whitespace(markdown_core_reader_peek(reader, end - 1))) {
+    while (end > start && markdown_core_is_whitespace(line[end - 1])) {
         end--;
     }
-    if (end > start && markdown_core_reader_peek(reader, end - 1) == '|' &&
-        !(end - 1 > start && markdown_core_reader_peek(reader, end - 2) == '\\')) {
+    if (end > start && line[end - 1] == '|' && !(end - 1 > start && line[end - 2] == '\\')) {
         end--;
     }
-    while (start < end && markdown_core_is_space_or_tab(markdown_core_reader_peek(reader, start))) {
+    while (start < end && markdown_core_is_space_or_tab(line[start])) {
         start++;
     }
-    while (end > start && markdown_core_is_space_or_tab(markdown_core_reader_peek(reader, end - 1))) {
+    while (end > start && markdown_core_is_space_or_tab(line[end - 1])) {
         end--;
     }
     const markdown_core_field_to fields = {parser, row, NULL, reader, 0, NULL};
@@ -678,7 +676,7 @@ static markdown_core_node *S_row_open(const markdown_core_element_instance *self
 
         table->autocompleted_cells += (size_t)(table_columns - i);
         if (i == table_columns && past >= 0) {
-            S_extra_field(parser, reader, table_row_block, past, completed_at);
+            S_extra_field(parser, reader, table_row_block, compiler->data + base, past, completed_at);
         }
 
         /* AUTOCOMPLETED CELLS SIT WHERE THEY WERE COMPLETED (Q44, answered
@@ -704,7 +702,6 @@ static markdown_core_node *S_row_open(const markdown_core_element_instance *self
     }
 
     markdown_core_block_settle(parser, table_row_block, parent_container);
-    markdown_core_reader_end(reader);
 
     return parent_container;
 }

@@ -129,22 +129,74 @@ void markdown_core_block_attach_paragraph_identifier(markdown_core_block_identif
 
 /* THE IDENTIFIER LINE, read by the text opener (paragraph.c) on a line
  * that would open a paragraph in `parent`: an identifier alone on the line
- * names the block before it when the boundary follows it. The first part
- * reads the line and the block it would name (the owner, which the line
- * writes), and true when the boundary is what is left to read: the input
- * ends after the line (`*bounded`), or the next line, read by a look, is
- * blank. */
-bool markdown_core_block_identifier_line(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                         markdown_core_node *parent, markdown_core_reader *reader,
-                                         markdown_core_block_identifier_line_found *found, bool *bounded) {
-    markdown_core_block_identifier_work *work = self->state;
-    block_identifier candidate;
-    if (reader->indent >= CODE_INDENT || markdown_core_reader_peek(reader, reader->nonspace) != '#' ||
-        !S_scan_block_identifier(work, markdown_core_reader_rest(reader, reader->nonspace),
-                                 markdown_core_reader_length(reader) - reader->nonspace, &candidate) ||
-        !candidate.own_line || candidate.content_end) {
-        return false;
+ * names the block before it when the boundary follows it, the input's end
+ * or a blank line, which a look reads. The frame's words: the column the
+ * line's text starts at. */
+enum { IDENTIFIER_COLUMN };
+
+static markdown_core_block_identifier_line_found *S_line_found(markdown_core_tokenizer *tokenizer) {
+    return MARKDOWN_CORE_BLOCK_FOUND(markdown_core_block_turn_of(tokenizer)->start,
+                                     markdown_core_block_identifier_line_found);
+}
+
+static void S_line_count(markdown_core_tokenizer *tokenizer) {
+    const markdown_core_element_instance *self = markdown_core_self(tokenizer);
+    ((markdown_core_block_identifier_work *)self->state)->scan++;
+}
+
+static inline bufsize_t S_line_offset(const markdown_core_tokenizer *tokenizer) {
+    return (bufsize_t)(tokenizer->position - tokenizer->base);
+}
+
+static inline bool S_name_byte(int c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-';
+}
+
+static markdown_core_state S_line_after(markdown_core_tokenizer *tokenizer, int code) {
+    S_line_count(tokenizer);
+    if (markdown_core_code_space(code)) {
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_line_after);
     }
+    return markdown_core_code_ending(code) ? markdown_core_ok(tokenizer) : markdown_core_nok(tokenizer);
+}
+
+static markdown_core_state S_line_name(markdown_core_tokenizer *tokenizer, int code) {
+    S_line_count(tokenizer);
+    markdown_core_block_identifier_line_found *found = S_line_found(tokenizer);
+    if (S_name_byte(code)) {
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_line_name);
+    }
+    found->length = S_line_offset(tokenizer) - found->at;
+    if (code != '#' || !found->length) {
+        return markdown_core_nok(tokenizer);
+    }
+    markdown_core_consume(tokenizer);
+    return markdown_core_state_of(S_line_after);
+}
+
+static markdown_core_state S_line_open(markdown_core_tokenizer *tokenizer, int code) {
+    S_line_count(tokenizer);
+    if (code != '#' ||
+        markdown_core_column(tokenizer) - markdown_core_frame_local(tokenizer)[IDENTIFIER_COLUMN] >= CODE_INDENT) {
+        return markdown_core_nok(tokenizer);
+    }
+    markdown_core_consume(tokenizer);
+    S_line_found(tokenizer)->at = S_line_offset(tokenizer);
+    return markdown_core_state_of(S_line_name);
+}
+
+static markdown_core_state S_line_start(markdown_core_tokenizer *tokenizer, int code) {
+    markdown_core_frame_local(tokenizer)[IDENTIFIER_COLUMN] = markdown_core_column(tokenizer);
+    return markdown_core_spaces(tokenizer, markdown_core_state_of(S_line_open), 0, UINT32_MAX, code);
+}
+
+const markdown_core_construct markdown_core_identifier_line = {.start = S_line_start};
+
+bool markdown_core_block_identifier_owner(markdown_core_parser *parser, markdown_core_node *parent,
+                                          markdown_core_reader *reader,
+                                          markdown_core_block_identifier_line_found *found) {
     /* The line decides the block before it, which it names: one of the
      * kinds the paragraph's follows name (paragraph.c, PARAGRAPH_FOLLOWS). */
     markdown_core_node *owner = markdown_core_reader_last(reader, parser, parent);
@@ -154,25 +206,23 @@ bool markdown_core_block_identifier_line(const markdown_core_element_instance *s
         return false;
     }
     found->owner = owner;
-    found->identifier = candidate.identifier;
-    found->content_end = candidate.content_end;
     markdown_core_reader_write(reader, markdown_core_reader_last(reader, parser, parent));
-    *bounded = markdown_core_reader_byte(reader, parser, markdown_core_reader_after(reader, parser)) < 0;
     return true;
 }
 
 /* The identifier line names its owner: false when it could not. */
 bool markdown_core_block_identifier_line_attach(markdown_core_parser *parser, markdown_core_reader *reader,
+                                                const unsigned char *line,
                                                 const markdown_core_block_identifier_line_found *found) {
-    block_identifier candidate = {.identifier = found->identifier, .content_end = found->content_end, .own_line = true};
+    block_identifier candidate = {.identifier = {(unsigned char *)line + found->at, found->length, 0},
+                                  .own_line = true};
     markdown_core_node *owner = found->owner;
     if (!S_attach_block_identifier(parser, owner, &candidate)) {
         return false;
     }
     markdown_core_block_set_end_to_current_line(parser, owner);
     const markdown_core_field_to fields = {parser, owner, NULL, reader, 0, NULL};
-    const bufsize_t at = (bufsize_t)(candidate.identifier.data - markdown_core_reader_rest(reader, 0));
-    markdown_core_field_put(&fields, MARKDOWN_CORE_SLOT_ID, MARKDOWN_CORE_FIELD, at, at + candidate.identifier.len,
+    markdown_core_field_put(&fields, MARKDOWN_CORE_SLOT_ID, MARKDOWN_CORE_FIELD, found->at, found->at + found->length,
                             true);
     return true;
 }
