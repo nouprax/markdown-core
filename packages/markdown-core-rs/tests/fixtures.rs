@@ -2,10 +2,14 @@
 //! (`packages/markdown-core/tests/fixtures/*.txt`) must dump exactly as its
 //! reviewed expected block.
 //!
+//! An example listed in `tests/departures.txt`, where this parser follows
+//! the letter of the CommonMark spec and C does not, dumps as the entry
+//! there says instead.
+//!
 //! `FIXTURES_SHOW=N` prints the first N differences; `FIXTURES_ONLY=name`
 //! runs one fixture file; `FIXTURES_EXAMPLE=N` runs one example of it.
 
-use std::{env, fs, path::Path};
+use std::{collections::BTreeMap, env, fs, path::Path};
 
 struct Example {
     number: usize,
@@ -57,6 +61,36 @@ fn load(text: &str) -> Vec<Example> {
     examples
 }
 
+/// The expected dumps of `tests/departures.txt`, by fixture file and
+/// example number.
+fn departures() -> BTreeMap<(String, usize), String> {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/departures.txt");
+    let text = fs::read_to_string(path).expect("expected the departures");
+    let mut entries = BTreeMap::new();
+    let mut key: Option<(String, usize)> = None;
+    let mut expected: Option<String> = None;
+    for line in text.split('\n') {
+        if let Some(rest) = line.strip_prefix(FENCE) {
+            if let Some(rest) = rest.strip_prefix(" departure ") {
+                let (name, number) = rest.split_once(' ').expect("expected a file and a number");
+                key = Some((name.to_string(), number.parse().expect("expected a number")));
+            } else if let (Some(key), Some(expected)) = (key.take(), expected.take()) {
+                entries.insert(key, expected);
+            }
+        } else if key.is_some() {
+            match &mut expected {
+                Some(expected) => {
+                    expected.push_str(line);
+                    expected.push('\n');
+                }
+                None if line == "." => expected = Some(String::new()),
+                None => {}
+            }
+        }
+    }
+    entries
+}
+
 #[test]
 fn fixtures() {
     let directory = Path::new(env!("CARGO_MANIFEST_DIR")).join("../markdown-core/tests/fixtures");
@@ -80,6 +114,7 @@ fn fixtures() {
     let mut passed = 0;
     let mut shown = 0;
     let mut report = String::new();
+    let departures = departures();
     for name in &names {
         if let Some(filter) = &filter {
             if !name.starts_with(filter.as_str()) {
@@ -94,15 +129,26 @@ fn fixtures() {
                 continue;
             }
             file_total += 1;
+            let expected = match departures.get(&(name.clone(), case.number)) {
+                Some(entry) => {
+                    assert_ne!(
+                        entry, &case.expected,
+                        "{name} {}: the departure is stale",
+                        case.number
+                    );
+                    entry
+                }
+                None => &case.expected,
+            };
             let document = markdown_core::parse(&case.markdown);
             let actual = markdown_core::dump::dump(&document, &case.markdown);
-            if actual == case.expected {
+            if &actual == expected {
                 file_passed += 1;
             } else if shown < show {
                 shown += 1;
                 println!(
                     "--- {} example {} (line {})\n{}--- expected\n{}--- actual\n{}",
-                    name, case.number, case.line, case.markdown, case.expected, actual
+                    name, case.number, case.line, case.markdown, expected, actual
                 );
             }
         }

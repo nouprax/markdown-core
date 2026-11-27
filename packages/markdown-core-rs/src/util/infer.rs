@@ -12,7 +12,6 @@ use alloc::{vec, vec::Vec};
 /// is “loose”.
 pub fn list_loose(events: &[Event], mut index: usize, include_items: bool) -> bool {
     let mut balance = 0;
-    let mut ends_blank = false;
     let name = &events[index].name;
     debug_assert!(
         matches!(name, Name::ListOrdered | Name::ListUnordered),
@@ -25,17 +24,12 @@ pub fn list_loose(events: &[Event], mut index: usize, include_items: bool) -> bo
         if event.kind == Kind::Enter {
             balance += 1;
 
-            if include_items && balance == 2 && event.name == Name::ListItem {
-                // An item that ends with a blank line makes the list loose
-                // when another item follows.
-                if ends_blank {
-                    return true;
-                }
-                let (loose, blank) = list_item_loose(events, index);
-                if loose {
-                    return true;
-                }
-                ends_blank = blank;
+            if include_items
+                && balance == 2
+                && event.name == Name::ListItem
+                && list_item_loose(events, index)
+            {
+                return true;
             }
         } else {
             balance -= 1;
@@ -97,55 +91,50 @@ pub fn list_loose(events: &[Event], mut index: usize, include_items: bool) -> bo
     false
 }
 
-/// Figure out if an item is spread or not: a blank line after one of its
-/// blocks, with another block after it; and whether it ends with a blank
-/// line after a block.
-///
-/// A blank line belongs to the block before it. Definitions compile to no
-/// block, so they neither end with a blank line nor follow one:
-///
-/// ```markdown
-/// > | - a
-///   |
-///   |   [b]: c
-/// ```
-fn list_item_loose(events: &[Event], mut index: usize) -> (bool, bool) {
+/// Figure out if an item is spread or not.
+pub fn list_item_loose(events: &[Event], mut index: usize) -> bool {
     debug_assert!(
         matches!(events[index].name, Name::ListItem),
         "expected list item"
     );
     let mut balance = 0;
-    // Whether the last block before is one that compiles.
-    let mut after_block = false;
-    // Whether a blank line came after a block that compiles.
-    let mut blank = false;
 
     while index < events.len() {
         let event = &events[index];
 
         if event.kind == Kind::Enter {
             balance += 1;
-
-            if balance == 2 {
-                match event.name {
-                    Name::BlankLineEnding => blank = blank || after_block,
-                    Name::Definition => after_block = false,
-                    Name::ListItemPrefix
-                    | Name::BlockQuotePrefix
-                    | Name::SpaceOrTab
-                    | Name::LineEnding
-                    | Name::ListItemIndent
-                    | Name::FootnoteDefinitionIndent => {}
-                    _ => {
-                        if blank {
-                            return (true, false);
-                        }
-                        after_block = true;
-                    }
-                }
-            }
         } else {
             balance -= 1;
+
+            if balance == 1 && event.name == Name::BlankLineEnding {
+                // Blank line directly after a prefix:
+                //
+                // ```markdown
+                // > | -␊
+                //      ^
+                //   |   a
+                // ```
+                let mut at_prefix = false;
+
+                // List item.
+                let mut before = index - 2;
+
+                if matches!(
+                    events[before].name,
+                    Name::SpaceOrTab | Name::ListItemIndent | Name::FootnoteDefinitionIndent
+                ) {
+                    before -= 2;
+                }
+
+                if events[before].name == Name::ListItemPrefix {
+                    at_prefix = true;
+                }
+
+                if !at_prefix {
+                    return true;
+                }
+            }
 
             // Done.
             if balance == 0 && event.name == Name::ListItem {
@@ -156,7 +145,7 @@ fn list_item_loose(events: &[Event], mut index: usize) -> (bool, bool) {
         index += 1;
     }
 
-    (false, blank)
+    false
 }
 
 /// Figure out the alignment of a GFM table.
