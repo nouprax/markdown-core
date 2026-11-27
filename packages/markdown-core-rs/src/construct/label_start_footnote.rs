@@ -101,6 +101,9 @@ fn after(tokenizer: &mut Tokenizer) -> State {
             inactive: false,
         });
         tokenizer.register_resolver_before(ResolveName::Label);
+        // Unless the start makes a footnote call, its caret is text, where it
+        // may be attention.
+        tokenizer.register_resolver(ResolveName::Attention);
         State::Ok
     }
 }

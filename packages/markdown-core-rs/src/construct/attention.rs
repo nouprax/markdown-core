@@ -77,10 +77,12 @@
 //! [html-del]: https://html.spec.whatwg.org/multipage/edits.html#the-del-element
 
 use crate::choice::Starts;
-use crate::event::{Event, Kind, Name, Point};
+use crate::construct::text;
+use crate::event::{Content, Event, Kind, Name, Point};
+use crate::parser::ParseState;
 use crate::resolve::Name as ResolveName;
 use crate::state::{Name as StateName, State};
-use crate::subtokenize::Subresult;
+use crate::subtokenize::{feed, Subresult};
 use crate::tokenizer::Tokenizer;
 use crate::util::char::{
     after_index as char_after_index, before_index as char_before_index, class_opt,
@@ -421,22 +423,75 @@ fn flanks(flank: Flank, before: &CharacterKind, after: &CharacterKind) -> (bool,
     }
 }
 
-/// Count whitespace in the text of an event: data with a space, tab, or
-/// line ending, and line endings.
-fn spaces(tokenizer: &Tokenizer, index: usize) -> usize {
-    let event = &tokenizer.events[index];
+/// Whether the bytes in an event are not text: a resource or reference, or a
+/// token that owns a literal body.
+fn hides(name: Name) -> bool {
+    matches!(
+        name,
+        Name::Resource
+            | Name::Reference
+            | Name::CodeText
+            | Name::Formula
+            | Name::HtmlText
+            | Name::Comment
+            | Name::CrossLink
+    )
+}
+
+/// Count whitespace in the text of an event in `events`: data with a space,
+/// tab, or line ending, and line endings.
+/// A space after a backslash is not whitespace: it is how a word body holds
+/// one.
+/// The chunks of a nested field, such as a directive label, are text to be
+/// parsed: their whitespace is that of their own text.
+fn spaces(parse_state: &ParseState, events: &[Event], index: usize) -> usize {
+    let event = &events[index];
     match event.name {
         Name::LineEnding => 1,
+        _ if event.link.is_some() => {
+            let link = event.link.as_ref().expect("expected link");
+            if link.previous.is_some() || link.content != Content::Text {
+                return 0;
+            }
+            let mut field = Tokenizer::new(event.point.clone(), parse_state);
+            let state = feed(
+                &mut field,
+                events,
+                index,
+                State::Next(StateName::Text(text::Step::Start)),
+            );
+            field.flush(state, false);
+            text_spaces(parse_state, &field.events)
+        }
         Name::Data => {
-            let end = tokenizer.events[index + 1].point.index;
-            usize::from(
-                tokenizer.parse_state.bytes[event.point.index..end]
-                    .iter()
-                    .any(|byte| matches!(byte, b'\t' | b'\n' | b' ')),
-            )
+            let end = events[index + 1].point.index;
+            let bytes = &parse_state.bytes[event.point.index..end];
+            usize::from(bytes.iter().enumerate().any(|(at, byte)| match byte {
+                b'\t' | b'\n' => true,
+                b' ' => at == 0 || bytes[at - 1] != b'\\',
+                _ => false,
+            }))
         }
         _ => 0,
     }
+}
+
+/// Count whitespace in the text of `events`, past what [`hides`][] hides.
+fn text_spaces(parse_state: &ParseState, events: &[Event]) -> usize {
+    let mut hidden = 0;
+    let mut seen = 0;
+    for (index, event) in events.iter().enumerate() {
+        if hides(event.name) {
+            if event.kind == Kind::Enter {
+                hidden += 1;
+            } else {
+                hidden -= 1;
+            }
+        } else if hidden == 0 && event.kind == Kind::Enter {
+            seen += spaces(parse_state, events, index);
+        }
+    }
+    seen
 }
 
 /// Get sequences.
@@ -446,7 +501,7 @@ fn read_sequences(tokenizer: &mut Tokenizer) -> Vec<Sequence> {
     let mut stack = vec![];
     let mut sequences = vec![];
     let mut seen = 0;
-    // Inside a resource or reference, data is not text.
+    // Inside a resource, a reference, or a literal body, data is not text.
     let mut hidden = 0;
 
     while index < tokenizer.events.len() {
@@ -483,14 +538,14 @@ fn read_sequences(tokenizer: &mut Tokenizer) -> Vec<Sequence> {
                 });
             }
         } else if enter.kind == Kind::Enter {
-            if matches!(enter.name, Name::Resource | Name::Reference) {
+            if hides(enter.name) {
                 hidden += 1;
             } else if hidden == 0 {
-                seen += spaces(tokenizer, index);
+                seen += spaces(tokenizer.parse_state, &tokenizer.events, index);
             }
             stack.push(index);
         } else {
-            if matches!(enter.name, Name::Resource | Name::Reference) {
+            if hides(enter.name) {
                 hidden -= 1;
             }
             stack.pop();

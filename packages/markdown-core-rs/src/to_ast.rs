@@ -69,6 +69,9 @@ struct Compiler<'a> {
     item_paragraph: Option<usize>,
     /// The anchor that paragraph gives the list item.
     item_anchor: Option<String>,
+    /// How many superscripts and subscripts are around the content being
+    /// compiled, where `\ ` is a non-breaking space.
+    script: usize,
 }
 
 /// Text read in an inline content list and not yet a node.
@@ -127,6 +130,7 @@ impl<'a> Compiler<'a> {
             cell: false,
             item_paragraph: None,
             item_anchor: None,
+            script: 0,
         }
     }
 
@@ -1066,14 +1070,23 @@ impl<'a> Compiler<'a> {
         let mut hard = false;
         let mut line_start = true;
         let mut skip_ending = false;
+        // Where the data event just before ends, if one does.
+        let mut data_end = None;
         for index in self.children(from, to) {
             let name = self.name(index);
             let at_line_start = line_start;
             line_start = false;
+            let after_data = data_end.take();
             match name.role() {
                 Role::Space(Space::Whitespace) if at_line_start => {}
                 Role::Inline(Inline::Data) | Role::Space(Space::Whitespace) => {
-                    let literal = self.value(index);
+                    let mut literal = self.value(index);
+                    if self.script > 0 {
+                        self.script_spaces(index, after_data, &mut literal, &mut draft);
+                    }
+                    if name == Name::Data {
+                        data_end = Some(self.end(index));
+                    }
                     push_text(
                         &mut draft,
                         self.start(index),
@@ -1198,10 +1211,10 @@ impl<'a> Compiler<'a> {
                 content: self.part_content(index, Name::MarkText),
             },
             Inline::Subscript => Kind::Subscript {
-                content: self.part_content(index, Name::SubscriptText),
+                content: self.script_content(index, Name::SubscriptText),
             },
             Inline::Superscript => Kind::Superscript {
-                content: self.part_content(index, Name::SuperscriptText),
+                content: self.script_content(index, Name::SuperscriptText),
             },
             Inline::CodeText => Kind::Code {
                 literal: self.code(index, Name::CodeTextData),
@@ -1328,6 +1341,8 @@ impl<'a> Compiler<'a> {
                 }
             }
             Inline::Note => {
+                // A note is content of its own, in no script.
+                let script = core::mem::replace(&mut self.script, 0);
                 let text = self
                     .child(index, Name::Label)
                     .and_then(|label| self.child(label, Name::LabelText));
@@ -1338,6 +1353,7 @@ impl<'a> Compiler<'a> {
                     ),
                     None => (vec![], runs.clone()),
                 };
+                self.script = script;
                 let note = Node::new(
                     Kind::Footnote {
                         label: None,
@@ -1488,6 +1504,38 @@ impl<'a> Compiler<'a> {
             },
             self.runs(self.start(index), self.end(index)),
         )
+    }
+
+    /// In a superscript or subscript, the escaped spaces of the data or
+    /// whitespace event at `index`, whose `literal` is to follow `draft`, as
+    /// non-breaking spaces: a space after a backslash of data, which may end
+    /// the data event before, ending at `after_data`.
+    fn script_spaces(
+        &self,
+        index: usize,
+        after_data: Option<usize>,
+        literal: &mut String,
+        draft: &mut Option<Draft>,
+    ) {
+        let start = self.start(index);
+        if literal.starts_with(' ') && after_data == Some(start) {
+            if let Some(text) = draft.as_mut().filter(|text| text.literal.ends_with('\\')) {
+                text.literal.pop();
+                literal.replace_range(..1, "\u{a0}");
+            }
+        }
+        if self.name(index) == Name::Data {
+            *literal = literal.replace("\\ ", "\u{a0}");
+        }
+    }
+
+    /// The content of a superscript or subscript, where an escaped space is a
+    /// non-breaking space.
+    fn script_content(&mut self, index: usize, name: Name) -> Vec<Node> {
+        self.script += 1;
+        let content = self.part_content(index, name);
+        self.script -= 1;
+        content
     }
 
     fn part_content(&mut self, index: usize, name: Name) -> Vec<Node> {

@@ -566,13 +566,6 @@ fn done(tokenizer: &mut Tokenizer, end: usize) -> State {
         }
     }
 
-    // A bracketed span from a footnote start reads its caret as attention.
-    if label_start.kind == LabelKind::Span
-        && tokenizer.events[label_start.start.0].name == Name::FootnoteCallLabel
-    {
-        tokenizer.register_resolver(ResolveName::Attention);
-    }
-
     tokenizer.labels.pairs.push(Label {
         kind: label_start.kind,
         start: label_start.start,
@@ -940,18 +933,12 @@ fn insert_labels(tokenizer: &mut Tokenizer, labels: &[Label]) {
             Name::Link
         };
 
-        // If this is a fine link, which starts with a footnote start that did
-        // not match, we need to inject the caret as data.
+        // If this is a fine link or span, which starts with a footnote start
+        // that did not match, we need to inject the caret as text, where it
+        // may be attention.
         let mut caret = vec![];
         let start_name = tokenizer.events[label.start.0].name;
-        // A bracketed span from a footnote start reads its caret as text,
-        // where it may be attention.
         let span = label.kind == LabelKind::Span;
-        let caret_name = if span {
-            Name::AttentionSequence
-        } else {
-            Name::Data
-        };
 
         // A bracketed span from an image start leaves its `!` as text before
         // it.
@@ -985,14 +972,14 @@ fn insert_labels(tokenizer: &mut Tokenizer, labels: &[Label]) {
             // Add caret.
             caret.push(Event {
                 kind: Kind::Enter,
-                name: caret_name,
+                name: Name::AttentionSequence,
                 // Enter:GfmFootnoteCallMarker.
                 point: tokenizer.events[label.start.1 - 2].point.clone().clone(),
                 link: None,
             });
             caret.push(Event {
                 kind: Kind::Exit,
-                name: caret_name,
+                name: Name::AttentionSequence,
                 // Exit:GfmFootnoteCallMarker.
                 point: tokenizer.events[label.start.1 - 1].point.clone(),
                 link: None,
@@ -1091,24 +1078,46 @@ fn mark_as_data(tokenizer: &mut Tokenizer, events: &[LabelStart]) {
     while index < events.len() {
         let data_enter_index = events[index].start.0;
         let data_exit_index = events[index].start.1;
+        // The caret of a footnote start is text, where it may be attention.
+        let caret = tokenizer.events[data_enter_index].name == Name::FootnoteCallLabel;
+        let data_end = if caret {
+            data_exit_index - 2
+        } else {
+            data_exit_index
+        };
+        let mut list = vec![
+            Event {
+                kind: Kind::Enter,
+                name: Name::Data,
+                point: tokenizer.events[data_enter_index].point.clone(),
+                link: None,
+            },
+            Event {
+                kind: Kind::Exit,
+                name: Name::Data,
+                point: tokenizer.events[data_end].point.clone(),
+                link: None,
+            },
+        ];
+        if caret {
+            list.push(Event {
+                kind: Kind::Enter,
+                name: Name::AttentionSequence,
+                point: tokenizer.events[data_exit_index - 2].point.clone(),
+                link: None,
+            });
+            list.push(Event {
+                kind: Kind::Exit,
+                name: Name::AttentionSequence,
+                point: tokenizer.events[data_exit_index].point.clone(),
+                link: None,
+            });
+        }
 
         tokenizer.map.add(
             data_enter_index,
             data_exit_index - data_enter_index + 1,
-            vec![
-                Event {
-                    kind: Kind::Enter,
-                    name: Name::Data,
-                    point: tokenizer.events[data_enter_index].point.clone(),
-                    link: None,
-                },
-                Event {
-                    kind: Kind::Exit,
-                    name: Name::Data,
-                    point: tokenizer.events[data_exit_index].point.clone(),
-                    link: None,
-                },
-            ],
+            list,
         );
 
         index += 1;
