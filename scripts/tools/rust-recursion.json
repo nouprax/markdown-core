@@ -21,8 +21,8 @@
         },
         {
             "id": "ast-drop",
-            "status": "grown",
-            "why": "The drop glue of Node drops its children, one call per level of the tree.",
+            "status": "bounded",
+            "why": "Node's Drop moves what each child holds onto a heap list and leaves an empty shell, so the drop glue it calls drops shells that own no nodes: one level, whatever the tree's depth.",
             "functions": ["core::ptr::drop_glue::<markdown_core::ast::Node>"]
         },
         {

@@ -6,7 +6,6 @@
 //! A node's source is its [`Node::runs`]: byte ranges of the document source,
 //! in source order.
 
-use crate::util::stack::room;
 use alloc::{boxed::Box, string::String, vec, vec::Vec};
 
 /// A byte span of the document source.
@@ -33,12 +32,17 @@ pub struct Node {
     pub kind: Kind,
 }
 
-/// A tree drops a level at a time, with room on the stack for the levels
-/// under it: what a node holds is in its kind.
+/// A tree drops without recursion, whatever its depth: a node moves the
+/// kind of each node it owns that owns nodes onto a list on the heap,
+/// leaving a thematic break, which owns none, and each kind taken off the
+/// list does the same before it drops.
 impl Drop for Node {
     fn drop(&mut self) {
-        let kind = core::mem::replace(&mut self.kind, Kind::ThematicBreak);
-        room(move || drop(kind));
+        let mut left: Vec<Kind> = vec![];
+        self.kind.each_mut(|child| child.shed(&mut left));
+        while let Some(mut kind) = left.pop() {
+            kind.each_mut(|child| child.shed(&mut left));
+        }
     }
 }
 
@@ -142,14 +146,34 @@ impl Node {
     /// The nodes this node owns, mutably, in canonical walk order.
     pub fn owned_mut(&mut self) -> Vec<&mut Node> {
         let mut list: Vec<&mut Node> = vec![];
-        match &mut self.kind {
+        self.kind.each_mut(|node| list.push(node));
+        list
+    }
+
+    /// Move the node's kind onto `left` when it owns nodes, leaving a
+    /// thematic break.
+    fn shed(&mut self, left: &mut Vec<Kind>) {
+        let mut bare = true;
+        self.kind.each_mut(|_| bare = false);
+        if !bare {
+            left.push(core::mem::replace(&mut self.kind, Kind::ThematicBreak));
+        }
+    }
+}
+
+impl Kind {
+    /// Call `visit` on each node this node owns, in canonical walk order.
+    fn each_mut<'a>(&'a mut self, mut visit: impl FnMut(&'a mut Node)) {
+        match self {
             Kind::Document { metadata, content } => {
-                list.extend(metadata.iter_mut().map(|node| &mut **node));
-                list.extend(content);
+                if let Some(node) = metadata {
+                    visit(node);
+                }
+                content.iter_mut().for_each(visit);
             }
             Kind::Callout { title, content, .. } => {
-                list.extend(title.iter_mut().flatten());
-                list.extend(content);
+                title.iter_mut().flatten().for_each(&mut visit);
+                content.iter_mut().for_each(visit);
             }
             Kind::Paragraph { content }
             | Kind::Heading { content, .. }
@@ -166,23 +190,31 @@ impl Node {
             | Kind::Subscript { content }
             | Kind::Link { content, .. }
             | Kind::Embed { content, .. }
-            | Kind::Footnote { content, .. } => list.extend(content),
-            Kind::List { items, .. } => list.extend(items),
+            | Kind::Footnote { content, .. }
+            | Kind::List { items: content, .. }
+            | Kind::TableRow { cells: content }
+            | Kind::Cite { citations: content }
+            | Kind::DefinitionList {
+                definitions: content,
+            } => content.iter_mut().for_each(visit),
             Kind::Table { head, content, .. } => {
-                list.extend(head);
-                list.extend(content);
+                head.iter_mut().for_each(&mut visit);
+                content.iter_mut().for_each(visit);
             }
-            Kind::TableRow { cells } => list.extend(cells),
             Kind::DirectiveBlock { label, content, .. } => {
-                list.extend(label.iter_mut().map(|node| &mut **node));
-                list.extend(content);
+                if let Some(node) = label {
+                    visit(node);
+                }
+                content.iter_mut().for_each(visit);
             }
-            Kind::Directive { label, .. } => list.extend(label.iter_mut().map(|node| &mut **node)),
-            Kind::Cite { citations } => list.extend(citations),
-            Kind::DefinitionList { definitions } => list.extend(definitions),
+            Kind::Directive { label, .. } => {
+                if let Some(node) = label {
+                    visit(node);
+                }
+            }
             Kind::Definition { term, bodies, .. } => {
-                list.extend(term);
-                list.extend(bodies.iter_mut().flatten());
+                term.iter_mut().for_each(&mut visit);
+                bodies.iter_mut().flatten().for_each(visit);
             }
             Kind::Citation {
                 referent,
@@ -190,10 +222,10 @@ impl Node {
                 suffix,
             } => {
                 if let Referent::Footnote(Note::Inline(note)) = referent {
-                    list.push(note);
+                    visit(note);
                 }
-                list.extend(prefix);
-                list.extend(suffix);
+                prefix.iter_mut().for_each(&mut visit);
+                suffix.iter_mut().for_each(visit);
             }
             Kind::ThematicBreak
             | Kind::CodeBlock { .. }
@@ -212,7 +244,6 @@ impl Node {
             | Kind::Metadata { .. }
             | Kind::Reference { .. } => {}
         }
-        list
     }
 }
 

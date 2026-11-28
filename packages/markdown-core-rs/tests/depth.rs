@@ -95,3 +95,39 @@ fn indented_lists() {
         .collect();
     deep(source);
 }
+
+/// A tree deeper than any stack drops: each kind that owns nodes, in a
+/// chain 200 000 deep, on the small stack, whether or not the parser's
+/// stack growth is built in.
+#[test]
+fn drops() {
+    use markdown_core::ast::{Kind, Node, Span};
+    let shapes: [fn(Vec<Node>) -> Kind; 6] = [
+        |content| Kind::Emphasis { content },
+        |content| Kind::Paragraph { content },
+        |items| Kind::List {
+            flavor: markdown_core::ast::Flavor::Bullet,
+            start: None,
+            delimiter: None,
+            tight: true,
+            items,
+        },
+        |cells| Kind::TableRow { cells },
+        |citations| Kind::Cite { citations },
+        |definitions| Kind::DefinitionList { definitions },
+    ];
+    for shape in shapes {
+        thread::Builder::new()
+            .stack_size(256 * 1024)
+            .spawn(move || {
+                let mut node = Node::new(Kind::SoftBreak, vec![Span::new(0, 1)]);
+                for _ in 0..200_000 {
+                    node = Node::new(shape(vec![node]), vec![Span::new(0, 1)]);
+                }
+                drop(node);
+            })
+            .expect("expected a thread")
+            .join()
+            .expect("expected the drop not to overflow");
+    }
+}
