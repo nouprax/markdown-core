@@ -1618,3 +1618,37 @@ Document scope=1:1..3:10 anchor=null attributes={} children=2
     │   └── Text scope=3:8..3:8 anchor=null attributes={} literal="=" children=0
     └── Text scope=3:10..3:10 anchor=null attributes={} literal="*" children=0
 ````````````````````````````````
+
+An HTML comment's text is any not holding `-->` (CommonMark 6.6), so
+`<!----->` is a comment holding `-`; and `<!l>` after an unclosed
+comment opener is a declaration.
+
+```````````````````````````````` example
+a <!-----> b
+
+a <!--<!l> b
+.
+Document scope=1:1..3:12 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:12 anchor=null attributes={} children=1
+│   └── Text scope=1:1..1:12 anchor=null attributes={} literal="a <!-----> b" children=0
+└── Paragraph scope=3:1..3:12 anchor=null attributes={} children=1
+    └── Text scope=3:1..3:12 anchor=null attributes={} literal="a <!--<!l> b" children=0
+````````````````````````````````
+
+The `mailto:` and `xmpp:` before an address are spelled in lowercase.
+
+```````````````````````````````` example autolink
+Mailto:o@a.b XMPP:o@a.b mailto:o@a.b
+.
+Document scope=1:1..1:36 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:36 anchor=null attributes={} children=6
+    ├── Text scope=1:1..1:7 anchor=null attributes={} literal="Mailto:" children=0
+    ├── Link scope=1:8..1:12 anchor=null attributes={} dest=url("mailto:o@a.b") title=null children=1
+    │   └── Text scope=1:8..1:12 anchor=null attributes={} literal="o@a.b" children=0
+    ├── Text scope=1:13..1:18 anchor=null attributes={} literal=" XMPP:" children=0
+    ├── Link scope=1:19..1:23 anchor=null attributes={} dest=url("mailto:o@a.b") title=null children=1
+    │   └── Text scope=1:19..1:23 anchor=null attributes={} literal="o@a.b" children=0
+    ├── Text scope=1:24..1:24 anchor=null attributes={} literal=" " children=0
+    └── Link scope=1:25..1:36 anchor=null attributes={} dest=url("mailto:o@a.b") title=null children=1
+        └── Text scope=1:25..1:36 anchor=null attributes={} literal="mailto:o@a.b" children=0
+````````````````````````````````

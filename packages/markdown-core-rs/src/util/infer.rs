@@ -66,11 +66,23 @@ pub fn list_loose(events: &[Event], mut index: usize, include_items: bool) -> bo
                         before -= 2;
                     }
 
-                    if events[before].name == Name::BlockQuote
-                        && events[before - 1].name == Name::BlockQuotePrefix
+                    // A quote that holds only its prefix, or a container
+                    // directive only its opening fence, through the bare
+                    // containers in it.
+                    let mut at = before;
+                    while matches!(events[at].name, Name::BlockQuote | Name::DirectiveContainer)
+                        && events[at].kind == Kind::Exit
                     {
-                        at_bare_block_quote = true;
-                    } else if events[before].name == Name::ListItemPrefix {
+                        at -= 1;
+                        if matches!(
+                            events[at].name,
+                            Name::BlockQuotePrefix | Name::DirectiveContainerFence
+                        ) {
+                            at_bare_block_quote = true;
+                            break;
+                        }
+                    }
+                    if !at_bare_block_quote && events[before].name == Name::ListItemPrefix {
                         at_bare_list_item = true;
                     }
                 }

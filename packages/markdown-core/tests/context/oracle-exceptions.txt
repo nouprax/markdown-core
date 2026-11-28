@@ -24,3 +24,8 @@ generated:90303 missed Span.attributes # `:d[[\]]{.c}]`: the label holds a span
 generated:91303 slot dest CrossLink # `\` escapes the label's `]`
 generated:91503 slot dest CrossEmbed # `\` escapes the label's `]`
 generated:92803 slot dest CrossLink # `\` escapes the label's `]`
+
+# C pairs an attribute container's backtick with a later one as a code span
+# when it scans a braced key (a departure the Rust parser does not share),
+# so spelling into the container changes which backticks pair.
+dialect-citations.txt:1343 slot record Code # the container's backtick pairs with the key's

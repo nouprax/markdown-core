@@ -389,7 +389,8 @@ pub fn sections(
         .take_while(|pair| pair.end.1 > open)
         .map(|pair| (pair.start.0, pair.end.1))
         .collect();
-    nested.reverse();
+    // In the order they start: a pair closes before one around it does.
+    nested.sort_unstable();
     let mut list = Vec::new();
     let mut section = Section {
         content: None,
@@ -398,6 +399,9 @@ pub fn sections(
         after: None,
     };
     let mut next = 0;
+    // The brackets open in the bracket that no label closed, whose `;` are
+    // their own.
+    let mut depth = 0;
     let mut index = open + 1;
     while index < close {
         while next < nested.len() && nested[next].0 < index {
@@ -416,7 +420,7 @@ pub fn sections(
                 let to = events[exit].point.index;
                 for at in from..to {
                     match bytes[at] {
-                        b';' => {
+                        b';' if depth == 0 => {
                             list.push(section);
                             section = Section {
                                 content: None,
@@ -428,7 +432,10 @@ pub fn sections(
                         // A space after a backslash is content (a nonbreaking
                         // space in Pandoc).
                         b'\t' | b' ' if at == from || bytes[at - 1] != b'\\' => {}
-                        _ => {
+                        byte => {
+                            if byte == b']' && depth > 0 {
+                                depth -= 1;
+                            }
                             let start = if at == from {
                                 whole(index)
                             } else {
@@ -463,7 +470,17 @@ pub fn sections(
                     None => (whole(index), whole(exit + 1)),
                 });
             }
-            _ => extend(&mut section, whole(index), whole(exit + 1)),
+            name => {
+                if matches!(
+                    name,
+                    Name::LabelLink | Name::LabelImage | Name::LabelNote | Name::FootnoteCallLabel
+                ) {
+                    depth += 1;
+                } else if name == Name::LabelEnd && depth > 0 {
+                    depth -= 1;
+                }
+                extend(&mut section, whole(index), whole(exit + 1));
+            }
         }
         index = exit + 1;
     }

@@ -840,12 +840,12 @@ fn peek_protocol(bytes: &[u8], min: usize, end: usize) -> (usize, Name) {
             index -= 1;
         }
 
-        let slice = Slice::from_indices(bytes, index, end - 1);
-        let name = slice.as_str().to_ascii_lowercase();
+        // The protocol is spelled in lowercase, as cmark-gfm compares it.
+        let name = &bytes[index..end - 1];
 
-        if name == "xmpp" {
+        if name == b"xmpp" {
             return (index, Name::AutolinkLiteralXmpp);
-        } else if name == "mailto" {
+        } else if name == b"mailto" {
             return (index, Name::AutolinkLiteralMailto);
         }
     }

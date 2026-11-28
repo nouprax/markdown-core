@@ -457,3 +457,20 @@ Document scope=1:1..3:1 anchor=null attributes={} children=1
 Document scope=1:1..2:1 anchor=null attributes={} children=1
 └── DirectiveBlock scope=1:1..2:1 anchor=null attributes={} name="e" children=0
 ````````````````````````````````
+
+An item holding only a container's opening fence is no blank line between
+items, as one holding only a quote marker is not.
+
+```````````````````````````````` example
+- > :::e
+- b
+.
+Document scope=1:1..2:3 anchor=null attributes={} children=1
+└── List scope=1:1..2:3 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=2
+    ├── ListItem scope=1:1..1:8 anchor=null attributes={} status=null children=1
+    │   └── Callout scope=1:3..1:8 anchor=null attributes={} variant=null collapsed=null children=1
+    │       └── DirectiveBlock scope=1:5..1:8 anchor=null attributes={} name="e" children=0
+    └── ListItem scope=2:1..2:3 anchor=null attributes={} status=null children=1
+        └── Paragraph scope=2:3..2:3 anchor=null attributes={} children=1
+            └── Text scope=2:3..2:3 anchor=null attributes={} literal="b" children=0
+````````````````````````````````
