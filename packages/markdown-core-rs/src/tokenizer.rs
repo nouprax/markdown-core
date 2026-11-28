@@ -16,7 +16,7 @@ use crate::subtokenize::Subresult;
 use crate::util::stack::room;
 
 use crate::util::{constant::TAB_SIZE, edit_map::EditMap};
-use alloc::{boxed::Box, collections::BTreeMap, string::String, vec, vec::Vec};
+use std::collections::BTreeMap;
 
 /// Containers.
 ///

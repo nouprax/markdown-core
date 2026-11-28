@@ -79,7 +79,6 @@ use crate::state::{Name as StateName, State};
 use crate::subtokenize::Subresult;
 use crate::tokenizer::Tokenizer;
 use crate::util::{constant::TAB_SIZE, skip, slice::advance};
-use alloc::vec;
 
 /// Bytes this construct can start at.
 pub const STARTS: Starts = Starts::Bytes(b"\t -=");

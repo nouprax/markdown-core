@@ -3,7 +3,6 @@
 use crate::event::{Event, Kind, Point};
 use crate::tokenizer::continues;
 use crate::util::constant::TAB_SIZE;
-use alloc::{format, string::String, vec};
 use core::str;
 
 /// The point `index` is at, from `point` before it on its line.

@@ -51,7 +51,6 @@ use crate::tokenizer::{Label, LabelKind, Shut, Tokenizer};
 use crate::util::char::{after_index, before_index};
 use crate::util::classes::{classes, LETTER, NUMBER};
 use crate::util::slice::advance;
-use alloc::vec::Vec;
 
 /// Bytes this construct may start at.
 pub const STARTS: Starts = Starts::Bytes(b"-@");

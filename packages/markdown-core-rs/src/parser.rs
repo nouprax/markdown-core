@@ -5,7 +5,6 @@ use crate::event::{Event, Point};
 use crate::state::{Name as StateName, State};
 use crate::subtokenize::subtokenize;
 use crate::tokenizer::{Definitions, Tokenizer};
-use alloc::vec::Vec;
 
 /// Info needed, in all content types, when parsing markdown.
 ///

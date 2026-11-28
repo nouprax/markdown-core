@@ -18,13 +18,6 @@ use crate::util::{
     properties,
     slice::{Position, Slice},
 };
-use alloc::boxed::Box;
-use alloc::{
-    format,
-    string::{String, ToString},
-    vec,
-    vec::Vec,
-};
 use core::str;
 
 /// Build the document of `bytes` from its `events`.

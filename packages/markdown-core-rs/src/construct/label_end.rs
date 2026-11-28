@@ -192,7 +192,7 @@ use crate::util::{
     skip,
     slice::{Position, Slice},
 };
-use alloc::{collections::BTreeSet, string::String, vec, vec::Vec};
+use std::collections::BTreeSet;
 
 /// Bytes this construct can start at.
 pub const STARTS: Starts = Starts::Bytes(b"]");

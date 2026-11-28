@@ -22,7 +22,6 @@ use crate::state::{Name as StateName, State};
 use crate::subtokenize::feed;
 use crate::tokenizer::Tokenizer;
 use crate::util::edit_map::EditMap;
-use alloc::vec::Vec;
 
 /// Settle the tail of every heading in `events`, flow events whose text is not
 /// parsed yet.

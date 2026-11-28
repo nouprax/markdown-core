@@ -20,7 +20,6 @@
 //! shallower closes it; a value left out reads as an empty plain scalar.
 
 use crate::util::stack::room;
-use alloc::{vec, vec::Vec};
 
 /// The deepest nesting of collections, block and flow together.
 const DEPTH_MAX: usize = 1000;

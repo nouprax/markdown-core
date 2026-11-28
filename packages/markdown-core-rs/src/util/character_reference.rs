@@ -4,7 +4,6 @@ use crate::util::constant::{
     CHARACTER_REFERENCES, CHARACTER_REFERENCE_DECIMAL_SIZE_MAX,
     CHARACTER_REFERENCE_HEXADECIMAL_SIZE_MAX, CHARACTER_REFERENCE_NAMED_SIZE_MAX,
 };
-use alloc::string::String;
 use core::str;
 
 /// Decode named character references.

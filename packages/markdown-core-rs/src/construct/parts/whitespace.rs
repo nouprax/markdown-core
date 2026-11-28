@@ -63,7 +63,6 @@ use crate::util::{
     constant::HARD_BREAK_PREFIX_SIZE_MIN,
     slice::{Position, Slice},
 };
-use alloc::vec;
 
 /// Resolve whitespace.
 pub fn resolve_whitespace(tokenizer: &mut Tokenizer, hard_break: bool, trim_whole: bool) {

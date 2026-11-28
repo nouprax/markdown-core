@@ -29,7 +29,6 @@ use crate::resolve::Name as ResolveName;
 use crate::state::{Name as StateName, State};
 use crate::subtokenize::{subtokenize, Subresult};
 use crate::tokenizer::Tokenizer;
-use alloc::vec;
 
 /// Before a content chunk.
 ///

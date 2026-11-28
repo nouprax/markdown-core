@@ -2,7 +2,6 @@
 //! the Unicode 17 tables (`tables.rs`).
 
 use super::tables::{BLOCKS, FOLDS, FOLD_IMAGES, FOLD_LEAVES, FOLD_PAGES, PAGES};
-use alloc::string::String;
 
 pub const WHITESPACE: u8 = 1 << 0;
 pub const PUNCTUATION: u8 = 1 << 1;

@@ -96,9 +96,8 @@ fn indented_lists() {
     deep(source);
 }
 
-/// A tree deeper than any stack drops: each kind that owns nodes, in a
-/// chain 200 000 deep, on the small stack, whether or not the parser's
-/// stack growth is built in.
+/// A tree deeper than any stack drops, with no stack growth: each kind that
+/// owns nodes, in a chain 200 000 deep, on the small stack.
 #[test]
 fn drops() {
     use markdown_core::ast::{Kind, Node, Span};

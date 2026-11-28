@@ -71,7 +71,6 @@ use crate::state::{Name as StateName, State};
 use crate::subtokenize::Subresult;
 use crate::tokenizer::Tokenizer;
 use crate::util::constant::{HEADING_ATX_OPEN_FENCE_SIZE_MAX, TAB_SIZE};
-use alloc::{vec, vec::Vec};
 
 /// Bytes this construct can start at.
 pub const STARTS: Starts = Starts::Bytes(b"\t #");

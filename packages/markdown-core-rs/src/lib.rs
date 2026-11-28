@@ -4,16 +4,12 @@
 //! (`docs/specs/canonical-ast.json`), and [`dump::dump()`][] writes that AST
 //! in the canonical dump format.
 
-#![no_std]
 #![deny(clippy::pedantic)]
 #![allow(clippy::doc_link_with_quotes)]
 #![allow(clippy::missing_panics_doc)]
 #![allow(clippy::must_use_candidate)]
 #![allow(clippy::too_many_lines)]
 
-extern crate alloc;
-#[cfg(feature = "std")]
-extern crate std;
 mod ahead;
 pub mod ast;
 mod choice;
@@ -30,8 +26,6 @@ mod subtokenize;
 mod to_ast;
 mod tokenizer;
 mod util;
-
-use alloc::string::String;
 
 /// Parse `source` into the canonical AST.
 pub fn parse(source: &str) -> ast::Node {
@@ -60,7 +54,7 @@ pub fn events(source: &str) -> String {
             event.point.column,
             event.point.index,
             if event.point.vs > 0 {
-                alloc::format!("+{}", event.point.vs)
+                format!("+{}", event.point.vs)
             } else {
                 String::new()
             }

@@ -233,7 +233,6 @@ use crate::state::{Name as StateName, State};
 use crate::subtokenize::Subresult;
 use crate::tokenizer::Tokenizer;
 use crate::util::{constant::TAB_SIZE, skip::opt_back as skip_opt_back};
-use alloc::vec;
 
 /// Bytes this construct can start at.
 pub const STARTS: Starts = Starts::Any;

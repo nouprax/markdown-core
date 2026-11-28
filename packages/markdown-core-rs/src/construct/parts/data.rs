@@ -11,7 +11,6 @@ use crate::event::{Kind, Name};
 use crate::state::{Name as StateName, State};
 use crate::subtokenize::Subresult;
 use crate::tokenizer::Tokenizer;
-use alloc::vec;
 
 /// At beginning of data.
 ///

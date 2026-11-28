@@ -2397,7 +2397,6 @@ pub static CHARACTER_REFERENCES: [(&str, &str); 2125] = [
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloc::format;
 
     #[test]
     fn constants() {

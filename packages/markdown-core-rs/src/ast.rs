@@ -6,8 +6,6 @@
 //! A node's source is its [`Node::runs`]: byte ranges of the document source,
 //! in source order.
 
-use alloc::{boxed::Box, string::String, vec, vec::Vec};
-
 /// A byte span of the document source.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Span {

@@ -1,7 +1,6 @@
 //! Deal with bytes, chars, and kinds.
 
 use crate::util::classes::{classes, PUNCTUATION, SYMBOL, WHITESPACE};
-use alloc::string::String;
 
 /// Character kinds.
 #[derive(Debug, PartialEq, Eq)]

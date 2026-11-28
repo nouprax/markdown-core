@@ -9,10 +9,7 @@
 //! through another tokenizer and inject the result.
 
 use crate::event::Event;
-use alloc::{
-    collections::{BTreeMap, VecDeque},
-    vec::Vec,
-};
+use std::collections::{BTreeMap, VecDeque};
 
 /// Shift `previous` and `next` links according to `leaps`.
 ///

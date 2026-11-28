@@ -5,7 +5,6 @@ use crate::ast::{
     Note, Placement, Referent, Scalar, Span, Status, Value,
 };
 use crate::util::stack::room;
-use alloc::{format, string::String, vec::Vec};
 use core::fmt::Write;
 
 /// Dump `document`, parsed from `source`, as the canonical file tree.
@@ -26,7 +25,7 @@ struct Lines {
 
 impl Lines {
     fn new(bytes: &[u8]) -> Lines {
-        let mut starts = alloc::vec![0];
+        let mut starts = vec![0];
         let mut index = 0;
         while index < bytes.len() {
             match bytes[index] {
@@ -315,9 +314,9 @@ fn fields<'a>(line: &mut String, kind: &'a Kind) -> (usize, Vec<Row<'a>>) {
             line.push(']');
             (
                 head.len() + content.len(),
-                alloc::vec![
+                vec![
                     Row::Group("TableHead", head),
-                    Row::Group("TableBody", content)
+                    Row::Group("TableBody", content),
                 ],
             )
         }
@@ -412,7 +411,7 @@ fn fields<'a>(line: &mut String, kind: &'a Kind) -> (usize, Vec<Row<'a>>) {
             compact,
         } => {
             let _ = write!(line, " compact={compact}");
-            let mut entries = alloc::vec![Row::Group("DefinitionTerm", term)];
+            let mut entries = vec![Row::Group("DefinitionTerm", term)];
             entries.extend(bodies.iter().map(|body| Row::Group("DefinitionBody", body)));
             (bodies.len(), entries)
         }

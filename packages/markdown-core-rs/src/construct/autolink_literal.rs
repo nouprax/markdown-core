@@ -144,7 +144,6 @@ use crate::util::{
     classes::{classes, PUNCTUATION},
     slice::Slice,
 };
-use alloc::vec::Vec;
 
 /// Bytes the protocol kind (`https://a.b`) can start at.
 pub const PROTOCOL: Starts = Starts::Bytes(b"FHfh");

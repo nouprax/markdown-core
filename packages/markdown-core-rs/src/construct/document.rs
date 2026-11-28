@@ -18,7 +18,6 @@ use crate::state::{Name as StateName, State};
 use crate::subtokenize::divide_events;
 use crate::tokenizer::{Container, ContainerState, Tokenizer};
 use crate::util::skip;
-use alloc::{boxed::Box, vec::Vec};
 
 /// Containers, in the order a new one is tried.
 const CONTAINERS: [Container; 5] = [

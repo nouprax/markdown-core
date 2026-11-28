@@ -61,7 +61,6 @@ use crate::event::{Event, Name, Point};
 use crate::state::{Name as StateName, State};
 use crate::tokenizer::Tokenizer;
 use crate::util::slice::advance;
-use alloc::vec::Vec;
 
 /// Whether `byte` continues a name.
 fn name_byte(byte: Option<u8>) -> bool {

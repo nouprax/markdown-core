@@ -9,15 +9,11 @@
 //! Only with the `cover` feature, for the coverage tools in
 //! `scripts/correctness`.
 
-extern crate std;
-
 use crate::state::Name;
-use alloc::collections::{BTreeMap, BTreeSet};
-use alloc::string::String;
-use alloc::vec::Vec;
 use core::cell::RefCell;
 use core::fmt::{self, Write};
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
+use std::collections::{BTreeMap, BTreeSet};
 
 /// What coverage has seen: each step once, by name and in order, the step
 /// that ran last, the steps after steps, as indices into `steps`, and the

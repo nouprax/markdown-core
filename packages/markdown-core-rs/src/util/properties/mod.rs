@@ -15,7 +15,6 @@
 pub mod reader;
 
 use crate::ast::{Fields, Item, Scalar, Value};
-use alloc::{string::String, vec::Vec};
 use reader::{Event, Form, Kind};
 
 /// The field names the envelope reads, in the order of the dialect spec.

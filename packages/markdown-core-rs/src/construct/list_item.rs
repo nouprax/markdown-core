@@ -71,7 +71,6 @@ use crate::util::{
     constant::{LIST_ITEM_VALUE_SIZE_MAX, TAB_SIZE},
     skip,
 };
-use alloc::{vec, vec::Vec};
 
 /// Start of list item.
 ///

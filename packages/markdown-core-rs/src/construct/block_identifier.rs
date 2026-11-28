@@ -38,7 +38,6 @@ use crate::event::{Content, Event, Kind, Link, Name, Point};
 use crate::state::{Name as StateName, State};
 use crate::tokenizer::Tokenizer;
 use crate::util::{constant::TAB_SIZE, slice::advance};
-use alloc::{vec, vec::Vec};
 
 /// Bytes an identifier line can start at.
 pub const FLOW: Starts = Starts::Bytes(b"\t #");

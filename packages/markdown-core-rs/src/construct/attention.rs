@@ -88,7 +88,7 @@ use crate::util::char::{
     after_index as char_after_index, before_index as char_before_index, class_opt,
     Kind as CharacterKind,
 };
-use alloc::{collections::BTreeMap, vec, vec::Vec};
+use std::collections::BTreeMap;
 
 /// Bytes this construct can start at.
 pub const STARTS: Starts = Starts::Bytes(b"*+=^_~");

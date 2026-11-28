@@ -48,7 +48,6 @@ use crate::state::{Name as StateName, State};
 use crate::subtokenize::Subresult;
 use crate::tokenizer::{Container, Tokenizer};
 use crate::util::{constant::TAB_SIZE, skip};
-use alloc::{vec, vec::Vec};
 
 /// Start of a definition body.
 ///

@@ -4,7 +4,6 @@
 
 use crate::ast::Flow;
 use crate::event::{Event, Kind, Name};
-use alloc::{vec, vec::Vec};
 
 /// Figure out if a list is spread or not.
 ///
