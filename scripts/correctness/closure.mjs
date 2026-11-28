@@ -109,7 +109,9 @@ if (process.argv.includes("--resume") && existsSync(out)) {
     }
     crashes.push(...saved.crashes);
     ({ round: first, frontier, from } = saved.place);
-    console.log(`resumed round ${first} at ${from}/${frontier.length}: ${pool.length} inputs, ${reached.size} transitions`);
+    console.log(
+        `resumed round ${first} at ${from}/${frontier.length}: ${pool.length} inputs, ${reached.size} transitions`
+    );
 } else {
     const seeds = fixtures().slice(0, Number(flag("--seeds", "Infinity")));
     await each(seeds, (done) => done.forEach((result) => offer(result, undefined)));
