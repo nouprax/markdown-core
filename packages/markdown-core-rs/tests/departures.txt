@@ -273,3 +273,22 @@ Document scope=1:1..1:10 anchor=null attributes={} children=1
             ├── CitationPrefix children=0
             └── CitationSuffix children=0
 ````````````````````````````````
+
+```````````````````````````````` departure regression.txt 100
+No underscore may be in the last two segments of an extended autolink's valid
+domain (GFM 6.9), and `m_` and `c_` hold one; cmark-gfm links the text before
+the underscore and C follows cmark-gfm.
+.
+Document scope=1:1..1:22 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:22 anchor=null attributes={} children=1
+    └── Text scope=1:1..1:22 anchor=null attributes={} literal="www.m_ and http://m.c_" children=0
+````````````````````````````````
+
+```````````````````````````````` departure regression.txt 101
+A mailto autolink is `mailto:` followed by a valid email autolink (GFM 6.9),
+and `@.c` has no local part; cmark-gfm links it and C follows cmark-gfm.
+.
+Document scope=1:1..1:10 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:10 anchor=null attributes={} children=1
+    └── Text scope=1:1..1:10 anchor=null attributes={} literal="mailto:@.c" children=0
+````````````````````````````````

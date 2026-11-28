@@ -918,9 +918,8 @@ impl<'a> Compiler<'a> {
                 Name::BlankLineEnding if bodies.is_empty() => compact = false,
                 Name::DefinitionBody => {
                     // A body ends with its last line, the whitespace after
-                    // its marker included.
-                    // A blank line that follows, whitespace only, does
-                    // not take that whitespace away.
+                    // its marker included; a whitespace-only line after it
+                    // is not its own.
                     let (_, last) = self.last(child);
                     let inside = self.inside(child);
                     let marker = inside
@@ -930,11 +929,7 @@ impl<'a> Compiler<'a> {
                         .and_then(|at| inside.get(at + 1))
                         .filter(|space| self.name(**space) == Name::SpaceOrTab)
                         .map_or(last, |space| self.end(*space));
-                    let tail = inside
-                        .last()
-                        .filter(|last| self.name(**last) == Name::SpaceOrTab)
-                        .map_or(last, |space| self.end(*space));
-                    end = end.max(last).max(lead).max(tail);
+                    end = end.max(last).max(lead);
                     bodies.push(self.block_content(child));
                 }
                 _ => {}

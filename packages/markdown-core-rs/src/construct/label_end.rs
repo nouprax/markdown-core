@@ -449,7 +449,9 @@ fn cite(tokenizer: &mut Tokenizer, end: usize, tail: bool, defined: bool) -> Sta
         tokenizer.labels.starts[index].kind = LabelKind::Group;
         return State::Redo(StateName::LabelEnd(Step::Done { end }));
     }
-    let author = if tail && citation::tail(&sections) {
+    // A tail that begins with `^` is left to its own bracket syntax.
+    let caret = bytes.get(tokenizer.events[start.start.1].point.index) == Some(&b'^');
+    let author = if tail && !caret && citation::tail(&sections) {
         citation::author(&tokenizer.events, bytes, start.start.0)
     } else {
         None

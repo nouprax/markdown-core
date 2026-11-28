@@ -463,7 +463,8 @@ pub fn sections(
             }
             Name::LineEnding | Name::SpaceOrTab => {}
             // The first key is neither prefix nor suffix.
-            Name::CitationKey if section.key.is_none() => {
+            // A key in a bracket open in this one is not its own.
+            Name::CitationKey if section.key.is_none() && depth == 0 => {
                 section.key = Some(index);
                 section.content = Some(match section.content {
                     Some((first, _)) => (first, whole(exit + 1)),

@@ -1753,3 +1753,33 @@ Document scope=1:1..1:8 anchor=null attributes={} children=1
     └── Link scope=1:1..1:8 anchor=null attributes={} dest=url("xmpp:@.o") title=null children=1
         └── Text scope=1:1..1:8 anchor=null attributes={} literal="xmpp:@.o" children=0
 ````````````````````````````````
+
+```````````````````````````````` example autolink
+www.m_ and http://m.c_
+.
+Document scope=1:1..1:22 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:22 anchor=null attributes={} children=3
+    ├── Text scope=1:1..1:11 anchor=null attributes={} literal="www.m_ and " children=0
+    ├── Link scope=1:12..1:21 anchor=null attributes={} dest=url("http://m.c") title=null children=1
+    │   └── Text scope=1:12..1:21 anchor=null attributes={} literal="http://m.c" children=0
+    └── Text scope=1:22..1:22 anchor=null attributes={} literal="_" children=0
+````````````````````````````````
+
+```````````````````````````````` example autolink
+mailto:@.c
+.
+Document scope=1:1..1:10 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:10 anchor=null attributes={} children=1
+    └── Link scope=1:1..1:10 anchor=null attributes={} dest=url("mailto:@.c") title=null children=1
+        └── Text scope=1:1..1:10 anchor=null attributes={} literal="mailto:@.c" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+1.     e
+       l
+.
+Document scope=1:1..2:8 anchor=null attributes={} children=1
+└── List scope=1:1..2:8 anchor=null attributes={} flavor=ordered start=1 delimiter=period tight=true children=1
+    └── ListItem scope=1:1..2:8 anchor=null attributes={} status=null children=1
+        └── CodeBlock scope=1:8..2:0,2:4..2:8 anchor=null attributes={} info=null language=null literal="e\nl\n" fenced=false closed=true children=0
+````````````````````````````````

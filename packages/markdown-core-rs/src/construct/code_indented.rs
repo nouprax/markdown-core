@@ -150,15 +150,16 @@ fn after(tokenizer: &mut Tokenizer) -> State {
 ///   |     bbb
 /// ```
 fn further_start(tokenizer: &mut Tokenizer) -> State {
-    if tokenizer.lazy || tokenizer.pierce {
-        return State::Nok;
-    }
-
+    // Laziness and piercing are of the line the code would go on to, not
+    // of the one it ends: a container that opened on the code's first line
+    // does not stop it.
     if tokenizer.current == Some(b'\n') {
         tokenizer.enter(Name::LineEnding);
         tokenizer.consume();
         tokenizer.exit(Name::LineEnding);
         State::Next(StateName::CodeIndented(Step::FurtherStart))
+    } else if tokenizer.lazy || tokenizer.pierce {
+        State::Nok
     } else {
         tokenizer.attempt(
             State::Ok,
