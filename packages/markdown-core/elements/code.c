@@ -1,7 +1,6 @@
 #include "alloc.h"
 #include "code.h"
 #include "inline_internal.h"
-#include "parts.h"
 #include "attributes.h"
 
 /* The elements whose syntax this element asks: the attribute block a span
@@ -131,8 +130,6 @@ static markdown_core_node *handle_backticks(const markdown_core_element_instance
 
     if (endpos == 0) {                // not found
         inline_state->pos = startpos; // rewind
-        /* A run with no closer opens a code span once one follows. */
-        markdown_core_inline_open(inline_state, MARKDOWN_CORE_KIND_CODE, startpos - openticks.len, startpos, NULL, 0);
         /* The run stands as its own literal, so it covers ITS OWN BYTES:
          * `startpos` is one past the last of them and the run is
          * `openticks.len` long. Both offsets used to be `inline_state->pos`, one past
@@ -187,48 +184,6 @@ static void dispose_inline(const markdown_core_element_instance *self, markdown_
     markdown_core_backticks_free(markdown_core_run_state(inline_state, self));
 }
 
-/* THE PARTS OF A CODE SPAN (parts.h): its literal, the bytes between its
- * backtick runs less the one space S_normalize_code takes from each end,
- * and the attribute container after its closing run. */
-void markdown_core_code_parts(markdown_core_parts *parts) {
-    const unsigned char *s = parts->text;
-    const bufsize_t n = parts->length;
-    bufsize_t ticks = 0, at;
-    while (ticks < n && s[ticks] == '`') {
-        ticks++;
-    }
-    /* The closer is the first run of as many backticks. */
-    bufsize_t close = n;
-    for (at = ticks; at < n;) {
-        if (s[at] != '`') {
-            at++;
-            continue;
-        }
-        const bufsize_t run = at;
-        while (at < n && s[at] == '`') {
-            at++;
-        }
-        if (at - run == ticks) {
-            close = run;
-            break;
-        }
-    }
-    bufsize_t from = ticks, to = close;
-    bool space = false;
-    for (bufsize_t i = from; i < to && !space; i++) {
-        space = s[i] != ' ' && s[i] != '\n' && s[i] != '\r';
-    }
-    if (space && to - from >= 2 && (s[from] == ' ' || s[from] == '\n' || s[from] == '\r') &&
-        (s[to - 1] == ' ' || s[to - 1] == '\n' || s[to - 1] == '\r')) {
-        from += s[from] == '\r' && s[from + 1] == '\n' ? 2 : 1;
-        to -= s[to - 1] == '\n' && to - 2 >= from && s[to - 2] == '\r' ? 2 : 1;
-    }
-    markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_NONE, from, to);
-    if (close + ticks < n && s[close + ticks] == '{') {
-        markdown_core_attributes_parts(parts, close + ticks);
-    }
-}
-
 static const markdown_core_inline_ops CODE_INLINES = {
     .precedence = MARKDOWN_CORE_INLINE_TOKEN,
     .dispose = dispose_inline,
@@ -238,7 +193,6 @@ static const markdown_core_inline_ops CODE_INLINES = {
 };
 
 const markdown_core_facet MARKDOWN_CORE_CODE_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_CODE, .parts = markdown_core_code_parts},
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 

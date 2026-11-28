@@ -3,8 +3,7 @@
  * Node-kind generator.
  *
  * Two schemas define every node kind, and every table that enumerates kinds is
- * generated from them. The contract's slot kinds, the roles of the fields an
- * editor can complete, are generated from it beside the node kinds:
+ * generated from them:
  *
  * - `docs/specs/canonical-ast.json` is the public contract. Each kind's
  *   `ordinal` is its wire number: the value of `markdown_core_node_kind`, the
@@ -121,115 +120,8 @@ export function buildModel(contract, native) {
     }
     if (errors.length) throw new Error(errors.join("\n"));
 
-    const slots = slotModel(contract, errors);
-    if (errors.length) throw new Error(errors.join("\n"));
-
     const [block, inline] = classes;
-    return { kinds, block, inline, slots, count: Math.max(block.types.length, inline.types.length) + 1 };
-}
-
-/** Every field of the contract that can name slots, with where it is: each
- * kind's fields, the inherited fields and every value's fields, a branch's
- * included. A value's branches are a map of field lists or a list of branches
- * with their fields. */
-function contractFields(contract) {
-    const fields = [];
-    for (const kind of contract.kinds) {
-        for (const field of kind.fields) fields.push({ where: `${kind.name}.${field.name}`, kind: kind.name, field });
-    }
-    for (const field of contract.inheritedFields) fields.push({ where: `Markup.${field.name}`, any: true, field });
-    for (const [name, value] of Object.entries(contract.values)) {
-        const branches = Array.isArray(value.branches)
-            ? value.branches.map((branch) => [branch.name, branch.fields])
-            : Object.entries(value.branches ?? {});
-        for (const field of value.fields ?? []) fields.push({ where: `${name}.${field.name}`, value: name, field });
-        for (const [branch, list] of branches) {
-            for (const field of list) {
-                fields.push({ where: `${name}.${branch}.${field.name}`, value: name, branch, field });
-            }
-        }
-    }
-    return fields;
-}
-
-/** The value or kind a field's type names: `[Record]` and `Destination?` name
- * `Record` and `Destination`. */
-const named = (type) => type.replace(/[[\]?]/g, "");
-
-/**
- * The slot kinds, numbered by their ordinals, each with the fields whose source
- * holds one and the kinds that own them. A field of a kind is owned by its
- * kind; a field of a value by every kind that holds the value, through other
- * values too, or, in a branch the value's `holders` names, by the kinds it
- * lists, which hold the value; an inherited field by any kind. A slot kind is
- * one lowercase word without the letters g, j or y, and every one is a
- * field's.
- */
-function slotModel(contract, errors) {
-    const slots = [...(contract.slots ?? [])]
-        .map(({ name, ordinal, purpose }) => ({ name, ordinal, purpose, fields: [], owners: new Set(), any: false }))
-        .sort((a, b) => a.ordinal - b.ordinal);
-    slots.forEach((slot, index) => {
-        if (slot.ordinal !== index + 1) {
-            errors.push(
-                `${CONTRACT}: slot ordinals must run 1..${String(slots.length)} once each; ${slot.name} is ${String(slot.ordinal)}`
-            );
-        }
-        if (!/^[a-z]+$/.test(slot.name ?? "") || /[gjy]/.test(slot.name)) {
-            errors.push(`${CONTRACT}: slot ${String(slot.name)} is not one lowercase word without g, j or y`);
-        }
-    });
-    const byName = new Map(slots.map((slot) => [slot.name, slot]));
-    const fields = contractFields(contract);
-    const holders = (value, seen = new Set()) => {
-        if (seen.has(value)) return { kinds: [], any: false };
-        seen.add(value);
-        const result = { kinds: [], any: false };
-        for (const entry of fields.filter(({ field }) => named(field.type) === value)) {
-            if (entry.any) result.any = true;
-            else if (entry.kind) result.kinds.push(entry.kind);
-            else {
-                const held = holders(entry.value, seen);
-                result.kinds.push(...held.kinds);
-                result.any ||= held.any;
-            }
-        }
-        return result;
-    };
-    for (const entry of fields) {
-        for (const name of entry.field.slots ?? []) {
-            const slot = byName.get(name);
-            if (!slot) {
-                errors.push(`${CONTRACT}: ${entry.where} names the slot ${String(name)}, which is not a slot kind`);
-                continue;
-            }
-            slot.fields.push(entry.where);
-            const listed = entry.branch && contract.values[entry.value].holders?.[entry.branch];
-            const owners = entry.any
-                ? { kinds: [], any: true }
-                : entry.kind
-                  ? { kinds: [entry.kind], any: false }
-                  : listed
-                    ? { kinds: listed, any: false }
-                    : holders(entry.value);
-            owners.kinds.forEach((kind) => slot.owners.add(kind));
-            slot.any ||= owners.any;
-        }
-    }
-    for (const [name, value] of Object.entries(contract.values)) {
-        const held = holders(name).kinds;
-        for (const [branch, kinds] of Object.entries(value.holders ?? {})) {
-            for (const kind of kinds) {
-                if (!held.includes(kind)) {
-                    errors.push(`${CONTRACT}: ${name}.holders.${branch} names ${kind}, which holds no ${name}`);
-                }
-            }
-        }
-    }
-    for (const slot of slots) {
-        if (slot.fields.length === 0) errors.push(`${CONTRACT}: no field holds the slot ${slot.name}`);
-    }
-    return slots.map((slot) => ({ ...slot, owners: [...slot.owners] }));
+    return { kinds, block, inline, count: Math.max(block.types.length, inline.types.length) + 1 };
 }
 
 const begin = (name) => `/* BEGIN GENERATED ${name} by ${GENERATOR}; edit the node-kind schemas instead. */`;
@@ -326,23 +218,6 @@ function publicEnum({ kinds }) {
         "    MARKDOWN_CORE_KIND_NONE = 0,\n" +
         kinds.map((kind) => `    MARKDOWN_CORE_KIND_${screaming(kind.name)} = ${String(kind.ordinal)},`).join("\n") +
         "\n"
-    );
-}
-
-function publicSlotEnum({ slots }) {
-    return (
-        "    MARKDOWN_CORE_SLOT_NONE = 0,\n" +
-        slots.map((slot) => `    MARKDOWN_CORE_SLOT_${slot.name.toUpperCase()} = ${String(slot.ordinal)},`).join("\n") +
-        "\n"
-    );
-}
-
-function slotTables({ slots }) {
-    const names = ["none", ...slots.map((slot) => slot.name)].map((name) => `    "${name}",`).join("\n");
-    return (
-        "/* clang-format off */\n" +
-        `static const char *const S_slot_name[] = {\n${names}\n};\n` +
-        "/* clang-format on */\n"
     );
 }
 
@@ -446,7 +321,7 @@ function structureTables({ block, inline }) {
     );
 }
 
-function kotlin({ kinds, slots }) {
+function kotlin({ kinds }) {
     return (
         `// Generated by ${GENERATOR} from ${CONTRACT}; do not edit.\n` +
         "package com.nouprax.markdown.core\n\n" +
@@ -466,34 +341,11 @@ function kotlin({ kinds, slots }) {
         "        /** The kinds are numbered in declaration order from 1. */\n" +
         "        fun from(rawValue: Int): NodeKind = entries[rawValue - 1]\n" +
         "    }\n" +
-        "}\n\n" +
-        "/**\n" +
-        " * A slot's kind: the role of a field whose source holds a name, a key or a\n" +
-        " * path an editor can complete, as the contract's `slots` lists them. Its\n" +
-        " * ordinal there is the value of C's `markdown_core_slot_kind`.\n" +
-        " */\n" +
-        "public enum class SlotKind(\n" +
-        "    internal val rawValue: Int,\n" +
-        "    private val label: String,\n" +
-        ") {\n" +
-        slots
-            .map(
-                (slot) =>
-                    `    /** ${slot.purpose} */\n    ${screaming(slot.name)}(${String(slot.ordinal)}, "${slot.name}"),\n`
-            )
-            .join("\n") +
-        "    ;\n\n" +
-        "    /** The slot kind's name in the contract, as C's `markdown_core_slot_kind_name` answers it. */\n" +
-        "    override fun toString(): String = label\n\n" +
-        "    internal companion object {\n" +
-        "        /** The slot kinds are numbered in declaration order from 1. */\n" +
-        "        fun from(rawValue: Int): SlotKind = entries[rawValue - 1]\n" +
-        "    }\n" +
         "}\n"
     );
 }
 
-function es({ kinds, slots }) {
+function es({ kinds }) {
     const names = kinds.map((kind) => camel(kind.name));
     return (
         `// Generated by ${GENERATOR} from ${CONTRACT}; do not edit.\n` +
@@ -509,21 +361,7 @@ function es({ kinds, slots }) {
         "type Holds<Claim extends true> = Claim;\n\n" +
         "/** Fails to compile unless the wire kinds are exactly the Markup union's kinds, so every\n" +
         " * switch or mapped type exhaustive over one is exhaustive over the other. */\n" +
-        'export type NativeKindsAreMarkupKinds = Holds<Exactly<NativeKind, Markup["kind"]>>;\n\n' +
-        "/**\n" +
-        " * A slot's kind: the role of a field whose source holds a name, a key or a\n" +
-        " * path an editor can complete, as the contract's `slots` lists them:\n" +
-        slots
-            .map((slot) => ` * - \`"${slot.name}"\`: ${slot.purpose[0].toLowerCase()}${slot.purpose.slice(1)}\n`)
-            .join("") +
-        " */\n" +
-        "export type SlotKind =\n" +
-        slots.map((slot, index) => `    | "${slot.name}"${index === slots.length - 1 ? ";" : ""}`).join("\n") +
-        "\n\n" +
-        "/** Indexed by the ordinal of C's `markdown_core_slot_kind`. */\n" +
-        "export const slotKinds: readonly (SlotKind | null)[] = [\n" +
-        ["    null", ...slots.map((slot) => `    "${slot.name}"`)].join(",\n") +
-        "\n];\n"
+        'export type NativeKindsAreMarkupKinds = Holds<Exactly<NativeKind, Markup["kind"]>>;\n'
     );
 }
 
@@ -540,7 +378,7 @@ const SWIFT_KEYWORDS = new Set(
 /** A Swift identifier: a keyword such as `class` is written in backticks. */
 const swiftCase = (name) => (SWIFT_KEYWORDS.has(name) ? `\`${name}\`` : name);
 
-function swift({ kinds, slots }) {
+function swift({ kinds }) {
     return (
         `// Generated by ${GENERATOR} from ${CONTRACT}; do not edit.\n\n` +
         "/// A node's kind, as the canonical AST contract names it. The raw value is\n" +
@@ -560,28 +398,6 @@ function swift({ kinds, slots }) {
         "    /// The kind's name in the canonical AST, as C's\n" +
         "    /// `markdown_core_node_kind_name` answers it.\n" +
         "    public var description: String { Self.names[Int(rawValue) - 1] }\n" +
-        "}\n\n" +
-        "extension Slot {\n" +
-        "    /// A slot's kind: the role of a field whose source holds a name, a key or\n" +
-        "    /// a path an editor can complete, as the contract's `slots` lists them.\n" +
-        "    /// The raw value is the slot kind's ordinal there, which C's\n" +
-        "    /// `markdown_core_slot_kind` holds.\n" +
-        "    public enum Kind: Int32, Sendable, Hashable, CaseIterable, CustomStringConvertible {\n" +
-        slots
-            .map(
-                (slot) =>
-                    `        /// ${slot.purpose}\n        case ${swiftCase(slot.name)} = ${String(slot.ordinal)}\n`
-            )
-            .join("") +
-        "\n" +
-        "        /// Indexed by ordinal from 1.\n" +
-        "        private static let names = [\n" +
-        slots.map((slot) => `            "${slot.name}",\n`).join("") +
-        "        ]\n\n" +
-        "        /// The slot kind's name in the contract, as C's\n" +
-        "        /// `markdown_core_slot_kind_name` answers it.\n" +
-        "        public var description: String { Self.names[Int(rawValue) - 1] }\n" +
-        "    }\n" +
         "}\n"
     );
 }
@@ -598,11 +414,8 @@ export function outputs(model, readSource) {
     ];
     return new Map([
         edit(`${PACKAGE}/core/node_type.h`, { "node kinds": internalEnum(model) }),
-        edit(`${PACKAGE}/include/markdown_core.h`, {
-            "node kinds": publicEnum(model),
-            "slot kinds": publicSlotEnum(model)
-        }),
-        edit(`${PACKAGE}/elements/ast.c`, { "node kinds": facadeTables(model), "slot kinds": slotTables(model) }),
+        edit(`${PACKAGE}/include/markdown_core.h`, { "node kinds": publicEnum(model) }),
+        edit(`${PACKAGE}/elements/ast.c`, { "node kinds": facadeTables(model) }),
         edit(`${PACKAGE}/elements/core-elements.c`, { "node kinds": structureTables(model) }),
         edit(`${PACKAGE}/tests/support/test_support.h`, { "node kinds": testKindCount(model) }),
         [
@@ -638,8 +451,7 @@ function main() {
     console.log(
         check
             ? `Node-kind outputs are current: ${String(model.kinds.length)} public kinds, ` +
-                  `${String(model.block.types.length + model.inline.types.length)} native types, ` +
-                  `${String(model.slots.length)} slot kinds.`
+                  `${String(model.block.types.length + model.inline.types.length)} native types.`
             : "Node-kind outputs written."
     );
 }

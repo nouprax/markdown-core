@@ -5,7 +5,6 @@
 #include "node.h"
 #include "parser.h"
 #include "inline_internal.h"
-#include "parts.h"
 #include "attributes.h"
 
 /* The elements whose syntax this element asks, as `self->peers` holds
@@ -15,40 +14,6 @@ static const markdown_core_element *const CROSS_LINK_PEERS[] = {[CROSS_LINK_EMBE
                                                                 [CROSS_LINK_ATTRIBUTES] =
                                                                     &MARKDOWN_CORE_ELEMENT_ATTRIBUTES,
                                                                 NULL};
-
-/* How a cross link's target goes on past a cursor: its path up to the `#`
- * that starts its anchor, and its anchor, which may hold more parts, up to
- * the separator or the closer. Neither crosses a bracket or a line. */
-static bufsize_t target_end(const unsigned char *data, bufsize_t length, bool anchor) {
-    bufsize_t i = 0;
-    while (i < length && data[i] != '[' && data[i] != ']' && data[i] != '|' && data[i] != '\n' && data[i] != '\r' &&
-           !(data[i] == '\\' && i + 1 < length && data[i + 1] == '|') && (anchor || data[i] != '#')) {
-        i++;
-    }
-    return i;
-}
-static bufsize_t path_end(const unsigned char *data, bufsize_t length) { return target_end(data, length, false); }
-static bufsize_t anchor_end(const unsigned char *data, bufsize_t length) { return target_end(data, length, true); }
-
-/* The field a body the content's end cuts short reads, to the run's context
- * sink: the anchor after the first `#`, with the path before it, or else the
- * path; a body past its separator reads the label, which is no slot. */
-static void S_report(markdown_core_inline_state *inline_state, bool embed, bufsize_t start, bufsize_t body,
-                     bufsize_t hash, bufsize_t label) {
-    const markdown_core_node_kind kind = embed ? MARKDOWN_CORE_KIND_CROSS_EMBED : MARKDOWN_CORE_KIND_CROSS_LINK;
-    if (label >= 0) {
-        markdown_core_inline_open(inline_state, kind, start, body, NULL, 0);
-    } else if (hash >= 0) {
-        /* The anchor keeps a leading `^`: whether it marks a block identifier
-         * or starts a heading depends on the anchor's whole text, cursor on. */
-        const markdown_core_field anchor = {
-            MARKDOWN_CORE_SLOT_ANCHOR, kind, hash + 1, anchor_end, {{body, hash}}, 1, false, 0};
-        markdown_core_inline_open(inline_state, kind, start, body, &anchor, 1);
-    } else {
-        const markdown_core_field path = {MARKDOWN_CORE_SLOT_DEST, kind, body, path_end, {{0}}, 0, false, 0};
-        markdown_core_inline_open(inline_state, kind, start, body, &path, 1);
-    }
-}
 
 /* No speculative allocation and no cursor movement until recognition succeeds.
  * A candidate stops at the first bracket or line ending. Thus candidates cannot
@@ -88,11 +53,6 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
         if (c == ']') {
             if (i + 1 >= input->len) {
                 markdown_core_inline_state_saw_end(inline_state);
-                if (inline_state->context) {
-                    markdown_core_inline_open(inline_state,
-                                              embed ? MARKDOWN_CORE_KIND_CROSS_EMBED : MARKDOWN_CORE_KIND_CROSS_LINK,
-                                              start, body, NULL, 0);
-                }
             }
             if (i + 1 >= input->len || s[i + 1] != ']') {
                 return NULL;
@@ -139,9 +99,6 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
     /* A body the end cuts short may close once the input goes on. */
     if (i == input->len) {
         markdown_core_inline_state_saw_end(inline_state);
-        if (inline_state->context) {
-            S_report(inline_state, embed, start, body, hash, label);
-        }
     }
     if (i == input->len || target_end == body || part_empty) {
         return NULL;
@@ -192,8 +149,6 @@ static const markdown_core_inline_ops CROSS_LINK_INLINES = {
 };
 
 const markdown_core_facet MARKDOWN_CORE_CROSS_LINK_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_CROSS_LINK, .parts = markdown_core_cross_link_parts},
-    {.kind = MARKDOWN_CORE_KIND_CROSS_EMBED, .parts = markdown_core_cross_link_parts},
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 
@@ -210,57 +165,6 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_CROSS_LINK = {
  * the `^` of a block identifier, up to the separator, and the label after
  * the separator, up to an embed's last separator before its dimensions,
  * and the attribute block that may follow the `]]`. */
-/* The attribute block after the `]]` that closes at `close`. */
-static void S_tail_parts(markdown_core_parts *parts, bufsize_t close) {
-    if (close + 2 < parts->length && parts->text[close + 2] == '{') {
-        markdown_core_attributes_parts(parts, close + 2);
-    }
-}
-
-void markdown_core_cross_link_parts(markdown_core_parts *parts) {
-    const unsigned char *s = parts->text;
-    const bufsize_t n = parts->length;
-    const bool embed = markdown_core_node_get_kind(parts->node) == MARKDOWN_CORE_KIND_CROSS_EMBED;
-    const markdown_core_cross_reference *cross = markdown_core_node_cross_reference((markdown_core_node *)parts->node);
-    const bufsize_t body = embed ? 3 : 2;
-    /* No bracket stands before the closing `]]`. */
-    bufsize_t close = body;
-    while (close < n && s[close] != ']') {
-        close++;
-    }
-    bufsize_t target = body, hash = -1;
-    while (target < close && s[target] != '|' && !(s[target] == '\\' && target + 1 < close && s[target + 1] == '|')) {
-        hash = hash < 0 && s[target] == '#' ? target : hash;
-        target++;
-    }
-    markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_DEST, body, hash >= 0 ? hash : target);
-    if (hash >= 0) {
-        const bool block = s[hash + 1] == '^' && cross->anchor.value.len == target - hash - 2;
-        markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_ANCHOR, hash + 1 + block, target);
-    }
-    if (target >= close) {
-        S_tail_parts(parts, close);
-        return;
-    }
-    const bufsize_t label = target + (s[target] == '|' ? 1 : 2);
-    bufsize_t end = close;
-    if (embed && parts->node->as.cross_embed->dimensions.has_value) {
-        /* The dimensions follow the label's last separator, or are all of
-         * it. */
-        bufsize_t separator = -1;
-        for (bufsize_t at = label; at < close; at++) {
-            if (s[at] == '|' || (s[at] == '\\' && at + 1 < close && s[at + 1] == '|')) {
-                separator = at;
-                at += s[at] == '\\';
-            }
-        }
-        end = separator >= 0 ? separator : label;
-        const bufsize_t dimensions = separator < 0 ? label : separator + (s[separator] == '|' ? 1 : 2);
-        markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_NONE, dimensions, close);
-    }
-    markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_NONE, label, end);
-    S_tail_parts(parts, close);
-}
 
 /* A cross reference's parts (markdown_core_record_ops), which view its text
  * until it settles: both cross kinds hold one, a CrossEmbed's beside its

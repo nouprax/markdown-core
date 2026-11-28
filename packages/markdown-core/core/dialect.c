@@ -48,8 +48,7 @@ static bool S_finish_kind_indexable(markdown_core_node_type kind) {
 static bool S_owns_document_lifecycle(const markdown_core_element *element) {
     const markdown_core_document_ops *document = element->document;
     return document && document->init && document->read && document->publish && document->candidate &&
-           document->reopen && document->splice && MARKDOWN_CORE_NODE_TYPE_BLOCK_P(document->kind) &&
-           S_finish_kind_indexable(document->kind);
+           MARKDOWN_CORE_NODE_TYPE_BLOCK_P(document->kind) && S_finish_kind_indexable(document->kind);
 }
 
 /* The completion's hooks of an element that declares none (the Null Object
@@ -305,8 +304,6 @@ static bool S_inlines_implement(const markdown_core_inline_ops *inlines, markdow
         return inlines->dispose != NULL;
     case MARKDOWN_CORE_INLINE_HOOK_OPEN:
         return inlines->holds != NULL;
-    case MARKDOWN_CORE_INLINE_HOOK_REPORT:
-        return inlines->report != NULL;
     case MARKDOWN_CORE_INLINE_HOOK_OPENED:
         return inlines->opened != NULL;
     case MARKDOWN_CORE_INLINE_HOOK_SETTLED:
@@ -398,18 +395,12 @@ static void S_project_kinds(markdown_core_dialect *dialect) {
                 if (follow->closed) {
                     record->flags |= MARKDOWN_CORE_KIND_TRAILED;
                 }
-                /* At a line, which the engine asks no one at, the record keeps
-                 * the follower of a closed leader: an edit asks it which lines
-                 * write one (`writes`). */
-                if (follow->at != MARKDOWN_CORE_FOLLOW_LINE || follow->closed) {
+                /* At a line, which the engine asks no one at, the record
+                 * keeps no follower. */
+                if (follow->at != MARKDOWN_CORE_FOLLOW_LINE) {
                     record->follower[follow->at] = &dialect->instances[i];
                     record->follow[follow->at] = follow;
                 }
-            }
-            if (follow->makes != MARKDOWN_CORE_NODE_NONE) {
-                markdown_core_kind_record *record = &dialect->kinds[markdown_core_finish_kind_index(follow->makes)];
-                record->maker = &dialect->instances[i];
-                record->made = follow;
             }
         }
     }
@@ -419,13 +410,6 @@ static void S_project_kinds(markdown_core_dialect *dialect) {
         const markdown_core_fold_ops *fold = dialect->instances[i].element->fold;
         for (const markdown_core_node_type *kind = fold ? fold->kinds : NULL; kind && *kind; kind++) {
             dialect->kinds[markdown_core_block_kind_index(*kind)].flags |= MARKDOWN_CORE_KIND_FOLDS;
-        }
-        const markdown_core_edit_ops *edit = dialect->instances[i].element->edit;
-        for (const markdown_core_node_type *kind = edit ? edit->awaits : NULL; kind && *kind; kind++) {
-            dialect->kinds[markdown_core_block_kind_index(*kind)].flags |= MARKDOWN_CORE_KIND_AWAITS;
-        }
-        for (const markdown_core_node_type *kind = edit ? edit->joins : NULL; kind && *kind; kind++) {
-            dialect->kinds[markdown_core_block_kind_index(*kind)].flags |= MARKDOWN_CORE_KIND_JOINS;
         }
     }
     /* The out-of-table index answers nothing; the storage is zeroed. */

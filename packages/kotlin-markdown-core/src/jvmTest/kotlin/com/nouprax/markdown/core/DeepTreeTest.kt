@@ -59,43 +59,6 @@ class DeepTreeTest {
         assertEquals(leaf, retained.nodes.last())
     }
 
-    @Test
-    fun deepSessionDocumentsStayWithinASmallStack() {
-        for (depth in listOf(30_000, 65_536)) onSmallStack { deepSession(depth) }
-    }
-
-    /**
-     * The deep documents of a session (plan gates 4.8): the append that ends
-     * the deepest leaf publishes a document that compares, walks, locates and
-     * describes like a fresh one, and the previous document is released while
-     * the new one is alive.
-     */
-    private fun deepSession(depth: Int) {
-        MarkdownSession("- ".repeat(depth) + "lea").use { session ->
-            val (previous, appended) = append(session)
-            collect(previous)
-            val text = session.text
-            val visitor = NodeVisitor()
-            appended.walk(visitor)
-            assertEquals(depth * 2 + 3, visitor.nodes.size)
-            val leaf = assertIs<Text>(visitor.nodes.last())
-            assertEquals("lean", leaf.literal)
-            val column = depth * 2 + 1
-            assertEquals(listOf(Scope(Position(1, column), Position(1, column + 3))), appended.scope(leaf, text))
-            assertSame(leaf, appended.node(Position(1, column), text))
-            assertEquals("Document(id=1)", appended.toString())
-        }
-    }
-
-    /** Appends the end of the deepest leaf of [session]; the previous document is unreachable on return. */
-    private fun append(session: MarkdownSession): Pair<WeakReference<Document>, Document> {
-        val previous = session.document
-        val appended = session.append("n\n")
-        assertNotEquals(previous, appended)
-        assertEquals(previous.content.single().id, appended.content.single().id)
-        return WeakReference(previous) to appended
-    }
-
     /** Parses [source] and keeps only the list [levels] levels down; the document is unreachable on return. */
     private fun retain(
         source: String,

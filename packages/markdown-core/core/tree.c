@@ -3,10 +3,9 @@
 #include "alloc.h"
 
 /* THE NODES. A leaf holds its entries; an inner node its children, the
- * entries below each, the shift pending for each, the furthest end below
- * each when the entries have ends (`ends`), and a copy of the first entry
- * below each, in its own terms, which a shift pending for the child has
- * moved already, as it has the furthest end. Every node holds an entry, but the last leaf, which
+ * entries below each, the shift pending for each, and a copy of the first
+ * entry below each, in its own terms, which a shift pending for the child
+ * has moved already. Every node holds an entry, but the last leaf, which
  * an append may have just made. */
 typedef markdown_core_tree_leaf S_leaf;
 
@@ -18,7 +17,6 @@ typedef struct S_inner {
     void *children[MARKDOWN_CORE_TREE_FANOUT];
     size_t counts[MARKDOWN_CORE_TREE_FANOUT];
     int64_t shifts[MARKDOWN_CORE_TREE_FANOUT];
-    size_t ends[MARKDOWN_CORE_TREE_FANOUT];
     uint64_t keys[];
 } S_inner;
 
@@ -89,28 +87,8 @@ static void S_open(const markdown_core_tree *tree, S_inner *inner, uint32_t chil
     S_inner *node = inner->children[child];
     for (uint32_t i = 0; i < node->count; i++) {
         node->shifts[i] += delta;
-        node->ends[i] = (size_t)((int64_t)node->ends[i] + delta);
         tree->ops->shift(S_key(tree, node, i), delta);
     }
-}
-
-/* The furthest end below `node`, `height` levels above the leaves, or 0
- * for an empty leaf. */
-static size_t S_end(const markdown_core_tree *tree, const void *node, uint32_t height) {
-    size_t end = 0;
-    if (!height) {
-        const S_leaf *leaf = node;
-        for (uint32_t i = 0; i < leaf->count; i++) {
-            const size_t at = tree->ops->end(S_entry(tree, leaf, i));
-            end = at > end ? at : end;
-        }
-        return end;
-    }
-    const S_inner *inner = node;
-    for (uint32_t i = 0; i < inner->count; i++) {
-        end = inner->ends[i] > end ? inner->ends[i] : end;
-    }
-    return end;
 }
 
 /* The first entry below `node`, `level` levels above the leaves, or NULL
@@ -136,18 +114,6 @@ static void S_rekey(const markdown_core_tree *tree, const S_path *path) {
         if (child) {
             return;
         }
-    }
-}
-
-/* The furthest ends along `path`, from the leaf up, made again. */
-static void S_reend(const markdown_core_tree *tree, const S_path *path, uint32_t from) {
-    if (!tree->ops->end) {
-        return;
-    }
-    for (uint32_t level = from; level--;) {
-        S_inner *inner = path->nodes[level];
-        const uint32_t child = path->at[level];
-        inner->ends[child] = S_end(tree, inner->children[child], tree->levels - level - 1);
     }
 }
 
@@ -179,22 +145,12 @@ static void S_settle(markdown_core_tree *tree) {
     if (!tree->levels) {
         return;
     }
-    size_t end = 0;
-    if (tree->ops->end) {
-        for (uint32_t i = last->count - (uint32_t)added; i < last->count; i++) {
-            const size_t at = tree->ops->end(S_entry(tree, last, i));
-            end = at > end ? at : end;
-        }
-    }
     S_path path;
     void *node = tree->root;
     for (uint32_t level = 0; level < tree->levels; level++) {
         S_inner *inner = node;
         assert(!inner->shifts[inner->count - 1]);
         inner->counts[inner->count - 1] += added;
-        if (inner->ends[inner->count - 1] < end) {
-            inner->ends[inner->count - 1] = end;
-        }
         path.nodes[level] = inner;
         path.at[level] = inner->count - 1;
         node = inner->children[inner->count - 1];
@@ -380,82 +336,6 @@ size_t markdown_core_tree_seek(const markdown_core_tree *tree, const void *key) 
     return before + first;
 }
 
-/* The first rank of `low` up to `high` below `node`, `height` levels above
- * the leaves, `before` entries before it, whose entry ends past `place`, or
- * SIZE_MAX: a child goes unread when nothing below it ends past it. */
-static size_t S_past(markdown_core_tree *tree, void *node, uint32_t height, size_t before, size_t place, size_t low,
-                     size_t high) {
-    if (!height) {
-        S_leaf *leaf = node;
-        uint32_t i = low > before ? (uint32_t)(low - before) : 0;
-        const uint32_t last = high - before < leaf->count ? (uint32_t)(high - before) : leaf->count;
-        for (; i < last; i++) {
-            if (tree->ops->end(S_entry(tree, leaf, i)) > place) {
-                tree->seen = leaf;
-                tree->seen_first = before;
-                return before + i;
-            }
-        }
-        return SIZE_MAX;
-    }
-    S_inner *inner = node;
-    for (uint32_t i = 0; i < inner->count && before < high; before += inner->counts[i++]) {
-        if (before + inner->counts[i] <= low || inner->ends[i] <= place) {
-            continue;
-        }
-        S_open(tree, inner, i, height == 1);
-        const size_t found = S_past(tree, inner->children[i], height - 1, before, place, low, high);
-        if (found != SIZE_MAX) {
-            return found;
-        }
-    }
-    return SIZE_MAX;
-}
-
-size_t markdown_core_tree_past(const markdown_core_tree *tree, size_t place, size_t low, size_t high) {
-    assert(tree->ops->end);
-    markdown_core_tree *self = (markdown_core_tree *)tree;
-    if (!tree->root || low >= high) {
-        return high;
-    }
-    S_settle(self);
-    const size_t found = S_past(self, tree->root, tree->levels, 0, place, low, high);
-    S_spare(self);
-    return found < high ? found : high;
-}
-
-size_t markdown_core_tree_furthest(const markdown_core_tree *tree) {
-    assert(tree->ops->end);
-    if (!tree->root) {
-        return 0;
-    }
-    S_settle((markdown_core_tree *)tree);
-    return S_end(tree, tree->root, tree->levels);
-}
-
-void markdown_core_tree_raise(markdown_core_tree *tree, size_t index) {
-    assert(tree->ops->end && index < tree->count);
-    /* No level above, or an entry of the appends in place the next change
-     * counts above with its end as it is then. */
-    if (!tree->levels || index >= tree->count - tree->last->count + tree->last_held) {
-        return;
-    }
-    S_settle(tree);
-    S_path path;
-    S_descend(tree, index, &path);
-    const size_t end = tree->ops->end(S_entry(tree, path.leaf, index - path.before));
-    for (uint32_t level = tree->levels; level--;) {
-        S_inner *inner = path.nodes[level];
-        if (inner->ends[path.at[level]] >= end) {
-            break;
-        }
-        inner->ends[path.at[level]] = end;
-    }
-    tree->seen = path.leaf;
-    tree->seen_first = path.before;
-    S_spare(tree);
-}
-
 /* AN INSERTION goes down by rank, handing pending shifts down, into the
  * leaf, which splits when full, and each full node above it splits in turn
  * as it takes the new node after its child: the node keeps its first half
@@ -524,9 +404,6 @@ static void *S_put_in(markdown_core_tree *tree, void *node, uint32_t height, siz
     void *split = S_put_in(tree, inner->children[child], height - 1, index, put, &below);
     inner->counts[child] += 1 - below;
     memcpy(S_key(tree, inner, child), S_first(tree, inner->children[child], height - 1), size);
-    if (tree->ops->end) {
-        inner->ends[child] = S_end(tree, inner->children[child], height - 1);
-    }
     if (!split) {
         *made = 0;
         return NULL;
@@ -541,7 +418,6 @@ static void *S_put_in(markdown_core_tree *tree, void *node, uint32_t height, siz
         memcpy(right->children, &inner->children[half], right->count * sizeof(*inner->children));
         memcpy(right->counts, &inner->counts[half], right->count * sizeof(*inner->counts));
         memcpy(right->shifts, &inner->shifts[half], right->count * sizeof(*inner->shifts));
-        memcpy(right->ends, &inner->ends[half], right->count * sizeof(*inner->ends));
         memcpy(S_key(tree, right, 0), S_key(tree, inner, half), right->count * size);
         inner->count = half;
         right->parent = inner->parent;
@@ -557,13 +433,11 @@ static void *S_put_in(markdown_core_tree *tree, void *node, uint32_t height, siz
     memmove(&into->children[slot + 1], &into->children[slot], moved * sizeof(*into->children));
     memmove(&into->counts[slot + 1], &into->counts[slot], moved * sizeof(*into->counts));
     memmove(&into->shifts[slot + 1], &into->shifts[slot], moved * sizeof(*into->shifts));
-    memmove(&into->ends[slot + 1], &into->ends[slot], moved * sizeof(*into->ends));
     memmove(S_key(tree, into, slot + 1), S_key(tree, into, slot), moved * size);
     into->children[slot] = split;
     S_adopted(split, height - 1, into);
     into->counts[slot] = below;
     into->shifts[slot] = 0;
-    into->ends[slot] = tree->ops->end ? S_end(tree, split, height - 1) : 0;
     memcpy(S_key(tree, into, slot), S_first(tree, split, height - 1), size);
     into->count++;
     if (!right) {
@@ -612,8 +486,6 @@ static void S_raise(markdown_core_tree *tree, void *split, size_t made, S_inner 
     root->counts[0] = tree->count - made;
     root->counts[1] = made;
     root->shifts[0] = root->shifts[1] = 0;
-    root->ends[0] = tree->ops->end ? S_end(tree, old, tree->levels) : 0;
-    root->ends[1] = tree->ops->end ? S_end(tree, split, tree->levels) : 0;
     memcpy(S_key(tree, root, 0), S_first(tree, old, tree->levels), tree->ops->size);
     memcpy(S_key(tree, root, 1), S_first(tree, split, tree->levels), tree->ops->size);
     tree->root = root;
@@ -710,7 +582,6 @@ static void *S_attach(markdown_core_tree *tree, S_inner *inner, uint32_t height,
         S_adopted(split, height - 1, inner);
         inner->counts[inner->count] = 0;
         inner->shifts[inner->count] = 0;
-        inner->ends[inner->count] = 0;
         inner->count++;
         return NULL;
     }
@@ -721,7 +592,6 @@ static void *S_attach(markdown_core_tree *tree, S_inner *inner, uint32_t height,
     S_adopted(split, height - 1, right);
     right->counts[0] = 0;
     right->shifts[0] = 0;
-    right->ends[0] = 0;
     return right;
 }
 
@@ -782,8 +652,6 @@ void *markdown_core_tree_append(markdown_core_tree *tree) {
             root->counts[0] = tree->count;
             root->counts[1] = 0;
             root->shifts[0] = root->shifts[1] = 0;
-            root->ends[0] = tree->ops->end ? S_end(tree, tree->root, tree->levels) : 0;
-            root->ends[1] = 0;
             memcpy(S_key(tree, root, 0), S_first(tree, tree->root, tree->levels), tree->ops->size);
             tree->root = root;
             tree->levels++;
@@ -834,10 +702,8 @@ static void S_drop_leaf(markdown_core_tree *tree, const S_path *path) {
         memmove(&inner->children[child], &inner->children[child + 1], moved * sizeof(*inner->children));
         memmove(&inner->counts[child], &inner->counts[child + 1], moved * sizeof(*inner->counts));
         memmove(&inner->shifts[child], &inner->shifts[child + 1], moved * sizeof(*inner->shifts));
-        memmove(&inner->ends[child], &inner->ends[child + 1], moved * sizeof(*inner->ends));
         memmove(S_key(tree, inner, child), S_key(tree, inner, child + 1), moved * tree->ops->size);
         if (--inner->count) {
-            S_reend(tree, path, level);
             if (!child) {
                 for (uint32_t up = level; up--;) {
                     memcpy(S_key(tree, path->nodes[up], path->at[up]), S_key(tree, path->nodes[up + 1], 0),
@@ -871,22 +737,20 @@ void markdown_core_tree_cut(markdown_core_tree *tree, size_t index, size_t count
     if (index > lead && index + count == tree->count) {
         const uint32_t k = (uint32_t)(index - lead);
         const uint32_t held = tree->last_held > k ? tree->last_held - k : 0;
-        if (!held || !tree->ops->end) {
-            void *node = tree->root;
-            for (uint32_t level = 0; held && level < tree->levels; level++) {
-                S_inner *inner = node;
-                inner->counts[inner->count - 1] -= held;
-                node = inner->children[inner->count - 1];
-            }
-            last->count = k;
-            tree->last_held -= held;
-            tree->count -= count;
-            if (index < tree->front) {
-                tree->front = index;
-            }
-            S_spare(tree);
-            return;
+        void *node = tree->root;
+        for (uint32_t level = 0; held && level < tree->levels; level++) {
+            S_inner *inner = node;
+            inner->counts[inner->count - 1] -= held;
+            node = inner->children[inner->count - 1];
         }
+        last->count = k;
+        tree->last_held -= held;
+        tree->count -= count;
+        if (index < tree->front) {
+            tree->front = index;
+        }
+        S_spare(tree);
+        return;
     }
     /* A tree of one leaf: the entries go from the leaf alone, which stays,
      * empty or not, for the entries to come. */
@@ -932,7 +796,6 @@ void markdown_core_tree_cut(markdown_core_tree *tree, size_t index, size_t count
             if (!k) {
                 S_rekey(tree, &path);
             }
-            S_reend(tree, &path, tree->levels);
         }
         tree->last_held = tree->last ? tree->last->count : 0;
     }
@@ -940,35 +803,6 @@ void markdown_core_tree_cut(markdown_core_tree *tree, size_t index, size_t count
         tree->front -= tree->front - index < gone ? tree->front - index : gone;
     }
     tree->seen = (markdown_core_tree_leaf *)&markdown_core_tree_bare;
-    S_spare(tree);
-}
-
-void markdown_core_tree_shift(markdown_core_tree *tree, size_t index, int64_t delta) {
-    if (!delta || index >= tree->count) {
-        return;
-    }
-    S_settle(tree);
-    S_path path;
-    S_descend(tree, index, &path);
-    for (uint32_t level = 0; level < tree->levels; level++) {
-        S_inner *inner = path.nodes[level];
-        for (uint32_t i = path.at[level] + 1; i < inner->count; i++) {
-            inner->shifts[i] += delta;
-            inner->ends[i] = (size_t)((int64_t)inner->ends[i] + delta);
-            tree->ops->shift(S_key(tree, inner, i), delta);
-        }
-    }
-    S_leaf *leaf = path.leaf;
-    const uint32_t k = (uint32_t)(index - path.before);
-    for (uint32_t i = k; i < leaf->count; i++) {
-        tree->ops->shift(S_entry(tree, leaf, i), delta);
-    }
-    if (!k) {
-        S_rekey(tree, &path);
-    }
-    S_reend(tree, &path, tree->levels);
-    tree->seen = leaf;
-    tree->seen_first = path.before;
     S_spare(tree);
 }
 
@@ -991,11 +825,6 @@ void markdown_core_tree_read(const markdown_core_tree *tree, markdown_core_tree_
     if (delta) {
         tree->ops->shift(entry, delta);
     }
-}
-
-markdown_core_tree_handle markdown_core_tree_where(markdown_core_tree *tree, size_t index) {
-    (void)markdown_core_tree_find(tree, index);
-    return (markdown_core_tree_handle){tree->seen, (uint32_t)(index - tree->seen_first)};
 }
 
 size_t markdown_core_tree_rank(const markdown_core_tree *tree, markdown_core_tree_handle handle) {

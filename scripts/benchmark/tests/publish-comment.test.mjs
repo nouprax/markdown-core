@@ -7,14 +7,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parse } from "yaml";
-import {
-    attributeSection,
-    completionSection,
-    publish,
-    readArchive,
-    stageSection,
-    streamSection
-} from "../publish-comment.mjs";
+import { attributeSection, publish, readArchive, stageSection } from "../publish-comment.mjs";
 import { markdownReport } from "../run.mjs";
 
 const head = "a".repeat(40);
@@ -99,146 +92,6 @@ const attributes = () => ({
                 lexbor: { lists: 10, values: 30, ir: 120, dataReads: 60, dataWrites: 24 }
             }
         }
-    }
-});
-
-const streams = () => ({
-    schemaVersion: 8,
-    subjects: ["reparse", "session", "binding"],
-    editSubjects: ["reparse", "session"],
-    workloads: { version: "incremental-workloads-v4", set: "corpus", digest: "e".repeat(64), count: 3, edits: 2 },
-    baseline: { revision: "b".repeat(40) },
-    edits: [
-        {
-            name: "a.edits",
-            size: null,
-            scripts: [
-                { name: "typing-word", family: "typing", edits: 2, windows: [5, 7], session: { windows: [2, 3] } },
-                { name: "far", family: "far", edits: 1, windows: [9], session: { windows: [4] } }
-            ]
-        },
-        {
-            name: "prose-ascii-64k.edits",
-            size: 65536,
-            scripts: [
-                {
-                    name: "typing-word",
-                    family: "typing",
-                    edits: 64,
-                    windows: [30, 31, 32, 33],
-                    session: { windows: [10, 11, 12, 13] }
-                }
-            ]
-        }
-    ],
-    results: [
-        {
-            name: "a.tokens",
-            family: "tokens",
-            size: null,
-            steps: 2,
-            windows: [10, 20, 30],
-            session: { windows: [11, 20, 33] },
-            binding: { windows: [3, 5, 8] },
-            oneshot: { ir: 25 },
-            regressions: []
-        },
-        {
-            name: "b.tokens",
-            family: "tokens",
-            size: null,
-            steps: 1,
-            windows: [40, 40],
-            session: { windows: [40, 40] },
-            binding: { windows: [10, 10] },
-            oneshot: { ir: 35 },
-            regressions: [{ subject: "session", metric: "total", ratio: 1.03 }]
-        },
-        {
-            name: "prose-ascii-16k.rows",
-            family: "rows",
-            size: 16384,
-            steps: 4096,
-            windows: [7, 9],
-            session: null,
-            binding: null,
-            oneshot: { ir: 8 },
-            regressions: []
-        }
-    ]
-});
-
-test("the stream table reports the R, S and B columns by family and size, pooled over windows, and 6.4", () => {
-    const body = streamSection(streams());
-    assert.match(
-        body,
-        /\| Grammar corpus \| tokens \| {2}\| 2 \| 5 \| 30 \| 40 \| 40 \| 140 \| 33 \| 40 \| 40 \| 144 \| 1\.029× \| 1\.100× \| 60 \|/
-    );
-    assert.match(
-        body,
-        /\| Shapes \| rows \| 16,384 \| 1 \| 2 \| 7 \| 9 \| 9 \| 16 \| {2}\| {2}\| {2}\| {2}\| {2}\| {2}\| 8 \|/
-    );
-    assert.match(body, /\| Grammar corpus \| tokens \| {2}\| 8 \| 10 \| 10 \| 36 \| 0\.250× \|/);
-    assert.doesNotMatch(body, /\| Shapes \| rows \| 16,384 \| {2}\|/);
-    assert.match(body, /against `bbbbbbbbbbbb`\): \*\*2\/3 passed\*\*, 1 exceeded/);
-    assert.match(body, /\| Grammar corpus \| typing \| {2}\| 1 \| 2 \| 2 \| 5 \| 7 \| 7 \| 12 \| 2 \| 3 \| 3 \| 5 \|/);
-    assert.match(body, /\| Grammar corpus \| far \| {2}\| 1 \| 1 \| 1 \| 9 \| 9 \| 9 \| 9 \| 4 \| 4 \| 4 \| 4 \|/);
-    assert.match(
-        body,
-        /\| Shapes \| typing \| 65,536 \| 1 \| 64 \| 4 \| 31 \| 33 \| 33 \| 126 \| 11 \| 13 \| 13 \| 46 \|/
-    );
-    assert.match(body, /2 edit workloads/);
-    assert.doesNotMatch(body, /a\.tokens|a\.edits|typing-word|prose-ascii/);
-    const unbased = streams();
-    unbased.baseline = null;
-    unbased.results[1].regressions = [];
-    assert.doesNotMatch(streamSection(unbased), /passed/);
-    const local = streams();
-    local.results[2].session = { windows: [5, 6] };
-    assert.match(
-        streamSection(local),
-        /\| Shapes \| rows \| 16,384 \| 1 \| 2 \| 7 \| 9 \| 9 \| 16 \| 5 \| 6 \| 6 \| 11 \| {2}\| {2}\| 8 \|/
-    );
-    for (const mutate of [
-        (r) => (r.schemaVersion = 3),
-        (r) => (r.subjects = ["reparse", "session"]),
-        (r) => (r.workloads.count = 4),
-        (r) => (r.baseline.revision = "<b>"),
-        (r) => (r.baseline = null),
-        (r) => (r.results[0].family = "typing"),
-        (r) => (r.results[0].windows = [10, "20"]),
-        (r) => (r.results[0].windows = []),
-        (r) => (r.results[0].session.windows = [1, 2]),
-        (r) => (r.results[0].session = {}),
-        (r) => (r.results[0].binding = null),
-        (r) => (r.results[0].binding.windows = [1, 2]),
-        (r) => (r.results[0].binding.windows = [3, 5, 0.5]),
-        (r) => (r.results[2].binding = { windows: [1, 2] }),
-        (r) => (r.results[2].steps = 1024),
-        (r) => delete r.results[0].steps,
-        (r) => (r.results[1].regressions[0].subject = "binding"),
-        (r) => (r.results[2].size = -1),
-        (r) => (r.results[1].oneshot.ir = 1.5),
-        (r) => (r.results[1].regressions[0].metric = "<b>"),
-        (r) => (r.results[1].regressions[0].ratio = "1.03"),
-        (r) => delete r.results[0].regressions,
-        (r) => (r.editSubjects = ["reparse"]),
-        (r) => (r.workloads.edits = 3),
-        (r) => delete r.edits,
-        (r) => (r.edits[0].size = -1),
-        (r) => (r.edits[0].scripts = []),
-        (r) => (r.edits[0].scripts[0].family = "undo"),
-        (r) => (r.edits[0].scripts[0].windows = []),
-        (r) => (r.edits[0].scripts[0].windows = [5, "7"]),
-        (r) => delete r.edits[0].scripts[0].session,
-        (r) => (r.edits[0].scripts[0].session.windows = [2]),
-        (r) => (r.edits[0].scripts[1].session.windows = [0]),
-        (r) => (r.edits[0].scripts[1].edits = 0),
-        (r) => (r.edits[1].scripts[0].edits = 3)
-    ]) {
-        const report = streams();
-        mutate(report);
-        assert.throws(() => streamSection(report));
     }
 });
 
@@ -392,69 +245,6 @@ test("report projections reject corrupt counts, mismatched workloads and injecte
     assert.doesNotMatch(stageSection(untrusted, stageReport(100)), /@everyone/);
 });
 
-test("the completion table reports Ir per request by document size next to the proposed budget", () => {
-    const section = completionSection(completion());
-    assert.match(section, /^### Completion latency/);
-    assert.match(section, /\| Grammar corpus \| 1 ms \| 2 \| 9 \| 1 \| 40 \| 1,200 \| 1,500 \| 2,000 \| 900 \| 600 \|/);
-    assert.match(
-        section,
-        /\| Shapes, 256 KiB \| 10 ms \| 1 \| 4 \| 0 \| 16 \| 130,000 \| 270,000 \| 280,000 \| 160,000 \| 110,000 \|/
-    );
-    assert.match(section, /no gate/);
-    for (const mutate of [
-        (r) => {
-            r.schemaVersion = 2;
-        },
-        (r) => {
-            r.groups = [];
-        },
-        (r) => {
-            r.workloads.digest = "[click](https://example.com)";
-        },
-        (r) => {
-            r.workloads.count = 4;
-        },
-        (r) => {
-            r.groups[0].workloads = 3;
-        },
-        (r) => {
-            r.groups[1].size = 1048576;
-        },
-        (r) => {
-            r.groups[1].size = null;
-        },
-        (r) => {
-            r.groups[1].budget = 1;
-        },
-        (r) => {
-            r.groups[0].skipped = 10;
-        },
-        (r) => {
-            r.groups[0].requests = 0;
-        },
-        (r) => {
-            r.groups[0].ir.p95 = "1500";
-        },
-        (r) => {
-            r.groups[0].edit.p95 = 2000;
-        },
-        (r) => {
-            r.groups[1].complete.max = -1;
-        },
-        (r) => {
-            r.requests.most = "@everyone";
-        }
-    ]) {
-        const report = completion();
-        mutate(report);
-        assert.throws(() => completionSection(report));
-    }
-    const untrusted = completion();
-    untrusted.groups[0].key = "@everyone";
-    untrusted.costliest = [{ workload: "@everyone" }];
-    assert.doesNotMatch(completionSection(untrusted), /@everyone/);
-});
-
 test("archives read only fixed JSON members without extracting or executing files", (t) => {
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "benchmark-archive-test-"));
     t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
@@ -470,41 +260,6 @@ test("archives read only fixed JSON members without extracting or executing file
     fs.writeFileSync(path.join(cwd, "attributes.json"), "x".repeat(16 * 1024 * 1024 + 1));
     execFileSync("zip", ["-q", "report.zip", "attributes.json"], { cwd });
     assert.throws(() => readArchive(fs.readFileSync(path.join(cwd, "report.zip")), ["attributes.json"]));
-});
-
-const figures = (p50, p95, max, total) => ({ p50, p95, max, total });
-const completion = () => ({
-    schemaVersion: 1,
-    requests: { most: 8 },
-    workloads: { version: "incremental-workloads-v4", digest: "e".repeat(64), count: 3 },
-    groups: [
-        {
-            key: "grammar",
-            size: null,
-            budget: 1,
-            workloads: 2,
-            scripts: 9,
-            skipped: 1,
-            requests: 40,
-            ir: figures(1200, 1500, 2000, 52000),
-            edit: figures(700, 900, 1100, 30000),
-            complete: figures(500, 600, 900, 22000)
-        },
-        {
-            key: "shapes-262144",
-            size: 262144,
-            budget: 10,
-            workloads: 1,
-            scripts: 4,
-            skipped: 0,
-            requests: 16,
-            ir: figures(130000, 270000, 280000, 3000000),
-            edit: figures(80000, 160000, 165000, 1800000),
-            complete: figures(50000, 110000, 115000, 1200000)
-        }
-    ],
-    costliest: [],
-    results: [{ name: "a.edits" }, { name: "b.edits" }, { name: "prose-ascii-256k.edits" }]
 });
 
 function fixture() {
@@ -549,13 +304,7 @@ function fixture() {
             fingerprint: "f".repeat(64),
             validation: { required: true, sources: {} }
         },
-        artifacts: [
-            "benchmark-report-stages-1",
-            "benchmark-report-attributes-1",
-            "ci-inputs",
-            "benchmark-report-streams-1",
-            "benchmark-report-completion-1"
-        ].map((name, id) => ({
+        artifacts: ["benchmark-report-stages-1", "benchmark-report-attributes-1", "ci-inputs"].map((name, id) => ({
             id,
             name,
             expired: false,
@@ -563,9 +312,7 @@ function fixture() {
         })),
         jobs: [
             "Benchmark / Measure - parse stages against cmark",
-            "Benchmark / Measure - the attribute grammar against lexbor",
-            "Benchmark / Measure - streams",
-            "Benchmark / Measure - completion latency"
+            "Benchmark / Measure - the attribute grammar against lexbor"
         ].map((name) => ({ name, status: "completed", conclusion: "success", run_attempt: 1 }))
     };
     const snapshot = (run_id) => {
@@ -602,8 +349,6 @@ function fixture() {
             read: (bytes) => {
                 if (bytes.toString() === "102") return [state.inputs];
                 if (bytes.toString() === "2") return [state.original?.inputs ?? state.inputs];
-                if (bytes.toString() === "3") return [streams()];
-                if (bytes.toString() === "4") return [completion()];
                 return bytes.toString() === "0" ? [stageReport(112), stageReport(100)] : [attributes()];
             }
         });
@@ -1113,9 +858,7 @@ test("producer and publisher keep PR execution separate from write permissions",
 
     for (const [kind, members] of [
         ["stages", ["stages.json", "baseline/stages.json"]],
-        ["attributes", ["attributes.json"]],
-        ["streams", ["streams.json"]],
-        ["completion", ["completion.json"]]
+        ["attributes", ["attributes.json"]]
     ]) {
         const upload = producer.jobs[kind].steps.find(
             (step) => step.with?.name === `benchmark-report-${kind}-` + "${{ github.run_attempt }}"

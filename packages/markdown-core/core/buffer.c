@@ -149,59 +149,11 @@ void markdown_core_strbuf_free(markdown_core_strbuf *buf) {
     markdown_core_strbuf_init(buf, 0);
 }
 
-markdown_core_split *markdown_core_split_new(size_t room) {
-    markdown_core_split *split = markdown_core_realloc(NULL, sizeof(*split) + room + 1);
-    if (split) {
-        markdown_core_strbuf_init(&split->front, 0);
-        split->room = room;
-        split->size = 0;
-        split->bytes[room] = '\0';
-    }
-    return split;
-}
-
-markdown_core_split *markdown_core_split_grow(markdown_core_split *split, size_t room) {
-    assert(room >= split->size);
-    markdown_core_split *grown = markdown_core_realloc(NULL, sizeof(*grown) + room + 1);
-    if (!grown) {
-        return NULL;
-    }
-    grown->front = split->front;
-    grown->room = room;
-    grown->size = split->size;
-    memcpy(grown->bytes + room - split->size, markdown_core_split_back(split), split->size);
-    grown->bytes[room] = '\0';
-    markdown_core_free(split);
-    return grown;
-}
-
 void markdown_core_split_free(markdown_core_split *split) {
     if (split) {
         markdown_core_strbuf_free(&split->front);
         markdown_core_free(split);
     }
-}
-
-void markdown_core_strbuf_split_view(markdown_core_strbuf *buf, markdown_core_split *split) {
-    assert(!buf->split && !buf->oom);
-    const size_t size = (size_t)buf->size + split->size;
-    assert(size <= split->room);
-    split->front = *buf;
-    unsigned char *view = split->bytes + split->room - size;
-    if (buf->size) {
-        view[0] = buf->ptr[0];
-    }
-#ifndef NDEBUG
-    /* No reader reads the front's bytes past its first: the bytes before
-     * the back say so, should one. */
-    const size_t near = buf->size > 65 ? 64 : buf->size ? (size_t)buf->size - 1 : 0;
-    memset(markdown_core_split_back(split) - near, 0xFF, near);
-#endif
-    buf->ptr = view;
-    buf->asize = (bufsize_t)(split->room - size);
-    buf->size = (bufsize_t)size;
-    buf->ahead = 0;
-    buf->split = 1;
 }
 
 markdown_core_split *markdown_core_strbuf_split_take(markdown_core_strbuf *buf) {

@@ -1,8 +1,0 @@
-markdown-core incremental script 2
-script identity-paragraph-to-setext-and-back identity
-append 3d3d
-expect new Heading 0
-expect retired Paragraph 0
-append 78
-expect new Paragraph 0
-expect retired Heading 0

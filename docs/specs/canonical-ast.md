@@ -246,10 +246,8 @@ a `reference` destination resolves only to a `Reference`.
 `Document.metadata: Metadata?` holds ten named optional values defined by the
 [properties grammar](dialect/properties.md). Metadata is a leaf `Markup` node
 produced by the leading properties envelope. It receives ordinary visitor and
-walking callbacks. Its fields have no scopes of their own, but the field
-query reads each decoded member's name as a field of slot kind `field` and
-each of its values as one of slot kind `value`; absent fields differ from
-explicit null values.
+walking callbacks. Its fields have no scopes of their own; absent fields
+differ from explicit null values.
 
 ### Dimensions
 
@@ -425,48 +423,6 @@ row's end, and cells past the last column are dropped. A cell keeps its inline
 nodes directly. An authored empty cell is a `TableCell` with empty `content`.
 
 The [tables guide](dialect/tables.md) defines the source geometry.
-
-## Slots
-
-A slot is the source of a field that holds a name, a key or a path an editor
-can complete, read where the field is written. The contract's `slots` lists
-the slot kinds, each with its `ordinal`, which is its value in
-`markdown_core_slot_kind` and in every binding, so a new slot kind takes the
-next ordinal. A field's `slots` names the kinds of the slots its source
-writes, in source order: a URL destination writes its path, then its
-fragment, and a properties member its name, then its value.
-`scripts/tools/generate-node-kinds.mjs` generates every table that
-enumerates slot kinds from the contract, and C answers a kind's name through
-`markdown_core_slot_kind_name`.
-
-A slot's owner is the kind of the construct the field belongs to: the kind
-that has the field, or every kind that holds the value whose field it is,
-except where the value's `holders` names the kinds that hold one of its
-branches. A slot of an inherited field is one of every kind that writes the
-field, which is every attribute site and every block that takes a block
-identifier. A slot kind that several owners share means one role in each.
-
-| Slot | Fields |
-| --- | --- |
-| `dest` | `Destination.url.value`, `Destination.cross.path` |
-| `anchor` | `Destination.url.value`, `Destination.cross.anchor` |
-| `label` | `Reference.label`, `Destination.reference.label` |
-| `footnote` | `Footnote.label`, `FootnoteTarget.label.value` |
-| `bib` | `CitationReferent.bib.key` |
-| `name` | `DirectiveBlock.name`, `Directive.name`, `Topic.name` |
-| `id` | `Markup.anchor` |
-| `class` | `Attributes.classes` |
-| `record` | `Record.name` |
-| `variant` | `Callout.variant` |
-| `info` | `CodeBlock.info` |
-| `field` | `Metadata.name`, `Metadata.title`, `Metadata.subtitle`, `Metadata.time`, `Metadata.date`, `Metadata.authors`, `Metadata.keywords`, `Metadata.abstract`, `Metadata.state`, `Metadata.comment` |
-| `value` | `Metadata.name`, `Metadata.title`, `Metadata.subtitle`, `Metadata.time`, `Metadata.date`, `Metadata.authors`, `Metadata.keywords`, `Metadata.abstract`, `Metadata.state`, `Metadata.comment`, `Record.value` |
-
-A slot that declares a name, such as a definition's label or a node's `id`,
-and a slot that refers to one, such as a call's label or a destination's
-anchor, are both slots: the one completes from the names used and the other
-from the names declared. A field that holds free text, a number or a flag,
-such as a title, a cross link's label or a list's start, has no slot.
 
 ## Parsing
 

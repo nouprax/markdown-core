@@ -254,13 +254,6 @@ bool markdown_core_publish_keep_left(markdown_core_parser *parser, const markdow
                                      const markdown_core_node *holder, markdown_core_node *const *nodes, uint32_t count,
                                      uint32_t source);
 
-/* The committed definition `block` is, which an edit's reading reads again
- * as another kind (blocks.c, THE FORMER KIND), goes from the committed
- * tables now, while it still names its label, as the splice would let it
- * go (markdown_core_publish_splice): it stands first in their back. False
- * when storage could not be had. */
-bool markdown_core_publish_let_go(markdown_core_parser *parser, const markdown_core_node *block);
-
 /* THE COMMITTED TABLES (ast.c, THE DEFINITION TABLES A STREAMING PARSE
  * KEEPS): the definitions the published document holds as COMMITTED. Each
  * of the document's tables -- Footnotes, References -- in order
@@ -320,9 +313,6 @@ bool markdown_core_publish_withdraw(struct markdown_core_parser *parser, markdow
 bool markdown_core_publish_define(struct markdown_core_parser *parser, uint32_t table,
                                   const struct markdown_core_node *node, uint32_t start);
 void markdown_core_publish_release_committed(markdown_core_committed_tables *committed);
-/* The committed tables held in no more storage than they need, after a
- * reading of the whole text (markdown_core_parser_compact). */
-void markdown_core_publish_compact_committed(markdown_core_committed_tables *committed);
 
 /* A COMMITTED DEFINITION A PUBLISH LISTS as it walks: its table and its
  * entry there, which name the object the publish places once it is done. */
@@ -546,17 +536,6 @@ typedef struct markdown_core_stream {
     size_t request_ask;
     bool request_ends, requested;
     struct markdown_core_parser_mark *snapshot_mark;
-    /* THE EDIT the next publish follows (blocks.c, THE REOPEN): it replaced
-     * the old text from `edit_from` to `edit_to` and moved what follows by
-     * `edit_delta`; all zero for every other publish (ast.c, THE IMAGE OF AN
-     * OLD ANCHOR). */
-    uint32_t edit_from, edit_to;
-    int64_t edit_delta;
-    /* What the edits that read the parse again after its flush keep: a
-     * session's (markdown_core_parser_edits), which keeps the cuts, the
-     * headings' state and the old tail of each edit (THE SPLICE); NULL for
-     * a one-shot parse, which keeps none of them. */
-    struct markdown_core_edit *edit;
     /* THE SETTLE POINT (blocks.c). */
     markdown_core_settled settled;
     markdown_core_state_alignment candidate_room[];
@@ -612,376 +591,6 @@ typedef struct markdown_core_parser_at {
     size_t asks, step_asks;
 } markdown_core_parser_at;
 
-/* THE OLD TAIL OF AN EDIT (blocks.c, THE SPLICE): what the reopen took
- * from the flushed parse that the reading of the new text may take back
- * whole. The old root's children from the one the edit reads from on, in
- * order, which the records own (ast.c, THE RECORDS), and where the child
- * before them ended; the old lines from line `line` on; the definitions
- * below the
- * children, each with the index of its child among them as its `start`,
- * in the order the old document listed them; the old reading's place at
- * its flush, and where its text was complete. The edit replaced the old
- * text up to `to` and moved what follows by `delta`. `next` is the child
- * the reading tries next and `point` where its line starts in the new
- * text, SIZE_MAX once none is left. Once the reading took the children
- * from `next` on back, `resumed` is where, and `tail` the index of the
- * first among the root's children, whose leads move by `lead`; 0 when it
- * took none back. */
-struct markdown_core_folds;
-
-/* A USE OF A LABEL (markdown_core_edit, `uses`): where the inline root
- * whose completion looked the label up starts, and the lookup's kind and
- * label, as written, `size` bytes at `label` in the edit's `use_labels`. */
-typedef struct markdown_core_use {
-    uint32_t start, label, size;
-    markdown_core_roster_kind kind;
-} markdown_core_use;
-
-/* A use the uses' index holds (markdown_core_edit, `names`) has its `size`
- * this, and `label` the number of its note: its label's bytes went. */
-#define MARKDOWN_CORE_USE_NOTED UINT32_MAX
-
-/* A NAME THE USES' INDEX HOLDS: a lookup's kind and label as the roster
- * keys them, `size` bytes, and the first of the notes of the uses that
- * looked it up, `count` of them. */
-typedef struct markdown_core_use_name {
-    uint32_t first, count;
-    bufsize_t size;
-    unsigned char bytes[];
-} markdown_core_use_name;
-
-/* A NOTE OF A USE THE INDEX HOLDS: its name, where the use is in the
- * uses' tree (tree.h, a handle), and the notes before and after it of the
- * same name. */
-typedef struct markdown_core_use_note {
-    markdown_core_use_name *name;
-    markdown_core_tree_handle where;
-    uint32_t next, prior;
-} markdown_core_use_note;
-
-/* Where a block of an edit's chain (markdown_core_edit, `chain`) starts in
- * the old text, and where the last child of its FINAL prefix ends there,
- * or where it starts when it has none (ast.c, THE CHAIN'S RECORDS). */
-typedef struct markdown_core_chain_place {
-    uint32_t start, prior;
-} markdown_core_chain_place;
-
-/* AN OPENER READ TO THE END (blocks.c): `owner`'s, on the line that
- * starts at `start`; `aside` while an edit's reading reads the text again
- * from before it (THE SPLICE). */
-typedef struct markdown_core_unclosed {
-    const struct markdown_core_element_instance *owner;
-    uint32_t start;
-    bool aside;
-} markdown_core_unclosed;
-
-/* THE LEAP (blocks.c): an edit whose rest point is a later line of a block
- * of literal lines keeps the block's old content from that line on in the
- * back of `aside` (`cr` when it holds a carriage return; THE BACK OF A
- * PARAGRAPH), and the reading leaps
- * over the old lines past the edit while the block stays open, from the
- * line that starts at `at` of the new text, SIZE_MAX when it does not, to
- * the back's line `last` from the focus, the last of the block's whose
- * content it reads again. `next` is where the old child the reading tries
- * next starts its line (THE SPLICE). `blanks` when a block of the chain
- * above it keeps flags that a line sets (element.h, the lines' `speculative`).
- * `prose` when the block was a paragraph as the reading reopened it, whose
- * inline content it reads again whatever it becomes.
- *
- * THE SEAMS of that paragraph's inline content (blocks.c): the paragraph
- * `node`, whose id is `id`, as the last edit's reading completed it, and
- * the `seam_count` seams it found then, in order; `seam` the one the
- * reading takes its first children to, all zero for none, and `taken`
- * where its uses start in the uses' front. The
- * reading's parse of the content lists what may be seams in `settle`,
- * from the child `held` on, while `active`. */
-typedef struct {
-    /* Where it is in the content, the first child after it, how many of
-     * the paragraph's uses lie before it, and the line of the paragraph
-     * it starts, counted from its first; where the child before it ends in
-     * the text, past where the paragraph starts, as the content's places
-     * read it; and the place of the content's places that reads its last
-     * byte, and the content offset that place starts at. */
-    bufsize_t offset;
-    uint32_t index, uses, line, source, place, read;
-    /* How far before it the child before it ends in the content. */
-    uint32_t lead;
-    /* Whether it lies inside the content's last line, `base` bytes past
-     * where that line starts: a seam only an edit at the content's end
-     * keeps (blocks.c, THE SEAMS). */
-    bool inner;
-    uint32_t base;
-} markdown_core_seam;
-
-/* THE SEAMS a paragraph's parse may meet (blocks.c): the old seams past
- * the edit, `count` of them, the nearest last, each measured back from the
- * content's `end`; `met` once the parse stopped at the nearest, which no
- * note the parse made came before. */
-typedef struct markdown_core_seam_stops {
-    const markdown_core_seam *items;
-    size_t count;
-    bufsize_t end;
-    bool met;
-} markdown_core_seam_stops;
-
-typedef struct markdown_core_leap {
-    markdown_core_split *aside;
-    size_t at, next, last;
-    bool blanks, prose;
-    /* THE RUNS OF A SPLICE (blocks.c): the input line the block's reading
-     * began at, `top`; the first of the block's runs that does not end
-     * before it, `low`, where it starts, `low_start`, and the bytes of own
-     * source the runs before it hold, `low_own`; and the pin the last
-     * splice in a block left there, read by the next edit's reading, which
-     * finds those runs from it: the edit's `round`, the block, its runs and
-     * their count, the run, where it starts from the block's start, and the
-     * bytes before it. */
-    size_t top, low_start, low_own, round, pin_round, pin_start, pin_own;
-    uint32_t low, pin_index, pin_count;
-    const struct markdown_core_node *pin_node;
-    const struct markdown_core_runs *pin_list;
-    bool armed, active;
-    const struct markdown_core_node *node;
-    uint64_t id;
-    markdown_core_seam *seams;
-    size_t seam_count, seam_room;
-    markdown_core_seam seam;
-    uint32_t held;
-    size_t taken;
-    markdown_core_inline_settle settle;
-    /* THE OLD TAIL OF A PARAGRAPH (blocks.c): the seams past the edit, as
-     * stops measured back from where the paragraph's content, children,
-     * uses, lines, source and places ended (`ends`), the nearest last; the
-     * paragraph's old children past the seam, still in its storage, from
-     * `seam.index` up to `count`, while `kept`; the uses past its seam's
-     * the front still holds, `rest`; where the leap landed, `land` bytes
-     * before the old content's end, and where the new content had come to
-     * then, `landed`, while `lands`; once the parse met a stop, the child
-     * the old tail starts at, `tail`, and where the reading's children end
-     * among the paragraph's, `spliced`, which the publish walks to. */
-    markdown_core_seam *backs;
-    size_t back_count, back_room;
-    markdown_core_seam ends;
-    uint32_t count, tail, spliced;
-    size_t rest, land, landed, uses;
-    bool kept, lands;
-    markdown_core_seam_stops stops;
-    /* THE PREFIX OF A PARAGRAPH (blocks.c): the content marks the last
-     * reading of `node` read its content with, `marked` of them, which
-     * stand right after the identity run until the next reopen or look,
-     * their lines counted from `base`; and the places that read made, a
-     * copy, `places` NULL for none. The marks of the old content from the
-     * rest point's line on, which starts at content offset `cut` of the old
-     * content, wait in `marks`, `mark_count` of them, for the leap to take
-     * those of the lines it lands over back: the last `mark_count` of the
-     * `mark_room` at `marks`, each moved by `shift` (its content offset,
-     * line and source). `final` is the last of the marks as the reading
-     * left it, which the reopen finds them by. A paragraph that took the
-     * rest of the text back (THE SPLICE IN A PARAGRAPH) keeps the marks of
-     * its content's back there, `apart`, past the `apart_count` its map
-     * holds from `apart_first` (THE BACK OF A PARAGRAPH). */
-    markdown_core_line_mark final;
-    uint32_t marked;
-    int base;
-    markdown_core_places *places;
-    markdown_core_line_mark *marks;
-    size_t mark_count, mark_room;
-    markdown_core_line_mark shift;
-    bufsize_t cut, apart_first, apart_count;
-    bool apart;
-    /* THE PANE (blocks.c): a paragraph in a block that holds blocks, whose
-     * runs the splice wrote (THE RUNS OF A SPLICE), keeps them, `owed` its
-     * line places while it does; and its parse from a seam reads its content
-     * with places only of a pane of it, `pane`, while `paned`: from content
-     * offset `pane_from`, after one place that stands for the content
-     * before, up to `pane_to`, of the `pane_size` bytes the parse reads,
-     * the content marks `map` held before the read, from the mark
-     * `pane_mark` of them on, the last place ending at `pane_at`, its own
-     * source from the run `pane_run`, which starts at `pane_start`, on;
-     * `pane_end` once it holds the content's end and the runs after it. */
-    bool owed, paned, pane_end;
-    markdown_core_content_map map;
-    markdown_core_places *pane;
-    size_t pane_room, pane_mark, pane_start;
-    uint32_t pane_from, pane_to, pane_size, pane_at, pane_run;
-} markdown_core_leap;
-
-/* THE OLD TAIL IN PLACE (blocks.c, seam.h): a holder's old tail, `held`
- * children, stays in the holder's own storage from its child `start` on --
- * the first the reading writes -- and the reading writes its children over
- * it from there: the first `saved` of the old ones, each moved out as the
- * reading took its place, are in the edit's room for them from its entry
- * `base` on, and the rest still where they were. */
-typedef struct markdown_core_seam_tail {
-    uint32_t start, held, saved, base;
-} markdown_core_seam_tail;
-
-/* A block a reading gave the kind it read its lines as (blocks.c, THE
- * FORMER KIND): the block, NULL for none, and its kind and id before, as
- * the node the publish named, which it continues once its close or
- * completion makes it of that kind again. */
-typedef struct markdown_core_revert {
-    struct markdown_core_node *node;
-    uint64_t id;
-    uint16_t kind;
-    /* What the element's `revert` kept for its `redo` (element.h). */
-    uint32_t kept;
-} markdown_core_revert;
-
-typedef struct markdown_core_edit {
-    /* The dialect's roster spaces by kind (dialect.h, `spaces`), which say
-     * how the index keys a use's label. */
-    const markdown_core_space *const *spaces;
-    /* The root's old tail (THE OLD TAIL IN PLACE), its `start` the root's
-     * child the reading began at, and its room `children`, which has room
-     * for all of it (markdown_core_edit_old). */
-    markdown_core_seam_tail root;
-    struct markdown_core_node **children;
-    size_t children_capacity;
-    /* Where the child before the old tail ends, and where the child before
-     * `next` does, in the old text: the old children are measured from
-     * there by their extents, as nothing moves their places (THE SPLICE). */
-    uint32_t count, next, tail, prior, before;
-    /* THE NESTED REOPEN (blocks.c): the `depth` blocks below the root the
-     * reading reopened, the root's child first, each the last child of the
-     * one before; `path` holds where each is among its holder's children,
-     * and past them where the deepest's first child that goes was. */
-    struct markdown_core_node **chain;
-    uint32_t *path;
-    markdown_core_chain_place *places;
-    size_t depth, chain_capacity;
-    /* THE NESTED SPLICE (blocks.c): for each block of the chain, where it
-     * ended in the old text (`ends`), its flags there (`states`), its
-     * record in the publish's (`owners`, ast.c), where the children the
-     * reading took back begin among its own (`tails`), UINT32_MAX when it
-     * took none, its old tail (`levels`), whose `start` is how many
-     * children it keeps, and the fold marks
-     * of its children (`folds`), or NULL. `shift` is what the lead of the
-     * first it took back moves by. `closes` is where the old close of
-     * each ended, 0 when its block's close did not read past the rest
-     * point (node.h, `closed`).
-     *
-     * THE OLD NESTED TAIL IN PLACE (blocks.c): each block of the chain
-     * holds its old tail in its own storage as the root does (THE OLD TAIL
-     * IN PLACE), its room `nested`, which has room for all of them,
-     * `nest_count`, numbered in
-     * the order of the text, the deepest block's first. The reading tries
-     * them in that order: the next is the old child `nest_index` of the
-     * block `nest_level`, the one before it ended at `nest_prior` in the old
-     * text, and `nest_on` is false once it tried them all. `taken` is the
-     * number of the first it took back, SIZE_MAX when it took none, and
-     * `level` its block. The first `nest_recorded` have records (ast.c,
-     * record_nest); those past them up to the first taken back the parse
-     * lets go when it fails. */
-    uint32_t *ends, *states, *owners, *tails, *closes, *bases;
-    markdown_core_seam_tail *levels;
-    struct markdown_core_folds **folds;
-    struct markdown_core_node **nested;
-    size_t nested_capacity, taken, level, nest_level;
-    uint32_t nest_count, nest_index, nest_prior, nest_recorded;
-    uint32_t opener_count;
-    int64_t shift;
-    bool nest_on;
-    /* The chain's deepest block when the reopen gave it the kind it read
-     * its lines as (blocks.c, THE FORMER KIND), NULL otherwise. */
-    markdown_core_revert revert;
-    /* Whether the parse is an edit's reading. */
-    bool reading;
-    /* Of THE USES' INDEX below, kept here where the record has room. */
-    bool indexed, anew;
-    uint32_t spare;
-    /* The number of the back's first line (parser_input, `lines`), in the
-     * text the reopen put back. */
-    size_t line;
-    /* AN OPENER READ TO THE END (blocks.c): the openers whose readings note
-     * no reach, `opener_count` of them, in storage of just that size, as
-     * they are few and seldom change. */
-    markdown_core_unclosed *openers;
-    /* THE LEAP (blocks.c), made at the first edit that rests in a block of
-     * literal lines. */
-    markdown_core_leap *leap;
-    /* THE USES (blocks.c): every definition lookup the completion of the
-     * document's inline roots made, in order of where the roots start, a
-     * tree (tree.h) whose focus is the rest point. A block an edit keeps reads as
-     * it did unless one of its labels is declared now and was not, or the
-     * other way round: its uses say which blocks read such a label. The
-     * labels are kept as written, in `use_labels`; the reading of an edit
-     * notes its own from `uses_from` on, before the focus, which its flush
-     * puts in order, and
-     * `use_live` is how many bytes of the labels the uses hold. */
-    markdown_core_tree uses;
-    markdown_core_strbuf use_labels;
-    size_t uses_from, use_live;
-    /* THE USES' INDEX (blocks.c): the uses by name, made at the first
-     * lookup of the uses of altered labels and kept from then on. `names`
-     * maps each name to its markdown_core_use_name, whose notes are among
-     * the `note_count` of `notes`, those let go linked from `spare`; it holds
-     * every use but what a reading noted when `indexed`. `anew` is set while
-     * the finalize completes anew the roots whose misses now find a
-     * definition, whose commits noted their uses. */
-    markdown_core_key_index names;
-    markdown_core_use_note *notes;
-    size_t note_count, note_room;
-    /* WHERE A USE IS (blocks.c, S_use_place): the place of the content's
-     * places `use_places` of the root `use_root` the last use was in, and
-     * the content offset it starts at. */
-    const struct markdown_core_node *use_root;
-    const struct markdown_core_places *use_places;
-    uint32_t use_place, use_read;
-    /* How many uses of the back nearest the focus the splice keeps: those
-     * of the old tail of a paragraph whose parse met a seam of the back
-     * (THE OLD TAIL OF A PARAGRAPH). */
-    size_t uses_held;
-    /* The old tail's children no record holds yet, nor the root, the
-     * `unrecorded` from `recorded` (ast.c, record_tail): the parse lets
-     * them go when it fails before its publish. */
-    uint32_t recorded, unrecorded;
-    markdown_core_parser_at at;
-    /* Where the line ends, past its line ending, that the splice closes a
-     * block of the chain on (blocks.c, S_close_inside), as its old reading
-     * did; 0 when it closes none. */
-    size_t shut;
-    /* A look read on the line in hand by a reading that names no block, its
-     * start and end: the line's block takes it as the line ends
-     * (markdown_core_parser_reach), and that line. End 0 for none. */
-    markdown_core_place look;
-    int look_line;
-    /* A lookahead that leaves the reading as it was reads in hand: what it
-     * reads is noted nowhere, in a node nor in a line. */
-    bool quiet;
-    /* The furthest any reading the reading of the edit noted since its
-     * reopen read (THE REACH), 0 for none; and the child index of the text
-     * before the edit (index.h), which the old tail's readings are read
-     * from, and where the children of each block of the chain are measured
-     * from in it (`bases`), and the root's (`base`). */
-    size_t ran;
-    /* The cuts of looks whose last byte lies past the lines read in, each
-     * set on its line as the line is read in (blocks.c, THE CUTS). */
-    MARKDOWN_CORE_ARRAY(markdown_core_place) cuts;
-    /* The cuts before `cut_low` are set; one that starts where it ends
-     * keeps the cut its line had before the reopen let it go. */
-    size_t cut_low;
-    const struct markdown_core_index *index;
-    uint32_t base;
-    size_t complete, to, point, resumed;
-    int64_t delta, lead;
-} markdown_core_edit;
-
-/* The old tail's child `index`, of the root `root` (THE OLD TAIL IN
- * PLACE). */
-static inline struct markdown_core_node *markdown_core_edit_old(const markdown_core_edit *edit,
-                                                                const struct markdown_core_node *root, uint32_t index) {
-    return index < edit->root.saved ? edit->children[index] : root->children[edit->root.start + index];
-}
-
-/* The old child `index` past those it keeps of the chain's block `level`
- * (THE OLD NESTED TAIL IN PLACE). */
-static inline struct markdown_core_node *markdown_core_edit_nested(const markdown_core_edit *edit, size_t level,
-                                                                   uint32_t index) {
-    return index < edit->levels[level].saved ? edit->nested[edit->levels[level].base + index]
-                                             : edit->chain[level]->children[edit->levels[level].start + index];
-}
-
 struct markdown_core_parser {
     /* The flags a block takes as it settles (blocks.c, A BLOCK SETTLES):
      * COMMITTED in a commit, nothing in a snapshot. */
@@ -994,10 +603,6 @@ struct markdown_core_parser {
     /* What the parse keeps as a stream (markdown_core_stream), made as the
      * parse starts. */
     markdown_core_stream *stream;
-    /* What the parse of the text before a cursor reports of what it leaves
-     * open (sink.h), or NULL: a parse with a sink is never published but
-     * to the context query. */
-    struct markdown_core_context_sink *sink;
     /* Every definition the parse declared (roster.h): the block phase
      * declares definitions as it reads them. */
     markdown_core_roster roster;
@@ -1051,15 +656,6 @@ struct markdown_core_parser {
      * none for the document, and a cell's `enclosing` while its content is
      * read. */
     uint32_t input_enclosing;
-    /* The child count at which the next child of `room_holder`, the root or
-     * a block of an edit's chain, takes the place of an old child of an
-     * edit's tail, which moves out first (blocks.c, THE OLD TAIL IN PLACE);
-     * UINT32_MAX when none is in place. `room_level` is the chain's block
-     * that holds it, and `root_room` the root's, while a block of the chain
-     * does. */
-    uint32_t room_at, root_room;
-    const struct markdown_core_node *room_holder;
-    size_t room_level;
     /* The active input: the document's text, or a table cell's content
      * while its blocks are read. */
     markdown_core_parser_input input;
@@ -1094,10 +690,6 @@ struct markdown_core_parser {
      * hand: a block that closes while none does closes where the input's
      * last line ended. */
     bool reading;
-    /* Whether a paragraph's marks were ever kept apart in an edit's leap
-     * (blocks.c, THE BACK OF A PARAGRAPH): only then may a placement read
-     * a mark from the back. */
-    bool apart;
     /* Options set by the user, see the Options section in markdown_core.h */
     /* Sticky allocation-failure flag: once any parse structure is lost, the
      * one-shot transaction reports the whole parse as failed (NULL) instead of
@@ -1357,12 +949,6 @@ static inline markdown_core_node *markdown_core_parser_make_node_with_ext(markdo
     return markdown_core_node_pool_new(parser ? parser->pool : NULL, type, element);
 }
 
-/* The paragraph `node` an edit's reading reopened at a seam lets go of
- * the children it kept, as it becomes a block of kind `kind`, unless it is
- * the node it was again, of a kind that parses from seams (blocks.c, THE
- * SEAMS). */
-void markdown_core_parser_unseam(markdown_core_parser *parser, markdown_core_node *node, markdown_core_node_type kind);
-
 /* THE BUILDER STACK'S QUESTIONS (the builders, above), each answered from
  * one builder's scaffold. The current block. */
 static inline markdown_core_node *markdown_core_parser_current(const markdown_core_parser *parser) {
@@ -1492,9 +1078,6 @@ static inline markdown_core_node_set_kind_result markdown_core_parser_set_node_k
         return parser->error ? MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED : MARKDOWN_CORE_NODE_SET_KIND_CUT;
     }
     markdown_core_parser_note_kind(parser, kind);
-    if (parser->stream && node == parser->stream->settled.address && kind != node->kind) {
-        markdown_core_parser_unseam(parser, node, kind);
-    }
     return markdown_core_node_set_kind(node, parent, kind);
 }
 
@@ -1511,24 +1094,7 @@ typedef struct markdown_core_input_line {
      * them, or the lookahead of the call that claimed the line
      * (markdown_core_parser_claim; markdown_core_parser_line_places). */
     uint32_t own;
-    /* How far past its start the looks that began on the line read, of the
-     * readings that began no block's first line here (blocks.c, THE BLOCK
-     * OF A LINE): 0 for none; and, in the top bit (MARKDOWN_CORE_LINE_CUT),
-     * whether a look that began on a line before stopped inside this one,
-     * past its first byte and before its end, as the opener of the line's
-     * first block decides from what came before (blocks.c, THE CUTS). */
-    uint32_t look;
-    /* How far past its start the line's reading read as it gave the rest
-     * of the line to the block that takes it as text, the reader's `far`
-     * there (blocks.c, A REST INSIDE A LINE): 0 for a line that gave
-     * none; and, in the top bit (MARKDOWN_CORE_LINE_PAST), whether it
-     * looked past the line's end before. */
-    uint32_t decided;
 } markdown_core_input_line;
-
-#define MARKDOWN_CORE_LINE_CUT UINT32_C(0x80000000)
-#define MARKDOWN_CORE_LINE_LOOK(line) ((line)->look & ~MARKDOWN_CORE_LINE_CUT)
-#define MARKDOWN_CORE_LINE_PAST UINT32_C(0x80000000)
 
 #define MARKDOWN_CORE_FACTS_DROPPED INT_MIN
 
@@ -1672,22 +1238,12 @@ static inline bool markdown_core_parser_input_ends(markdown_core_parser *parser,
  * of the active input from `from` to `to` that meets the line in hand reads
  * its bytes there, which `far` notes, up to its line ending: a read of that,
  * or of what follows, is a look past the line (blocks.c, A REST INSIDE A
- * LINE). Where a column of the input may stand elsewhere, it notes the
- * whole line. Only a reader that `rests` notes them: a parse that takes no
- * edits has no rest to find inside a line. */
+ * LINE). */
 static inline void markdown_core_reader_reads(markdown_core_reader *reader, const markdown_core_parser *parser,
                                               size_t from, size_t to) {
+    (void)parser;
+    (void)from;
     reader->past = to > reader->past ? to : reader->past;
-    if (!reader->rests) {
-        return;
-    }
-    const size_t start = (size_t)reader->start, own = (size_t)reader->line.len - 1;
-    if (parser->input.mapped && to > start) {
-        reader->far = reader->line.len + 1;
-    } else if (to > start && from < start + own) {
-        const size_t far = to - start < own ? to - start : own;
-        reader->far = (bufsize_t)far > reader->far ? (bufsize_t)far : reader->far;
-    }
 }
 
 static inline int markdown_core_reader_byte(markdown_core_reader *reader, markdown_core_parser *parser, size_t place) {
@@ -1898,14 +1454,6 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bufsize_t
  * begin in increasing source order, so a node began on `line` or later when
  * its start is at least this offset. */
 bufsize_t markdown_core_parser_line_offset(markdown_core_parser *parser, int line);
-struct markdown_core_field;
-/* THE OPEN CONSTRUCT a block scanner reads on the line being read, when the
- * parse reports to a context sink and the line is the document's last: it
- * opens a construct of kind `opens` whose opening syntax is the line's bytes
- * `from` up to `to`, and reads the `count` fields at `fields`, their offsets
- * on the line too, when the line ends. A parse with no sink lists nothing. */
-void markdown_core_parser_open(markdown_core_parser *parser, markdown_core_node_kind opens, bufsize_t from,
-                               bufsize_t to, const struct markdown_core_field *fields, size_t count);
 /* The content of line `line` of the active input, which the driver read,
  * as the block parser reads it, a NUL as U+FFFD, without its terminator, and
  * its length; NULL, with the parse failed, when storage could not be had. */
@@ -2091,18 +1639,8 @@ static inline const markdown_core_roster_record *markdown_core_parser_find_defin
         markdown_core_parser_folds(parser, kind)
             ? markdown_core_roster_find_label(&parser->roster, kind, label, failed)
             : markdown_core_roster_find(&parser->roster, kind, label->data, label->len, failed);
-    if (parser->sink) {
-        /* A reading for a sink, whose roster holds the whole document's
-         * labels (session.c, THE LOOK), answers from them. */
-        return record;
-    }
     if (parser->snapshot && !*failed) {
         return markdown_core_parser_find_at_snapshot(parser, kind, label, at, record, failed);
-    }
-    if (!*failed && parser->stream && parser->stream->edit && parser->completing &&
-        !markdown_core_parser_note_use(parser, kind, label, at)) {
-        *failed = true;
-        return NULL;
     }
     return record;
 }
@@ -2175,240 +1713,12 @@ typedef struct markdown_core_folds {
     size_t pass_count, pass_capacity;
 } markdown_core_folds;
 
-/* A flushed transaction put back at input line `line`, a rest point of
- * the flushed document `root` before its child `child`, to read the new
- * text `source` of an edit that replaced the old text from `from` to `to`
- * and moved what follows by `delta`: a commit that ends the text and a `flush` read
- * it from there (blocks.c, THE REOPEN), and take the old children after the
- * edit back where they read as they did (THE SPLICE), unless `whole` says
- * to read all of it, and none before `past`, an offset of the new text,
- * either. `prior` is where the child before `child` ends, or the
- * root starts. With `depth`, the rest point is below the root (THE NESTED
- * REOPEN): the child before `child` and the `depth - 1` blocks `path`
- * names below it are reopened, the deepest at its child `path[depth]`,
- * each folding its kept children from its `folds`, when they are not
- * NULL, and each where `places` says. With `mid` other than SIZE_MAX, the
- * reading stands inside the line there, where the text of the chain's last
- * block begins (A REST INSIDE A LINE). False, with the transaction failed, when storage could
- * not be had. */
-struct markdown_core_index;
-bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_node *root, uint32_t child, size_t line,
-                                 uint32_t prior, size_t from, size_t to, int64_t delta, size_t past, const char *source,
-                                 bool whole, const uint32_t *path, const markdown_core_chain_place *places,
-                                 size_t depth, size_t mid, markdown_core_folds *const *folds,
-                                 const struct markdown_core_index *index);
-/* THE COMPACTION (plan 12.4): after a reading of the whole text, gives back
- * the storage the input and the reading hold past what the text needs, as
- * the most text before left it. */
-void markdown_core_parser_compact(markdown_core_parser *parser);
-/* Whether `block` is a leaf a rest point may be in: a paragraph or a block
- * of literal lines, or one that read its lines as such a kind (blocks.c,
- * THE LEAP, THE FORMER KIND). */
-bool markdown_core_parser_leaf(const markdown_core_parser *parser, const struct markdown_core_node *block);
-/* THE BLOCK BEFORE (index.h, THE REST; blocks.c, THE SPLICE): whether a
- * line of the `length` bytes at `lines`, read after `prior`, may write it:
- * a block of a kind a later line may write once it closed (element.h, the
- * follow's `closed`), when the follow's element says the line may
- * (`writes`), or any line when it says nothing. */
-bool markdown_core_parser_writes(const markdown_core_parser *parser, const struct markdown_core_node *prior,
-                                 const unsigned char *lines, size_t length);
-/* Whether an edit of a later line of `block`, a leaf, may rest at that line
- * and leap past its old lines (blocks.c, THE LEAP). */
-bool markdown_core_parser_leaps(const markdown_core_parser *parser, const struct markdown_core_node *block);
-/* Whether `block` reads literal lines: a block of a kind of them, or one
- * that read them as such a kind before it closed as its own (element.h,
- * THE FORMER KIND), which an edit's reading reopens as that kind. */
-bool markdown_core_parser_reads_lines(const markdown_core_parser *parser, const struct markdown_core_node *block);
-/* Whether the children of `block` abut (element.h, `abuts`). */
-bool markdown_core_parser_abuts(const markdown_core_parser *parser, const struct markdown_core_node *block);
-/* How the line before the rest point line `line` reads to the `depth`
- * blocks of `chain` reopened there (blocks.c, THE NESTED REOPEN), in the
- * text `text`, when the child before the rest point ends at `before`: blank
- * to the blocks from the one returned down, none when that is `depth`.
- * SIZE_MAX when the rest point has none: the child before ends on that line
- * or later, as it closed when the rest point's line was read, unless the
- * deepest block's children abut, or the line is no blank one the deepest
- * block took, or holds prefixes alone and which of the chain took them is
- * not known. */
-size_t markdown_core_parser_rest_blank(const markdown_core_parser *parser, const unsigned char *text,
-                                       struct markdown_core_node *const *chain, size_t depth, size_t line,
-                                       size_t before);
-/* Where the last reading of an edit took the old children back, in the new
- * text: 0 when it took none back. */
-size_t markdown_core_parser_resumed(const markdown_core_parser *parser);
-/* The root's child the old children it took back begin at, when it took
- * some back. */
-uint32_t markdown_core_parser_tail(const markdown_core_parser *parser);
-/* The child of the chain's block `level` the old children it took back
- * begin at, or UINT32_MAX when it took none back into that block. */
-uint32_t markdown_core_parser_tail_in(const markdown_core_parser *parser, size_t level);
-/* THE LABELS AN EDIT ALTERED: the keys, as markdown_core_roster_made
- * writes them, that the declarations of the text the last reading of an
- * edit read, from `start`, its rest point, up to where it took the old
- * children back, hold and those of the old text it replaced did not, or the
- * other way round, and that are declared now where they were not before, or
- * the other way round. The children before and after keep their
- * declarations, so only a lookup of these keys may answer otherwise. False
- * when storage could not be had. */
-bool markdown_core_parser_altered_labels(markdown_core_parser *parser, size_t start, markdown_core_strbuf *altered);
-/* THE USES OF ALTERED LABELS (markdown_core_edit, `uses`): one past where
- * each inline root starts that looked up one of the `altered` keys, as
- * markdown_core_parser_altered_labels writes them, and lies in one of the
- * `count` spans of the text, pairs of offsets, in order and each once, in
- * `*places`, which the caller frees. False when storage could not be had. */
-bool markdown_core_parser_uses_of(markdown_core_parser *parser, const markdown_core_strbuf *altered,
-                                  const size_t *spans, size_t count, size_t **places, size_t *place_count);
-/* THE LINES OF A FLUSHED TRANSACTION'S TEXT, counted from 0: the line that
- * holds `offset`, and line `line`'s start and the start of the line after
- * it, or the text's end -- false when the text has no such line. A text
- * that ends with a line ending, or is empty, has an empty last line at its
- * end. */
-size_t markdown_core_parser_line_of(const markdown_core_parser *parser, size_t offset);
-/* The parse just started takes edits after its flush (markdown_core_stream,
- * `edit`). False, with nothing changed, when storage could not be had. */
-bool markdown_core_parser_edits(markdown_core_parser *parser);
-/* Whether it does. */
-bool markdown_core_parser_takes_edits(const markdown_core_parser *parser);
-/* Whether the parse notes what its readings read (THE REACH): one that
- * takes edits, outside a snapshot, whose rollback takes its readings back,
- * and a quiet lookahead. A parse that takes no edits pays the test and
- * nothing more. */
-static inline bool markdown_core_parser_reaches(const markdown_core_parser *parser) {
-    return parser->stream && parser->stream->edit && !parser->stream->snapshot_mark && !parser->stream->edit->quiet;
-}
-/* A reading of the edit read to `end` (markdown_core_edit, `ran`). */
-static inline void markdown_core_parser_ran(markdown_core_parser *parser, size_t end) {
-    markdown_core_edit *edit = parser->stream->edit;
-    edit->ran = end > edit->ran ? end : edit->ran;
-}
-/* Where a reading of the line in hand ends, in a parse that notes reach
- * (THE REACH: an end is past the last byte read): past its line ending,
- * or past the text's end when it met it, a line with no ending or no line
- * at all as the input ends, as what follows the text may go on with what
- * it read. On the line the splice closes blocks of the chain on, as their
- * old reading did (blocks.c, S_close_inside). */
-size_t markdown_core_parser_read_past(const markdown_core_parser *parser);
-/* THE TWO KINDS OF READING (blocks.c, THE REACH): a LOOK read the bytes up
- * to its end and decided from them, and what it decided stands while they
- * do; a SPAN is a block's reading held open from its start to its end, as
- * a block's close notes it, and no reading starts afresh inside it, the
- * bytes there changed or not. */
-/* `node` read from `start` to `end`, a span or a look: what its reading
- * read (node.h, `opened`, `closed`, `look`). */
-static inline void markdown_core_node_reads(markdown_core_node *node, size_t start, size_t end, bool span) {
-    const size_t at = node->place.start;
-    if (span && start < at && at - start > node->opened) {
-        node->opened = (uint32_t)(at - start);
-    }
-    const uint32_t past = end > at ? (uint32_t)(end - at) : 0;
-    uint32_t *field = span ? &node->closed : &node->look;
-    if (past > *field) {
-        *field = past;
-    }
-}
-
-/* A look of the reading in hand that names no block, which the block of
- * its line takes as the line ends (blocks.c, THE REACH). */
-void markdown_core_parser_line_look(markdown_core_parser *parser, size_t start, size_t end);
-/* A look from `start` to `end` that stopped inside a later line marks it
- * (blocks.c, THE CUTS). */
-void markdown_core_parser_look_cut(markdown_core_parser *parser, size_t start, size_t end);
-/* A look of `node`'s from `start`, before it, which goes to the block of
- * its line when that is a line before the node's (blocks.c, THE BLOCK OF A
- * LINE): a look's reading begins on the line it is the look of. */
-void markdown_core_parser_look_before(markdown_core_parser *parser, markdown_core_node *node, size_t start, size_t end);
-/* `node` starts at `start` from now on, and what its reading read stays
- * where it was: its spans from where they began (`opened`), and its look,
- * which began where it started, the block of that line's (THE BLOCK OF A
- * LINE). */
-static inline void markdown_core_node_restart(markdown_core_parser *parser, markdown_core_node *node, size_t start) {
-    const size_t old = node->place.start;
-    const int64_t moved = (int64_t)start - (int64_t)old;
-    const size_t look = node->look ? old + node->look : 0;
-    if (node->opened || node->closed) {
-        const int64_t opened = (int64_t)node->opened + moved;
-        node->opened = opened > 0 ? (uint32_t)opened : 0;
-    }
-    node->closed = (int64_t)node->closed > moved ? (uint32_t)((int64_t)node->closed - moved) : 0;
-    node->look = 0;
-    node->place.start = (uint32_t)start;
-    if (look) {
-        markdown_core_parser_look_before(parser, node, old, look);
-    }
-}
-/* `node`'s reading read from `start` to `end`, a look, or a span for
- * markdown_core_parser_reach_span; NULL for the block of the line in hand. */
-static inline void markdown_core_parser_reach(markdown_core_parser *parser, markdown_core_node *node, size_t start,
-                                              size_t end) {
-    if (markdown_core_parser_reaches(parser) && end > start) {
-        markdown_core_parser_ran(parser, end);
-        markdown_core_parser_look_cut(parser, start, end);
-        if (node && start < node->place.start) {
-            markdown_core_parser_look_before(parser, node, start, end);
-        } else if (node) {
-            markdown_core_node_reads(node, start, end, false);
-        } else {
-            markdown_core_parser_line_look(parser, start, end);
-        }
-    }
-}
-static inline void markdown_core_parser_reach_span(markdown_core_parser *parser, markdown_core_node *node, size_t start,
-                                                   size_t end) {
-    if (markdown_core_parser_reaches(parser) && end > start) {
-        markdown_core_parser_ran(parser, end);
-        markdown_core_node_reads(node, start, end, true);
-    }
-}
-/* AN OPENER READ TO THE END (blocks.c): the reading of `owner`'s opener
- * on the line that starts at `start`, in the document's root, read to the
- * text's end and found no stop line (element.h, `stops`); and, for
- * `reach_shut`, it found one, and what it read is in the reach. A parse
- * that takes no edits pays the test and nothing more, and so does a
- * snapshot. The parse fails when storage could not be had. */
-void markdown_core_parser_reach_open(markdown_core_parser *parser, const struct markdown_core_element_instance *owner,
-                                     size_t start);
-void markdown_core_parser_reach_shut(markdown_core_parser *parser, const struct markdown_core_element_instance *owner,
-                                     size_t start);
-/* The openers of the flushed document read to the end, `*count` of them,
- * in no order. */
-const markdown_core_unclosed *markdown_core_parser_openers(const markdown_core_parser *parser, size_t *count);
-/* The first of the first `lines` lines whose looks read past `past`
- * (markdown_core_input_line, `look`), or `lines`. */
-size_t markdown_core_parser_line_looked(const markdown_core_parser *parser, size_t lines, size_t past);
-bool markdown_core_parser_line_span(const markdown_core_parser *parser, size_t line, size_t *start, size_t *end);
-/* Where the own bytes of line `line` of the flushed text begin, past the
- * prefixes of the containers above its last open block (`own`). */
-size_t markdown_core_parser_line_own(const markdown_core_parser *parser, size_t line);
-/* Where the reading of line `line` of the flushed text had read to as it
- * gave the rest of the line to the block that takes it as text, one past
- * the furthest byte (`decided`), or 0 when it gave none or the text has no
- * such line; and whether it looked past the line's end before, `*past`,
- * unless that is NULL. */
-size_t markdown_core_parser_line_decided(const markdown_core_parser *parser, size_t line, bool *past);
-/* How many lines the input has, the empty one after a last line ending
- * counted, which markdown_core_parser_line_span answers for. */
-size_t markdown_core_parser_line_count(const markdown_core_parser *parser);
 /* Completes the blocks that have settled, for a snapshot (plan 5.4): the
  * cells of the tables that closed are read, the document prepares the
  * headings that settled, and the completion queue is completed with a
  * snapshot's lookups. What it completes stays complete. False when the
  * transaction failed. */
 bool markdown_core_parser_complete(markdown_core_parser *parser);
-/* A SNAPSHOT of `source`, the text of the last commit (blocks.c, THE
- * SNAPSHOT): the committed parse read on to the end of the text, ended
- * there, completed with a snapshot's lookups and published, and then put
- * back as its commit left it. The published root, which the next commit,
- * finalize or discard takes back, or NULL when the transaction failed. */
-markdown_core_node *markdown_core_parser_snapshot(markdown_core_parser *parser, const char *source, size_t length);
-/* THE LOOK (blocks.c): the flushed parse read from the rest point before
- * the root's child `child`, at input line `line`, or below it at `path`
- * of `depth` blocks that start at `starts`, the deepest's child before
- * the rest point ending at `before`, through `length` bytes of `source` as
- * a snapshot reads them, `span` blocks at most, for the parse's sink, and
- * left as the flush left it. False when storage could not be had. */
-bool markdown_core_parser_look(markdown_core_parser *parser, struct markdown_core_node *root, uint32_t child,
-                               size_t line, const char *source, size_t length, const uint32_t *path, size_t depth,
-                               const uint32_t *starts, size_t before, uint32_t span, markdown_core_folds *const *folds);
 void markdown_core_parser_destroy(markdown_core_parser *parser);
 
 #ifdef __cplusplus

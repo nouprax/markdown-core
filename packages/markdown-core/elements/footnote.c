@@ -5,7 +5,6 @@
 #include "footnote.h"
 #include "inline_internal.h"
 #include "block_internal.h"
-#include "parts.h"
 
 /* The elements whose state this element reads, as `self->peers` holds them. */
 enum { FOOTNOTE_LINK };
@@ -134,10 +133,6 @@ static bool continue_container(const markdown_core_element_instance *self, markd
     (void)self;
     return markdown_core_footnote_continue(parser, node, reader);
 }
-static const markdown_core_edit_ops FOOTNOTE_EDIT = {
-    .reopens = true,
-};
-
 static bool markdown_core_footnote_close_reference(const markdown_core_element_instance *self,
                                                    markdown_core_parser *parser,
                                                    markdown_core_inline_state *inline_state, bracket *opener);
@@ -186,13 +181,11 @@ static const markdown_core_line_ops FOOTNOTE_LINES = {
 };
 
 const markdown_core_facet MARKDOWN_CORE_FOOTNOTE_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_FOOTNOTE, .parts = markdown_core_footnote_parts},
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_FOOTNOTE = {
     .facets = MARKDOWN_CORE_FOOTNOTE_FACETS,
-    .edit = &FOOTNOTE_EDIT,
     .peers = FOOTNOTE_PEERS,
     .spaces = FOOTNOTE_SPACES,
     .name = "footnote",
@@ -409,23 +402,6 @@ static bool markdown_core_footnote_scan(const markdown_core_element_instance *se
 bool markdown_core_footnote_continue(markdown_core_parser *parser, markdown_core_node *container,
                                      markdown_core_reader *reader) {
     return markdown_core_reader_indented(reader, 4, true);
-}
-
-/* A definition's part: its label, inside `[^` and the `]` before its `:`. An
- * inline note has none. */
-void markdown_core_footnote_parts(markdown_core_parts *parts) {
-    const unsigned char *text = parts->text;
-    if (parts->length < 2 || text[0] != '[' || text[1] != '^') {
-        return;
-    }
-    for (bufsize_t at = 2; at < parts->length; at++) {
-        if (text[at] == '\\') {
-            at++;
-        } else if (text[at] == ']') {
-            markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_FOOTNOTE, 2, at);
-            return;
-        }
-    }
 }
 
 /* A footnote definition's record (markdown_core_record_ops): the label it

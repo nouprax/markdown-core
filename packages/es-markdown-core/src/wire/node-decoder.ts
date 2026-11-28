@@ -53,9 +53,7 @@ const statuses: readonly TaskStatus[] = ["open", "done", "question", "cancelled"
 export const errorCodes: { readonly [status: number]: ErrorCode } = {
     1: "allocationFailed",
     2: "outOfBounds",
-    3: "kindMismatch",
-    4: "sessionFlushed",
-    5: "sessionStreaming"
+    3: "kindMismatch"
 };
 
 /** The document's members that are not contract fields: the decoder adds them

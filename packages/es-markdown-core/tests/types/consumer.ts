@@ -1,13 +1,4 @@
 import {
-    Server,
-    ServerError,
-    type Capabilities as LspCapabilities,
-    type Completions,
-    type Edit as LspEdit,
-    type Phase,
-    type ServerCode
-} from "@nouprax/es-markdown-core/lsp";
-import {
     Document,
     Attributes,
     type Record,
@@ -27,7 +18,6 @@ import {
     type TextUnit,
     type ErrorCode,
     MarkdownCoreError,
-    MarkdownSession,
     MarkupDumper,
     markupEquals,
     walk,
@@ -42,43 +32,13 @@ import {
     type TableRow,
     type MarkupVisitor,
     type MarkupVisitPhase,
-    type Context,
-    type Opener,
-    type Edit,
-    type SlotKind,
-    Metadata,
-    Slot
+    type Metadata
 } from "@nouprax/es-markdown-core";
 
 const document: Document = Document.parse("# typed");
 // @ts-expect-error the dialect has no switches: parse takes the source and a unit, nothing else
 Document.parse("# typed", { tables: true });
 const unit: TextUnit = Document.parse("# typed", { unit: "utf8" }).unit;
-const session = new MarkdownSession("# typed", { unit: "utf16" });
-const appended: Document = session.append("\n");
-const final: Document = session.flush();
-const edited: Document = session.edit({ line: 1, column: 1 }, { line: 1, column: 3 }, "# Re");
-// @ts-expect-error an edit takes two cursors and the text written between them
-session.edit({ line: 1, column: 1 }, "# Re");
-const sessionText: string = session.text;
-const sessionUnit: TextUnit = session.unit;
-session.locate({ line: 1, column: 3 });
-const context: Context = session.context;
-const openers: readonly Opener[] = [...context.blocks, ...context.inlines];
-const opened: Markup["kind"] | null = openers[0]!.kind;
-const slots: readonly Slot[] = context.slots;
-const slotKind: SlotKind = slots[0]!.kind;
-const edit: Edit | null = session.spell(slots[0]!, "value");
-const edits: (Edit | null)[] = session.spell(slots[0]!, ["a", "b"]);
-const path: Markup[] = session.path({ line: 1, column: 1 });
-const fields: Scope[] = session.scope(final, "dest");
-const others: Scope[] = session.scope(final, null);
-const markers: Scope[] = session.markers(final);
-// @ts-expect-error a field is a slot kind or null
-session.scope(final, "title");
-const lexicon: readonly string[] = [...Metadata.fields, ...Slot.cues];
-void [opened, slotKind, edit, edits, path, fields, others, markers, lexicon];
-session.dispose();
 // @ts-expect-error a unit is UTF-8 or UTF-16
 Document.parse("# typed", { unit: "utf32" });
 const dump: string = document.dump("# typed");
@@ -87,7 +47,7 @@ const nodeDump: string = document.dump(document.content[0]!, "# typed");
 const explicitNodeDump: string = MarkupDumper.dump(document, document.content[0]!, "# typed");
 // @ts-expect-error a dump is computed from the source
 document.dump();
-void [unit, dump, explicitDump, nodeDump, explicitNodeDump, appended, final, edited, sessionText, sessionUnit];
+void [unit, dump, explicitDump, nodeDump, explicitNodeDump];
 const id: number = document.id;
 const extent: Extent = document.extent;
 const runs: readonly Run[] = document.content[0]!.runs;
@@ -103,7 +63,7 @@ try {
         void [code, message];
     }
 }
-const codes: readonly ErrorCode[] = ["allocationFailed", "outOfBounds", "kindMismatch", "sessionFlushed"];
+const codes: readonly ErrorCode[] = ["allocationFailed", "outOfBounds", "kindMismatch"];
 // @ts-expect-error the codes are closed
 const unknownCode: ErrorCode = "invalidArgument";
 // @ts-expect-error an error's code is readonly
@@ -470,27 +430,6 @@ void crossLink.dimensions;
 void crossLink.embedded;
 // @ts-expect-error CrossEmbed also has no redundant embedded flag
 void crossEmbed.embedded;
-
-// The language engine is its own entry point, and the main one does not carry it.
-const server: Server = new Server();
-const capabilities: LspCapabilities = server.initialize(["utf8", "utf16"]);
-const replaced: readonly LspEdit[] = [
-    { text: "whole" },
-    { scope: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } }, text: "" }
-];
-server.open("file:///a.md", 1, capabilities.cues);
-server.update("file:///a.md", 2, replaced);
-const completions: Completions = server.complete("file:///a.md", { line: 0, character: 0 });
-const phase: Phase = server.phase;
-void completions.version;
-void phase;
-// @ts-expect-error a version is a number
-server.open("file:///a.md", "1", "");
-void ((error: ServerError): ServerCode => error.code);
-server.dispose();
-// @ts-expect-error the server is only exported from the lsp entry point
-import { Server as MainServer } from "@nouprax/es-markdown-core";
-void MainServer;
 
 // @ts-expect-error dispatch is internal; walk is the only visitor execution API
 import { visit } from "@nouprax/es-markdown-core";

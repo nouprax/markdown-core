@@ -260,37 +260,6 @@ markdown_core_roster_mark markdown_core_roster_mark_now(const markdown_core_rost
  * release the storage they were carved from. */
 void markdown_core_roster_rollback(markdown_core_roster *roster, markdown_core_roster_mark mark);
 
-/* AN EDIT READS FROM `start` (blocks.c, THE REOPEN): each kind's declarations that start there or past it go to the
- * back, which lookups do not see until the splice; the first edit places
- * them, and one whose log holds more dead bytes than live compacts it
- * first. False, with the roster as it was, when storage could not be
- * had. */
-bool markdown_core_roster_reopen(markdown_core_roster *roster, uint32_t start);
-/* THE SPLICE (blocks.c): the back's declarations that start before `place`
- * of the text before the edit go with the text the edit replaced, their
- * keys kept for markdown_core_roster_lost, the end moves by `delta`, and
- * lookups see the back again. A `place` past every declaration lets the
- * whole back go, as a reading that took nothing back does. */
-void markdown_core_roster_splice(markdown_core_roster *roster, size_t place, int64_t delta);
-/* The keys of the declarations of the front that start from
- * `start` on, each once and in byte order, each with its NUL, into
- * `labels`. False when storage could not be had. */
-bool markdown_core_roster_made(const markdown_core_roster *roster, uint32_t start, markdown_core_strbuf *labels);
-/* The keys of the declarations the last splice let go, as
- * markdown_core_roster_made writes them. False when storage could not be
- * had. */
-bool markdown_core_roster_lost(const markdown_core_roster *roster, markdown_core_strbuf *labels);
-/* Whether a declaration of `kind` for `label` that stands starts before
- * `from` or at `to` or past it. `*failed` as for markdown_core_roster_find,
- * and the answer is then false. */
-bool markdown_core_roster_declared_outside(markdown_core_roster *roster, markdown_core_roster_kind kind,
-                                           const unsigned char *label, bufsize_t length, uint32_t from, uint32_t to,
-                                           bool *failed);
-/* The log holds only the declarations that stand, in storage of their
- * size, and each kind's places shrink to what they hold. False, with the
- * roster as it was, when storage could not be had. */
-bool markdown_core_roster_compact(markdown_core_roster *roster);
-
 #ifdef __cplusplus
 }
 #endif

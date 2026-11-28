@@ -3,7 +3,6 @@
 #include "inline_internal.h"
 #include "block_internal.h"
 #include "topic.h"
-#include "parts.h"
 #include "attributes.h"
 
 /* The elements whose state this element reads, as `self->peers` holds them. */
@@ -21,14 +20,6 @@ static bool close_heading(const markdown_core_element_instance *self, markdown_c
     const markdown_core_chunk text = markdown_core_node_text(node);
     (void)self;
     node->cut_back += markdown_core_parser_offer(parser, node, text.data, 0, text.len, false);
-    return true;
-}
-
-/* A heading's inline content parses as a paragraph's does, from its seams
- * when an edit's reading leaps in it (blocks.c, THE SEAMS). */
-static bool heading_seams(const markdown_core_element_instance *self, const markdown_core_node *node) {
-    (void)self;
-    (void)node;
     return true;
 }
 
@@ -50,31 +41,6 @@ void markdown_core_heading_begin_inlines(const markdown_core_element_instance *s
             markdown_core_chunk_rtrim(&inline_state->input);
         }
     }
-}
-
-/* THE PARTS OF A HEADING (parts.h): the attribute tail that ends its last
- * content line, as markdown_core_heading_begin_inlines finds it, unless a
- * node of its content holds the brace. A setext heading's last content line
- * is the one before its underline. */
-void markdown_core_heading_parts(markdown_core_parts *parts) {
-    const unsigned char *s = parts->text;
-    bufsize_t end = parts->length;
-    while (end > 0 && markdown_core_is_line_end(s[end - 1])) {
-        end--;
-    }
-    if (parts->node->as.heading->setext) {
-        while (end > 0 && !markdown_core_is_line_end(s[end - 1])) {
-            end--;
-        }
-        while (end > 0 && markdown_core_is_line_end(s[end - 1])) {
-            end--;
-        }
-    }
-    bufsize_t line = end;
-    while (line > 0 && !markdown_core_is_line_end(s[line - 1])) {
-        line--;
-    }
-    markdown_core_attributes_tail_parts(parts, line, end);
 }
 
 #define peek_at(input, at) ((input)->data[(at)])
@@ -141,28 +107,6 @@ static bool scan_heading(const markdown_core_element_instance *self, markdown_co
                                                                  markdown_core_reader_length(context->reader),
                                                                  context->reader->nonspace))) {
         start->open = open_atx;
-        if (parser->sink && self->peers[HEADING_TOPIC]) {
-            const unsigned char *data = markdown_core_reader_rest(context->reader, 0);
-            bufsize_t end = context->reader->nonspace, last = markdown_core_reader_length(context->reader);
-            while (end < last && data[end] == '#') {
-                end++;
-            }
-            while (last > end && (data[last - 1] == '\n' || data[last - 1] == '\r')) {
-                last--;
-            }
-            if (end == last) {
-                markdown_core_topic_report_line(parser, context->reader->nonspace, end, true);
-            } else if (data[last - 1] == '#') {
-                /* A closing sequence the input's end cuts short. */
-                bufsize_t run = last;
-                while (data[run - 1] == '#') {
-                    run--;
-                }
-                if (markdown_core_is_space_or_tab(data[run - 1])) {
-                    markdown_core_topic_report_line(parser, run, last, false);
-                }
-            }
-        }
     } else if (context->paragraph && (first == '=' || first == '-') &&
                markdown_core_reader_blank_from(
                    context->reader, context->reader->nonspace +
@@ -181,67 +125,13 @@ static int continue_heading(const markdown_core_element_instance *self, markdown
     return 0;
 }
 
-/* A setext heading read its lines as a paragraph, which its underline made
- * a heading (THE FORMER KIND). */
-static markdown_core_node_type heading_former(const markdown_core_element_instance *self,
-                                              const markdown_core_node *node) {
-    (void)self;
-    return node->kind == MARKDOWN_CORE_NODE_HEADING && node->as.heading->setext ? MARKDOWN_CORE_NODE_PARAGRAPH
-                                                                                : MARKDOWN_CORE_NODE_NONE;
-}
-
-/* The paragraph it was, its level kept for its underline's redo, without
- * the attributes its inline content gave it, as a new paragraph is. */
-static bool heading_revert(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                           markdown_core_node *node, markdown_core_node *parent, uint32_t *kept) {
-    (void)self;
-    markdown_core_heading *value = node->as.heading;
-    markdown_core_attributes_free(&node->attributes);
-    memset(&node->attributes, 0, sizeof(node->attributes));
-    /* What its attributes took from its text is text again. */
-    node->cut_back = 0;
-    const uint32_t level = (uint32_t)value->level;
-    const markdown_core_node_set_kind_result result =
-        markdown_core_parser_set_node_kind(parser, node, parent, MARKDOWN_CORE_NODE_PARAGRAPH);
-    assert(result != MARKDOWN_CORE_NODE_SET_KIND_REJECTED);
-    if (result != MARKDOWN_CORE_NODE_SET_KIND_OK) {
-        return false;
-    }
-    *kept = level;
-    return true;
-}
-
-/* The heading its old underline made it, as open_setext did. */
-static bool heading_redo(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                         markdown_core_node *node, markdown_core_node *parent, uint32_t kept) {
-    (void)self;
-    const markdown_core_node_set_kind_result result =
-        markdown_core_parser_set_node_kind(parser, node, parent, MARKDOWN_CORE_NODE_HEADING);
-    assert(result != MARKDOWN_CORE_NODE_SET_KIND_REJECTED);
-    if (result != MARKDOWN_CORE_NODE_SET_KIND_OK) {
-        return false;
-    }
-    node->as.heading->level = (int)kept;
-    node->as.heading->setext = true;
-    return true;
-}
-
 /* A SETEXT UNDERLINE FOLLOWS A PARAGRAPH (element.h, markdown_core_follow):
  * the line makes it a heading (open_setext), which an edit undoes and does
  * again. */
 static const markdown_core_node_type HEADING_LEADERS[] = {MARKDOWN_CORE_NODE_PARAGRAPH, MARKDOWN_CORE_NODE_NONE};
 static const markdown_core_follow HEADING_FOLLOWS[] = {
-    {.at = MARKDOWN_CORE_FOLLOW_LINE,
-     .kinds = HEADING_LEADERS,
-     .makes = MARKDOWN_CORE_NODE_HEADING,
-     .former = heading_former,
-     .revert = heading_revert,
-     .redo = heading_redo},
+    {.at = MARKDOWN_CORE_FOLLOW_LINE, .kinds = HEADING_LEADERS},
     {0},
-};
-
-static const markdown_core_finish_ops HEADING_FINISH = {
-    .seams = heading_seams,
 };
 
 static const markdown_core_content_ops HEADING_CONTENT = {
@@ -267,7 +157,6 @@ static const markdown_core_line_ops HEADING_LINES = {
 };
 
 const markdown_core_facet MARKDOWN_CORE_HEADING_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_HEADING, .parts = markdown_core_heading_parts},
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 
@@ -275,7 +164,6 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_HEADING = {
     .facets = MARKDOWN_CORE_HEADING_FACETS,
     .peers = HEADING_PEERS,
     .name = "heading",
-    .finish = &HEADING_FINISH,
     .content = &HEADING_CONTENT,
     .inlines = &HEADING_INLINES,
     .opens = &HEADING_OPENS,

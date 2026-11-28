@@ -6,18 +6,6 @@
 // - Show declarations: true
 
 // Library unique name: <com.nouprax:kotlin-markdown-core>
-final enum class com.nouprax.markdown.core.lsp/Phase : kotlin/Enum<com.nouprax.markdown.core.lsp/Phase> { // com.nouprax.markdown.core.lsp/Phase|null[0]
-    enum entry ACTIVE // com.nouprax.markdown.core.lsp/Phase.ACTIVE|null[0]
-    enum entry FRESH // com.nouprax.markdown.core.lsp/Phase.FRESH|null[0]
-    enum entry HALTED // com.nouprax.markdown.core.lsp/Phase.HALTED|null[0]
-
-    final val entries // com.nouprax.markdown.core.lsp/Phase.entries|#static{}entries[0]
-        final fun <get-entries>(): kotlin.enums/EnumEntries<com.nouprax.markdown.core.lsp/Phase> // com.nouprax.markdown.core.lsp/Phase.entries.<get-entries>|<get-entries>#static(){}[0]
-
-    final fun valueOf(kotlin/String): com.nouprax.markdown.core.lsp/Phase // com.nouprax.markdown.core.lsp/Phase.valueOf|valueOf#static(kotlin.String){}[0]
-    final fun values(): kotlin/Array<com.nouprax.markdown.core.lsp/Phase> // com.nouprax.markdown.core.lsp/Phase.values|values#static(){}[0]
-}
-
 final enum class com.nouprax.markdown.core/BibMode : kotlin/Enum<com.nouprax.markdown.core/BibMode> { // com.nouprax.markdown.core/BibMode|null[0]
     enum entry AUTHOR_IN_TEXT // com.nouprax.markdown.core/BibMode.AUTHOR_IN_TEXT|null[0]
     enum entry NORMAL // com.nouprax.markdown.core/BibMode.NORMAL|null[0]
@@ -34,8 +22,6 @@ final enum class com.nouprax.markdown.core/ErrorCode : kotlin/Enum<com.nouprax.m
     enum entry ALLOCATION_FAILED // com.nouprax.markdown.core/ErrorCode.ALLOCATION_FAILED|null[0]
     enum entry KIND_MISMATCH // com.nouprax.markdown.core/ErrorCode.KIND_MISMATCH|null[0]
     enum entry OUT_OF_BOUNDS // com.nouprax.markdown.core/ErrorCode.OUT_OF_BOUNDS|null[0]
-    enum entry SESSION_FLUSHED // com.nouprax.markdown.core/ErrorCode.SESSION_FLUSHED|null[0]
-    enum entry SESSION_STREAMING // com.nouprax.markdown.core/ErrorCode.SESSION_STREAMING|null[0]
 
     final val entries // com.nouprax.markdown.core/ErrorCode.entries|#static{}entries[0]
         final fun <get-entries>(): kotlin.enums/EnumEntries<com.nouprax.markdown.core/ErrorCode> // com.nouprax.markdown.core/ErrorCode.entries.<get-entries>|<get-entries>#static(){}[0]
@@ -152,29 +138,6 @@ final enum class com.nouprax.markdown.core/Placement : kotlin/Enum<com.nouprax.m
 
     final fun valueOf(kotlin/String): com.nouprax.markdown.core/Placement // com.nouprax.markdown.core/Placement.valueOf|valueOf#static(kotlin.String){}[0]
     final fun values(): kotlin/Array<com.nouprax.markdown.core/Placement> // com.nouprax.markdown.core/Placement.values|values#static(){}[0]
-}
-
-final enum class com.nouprax.markdown.core/SlotKind : kotlin/Enum<com.nouprax.markdown.core/SlotKind> { // com.nouprax.markdown.core/SlotKind|null[0]
-    enum entry ANCHOR // com.nouprax.markdown.core/SlotKind.ANCHOR|null[0]
-    enum entry BIB // com.nouprax.markdown.core/SlotKind.BIB|null[0]
-    enum entry CLASS // com.nouprax.markdown.core/SlotKind.CLASS|null[0]
-    enum entry DEST // com.nouprax.markdown.core/SlotKind.DEST|null[0]
-    enum entry FIELD // com.nouprax.markdown.core/SlotKind.FIELD|null[0]
-    enum entry FOOTNOTE // com.nouprax.markdown.core/SlotKind.FOOTNOTE|null[0]
-    enum entry ID // com.nouprax.markdown.core/SlotKind.ID|null[0]
-    enum entry INFO // com.nouprax.markdown.core/SlotKind.INFO|null[0]
-    enum entry LABEL // com.nouprax.markdown.core/SlotKind.LABEL|null[0]
-    enum entry NAME // com.nouprax.markdown.core/SlotKind.NAME|null[0]
-    enum entry RECORD // com.nouprax.markdown.core/SlotKind.RECORD|null[0]
-    enum entry VALUE // com.nouprax.markdown.core/SlotKind.VALUE|null[0]
-    enum entry VARIANT // com.nouprax.markdown.core/SlotKind.VARIANT|null[0]
-
-    final val entries // com.nouprax.markdown.core/SlotKind.entries|#static{}entries[0]
-        final fun <get-entries>(): kotlin.enums/EnumEntries<com.nouprax.markdown.core/SlotKind> // com.nouprax.markdown.core/SlotKind.entries.<get-entries>|<get-entries>#static(){}[0]
-
-    final fun toString(): kotlin/String // com.nouprax.markdown.core/SlotKind.toString|toString(){}[0]
-    final fun valueOf(kotlin/String): com.nouprax.markdown.core/SlotKind // com.nouprax.markdown.core/SlotKind.valueOf|valueOf#static(kotlin.String){}[0]
-    final fun values(): kotlin/Array<com.nouprax.markdown.core/SlotKind> // com.nouprax.markdown.core/SlotKind.values|values#static(){}[0]
 }
 
 final enum class com.nouprax.markdown.core/TaskStatus : kotlin/Enum<com.nouprax.markdown.core/TaskStatus> { // com.nouprax.markdown.core/TaskStatus|null[0]
@@ -429,123 +392,6 @@ sealed interface com.nouprax.markdown.core/MetadataValue { // com.nouprax.markdo
     }
 }
 
-final class com.nouprax.markdown.core.lsp/Capabilities { // com.nouprax.markdown.core.lsp/Capabilities|null[0]
-    constructor <init>(com.nouprax.markdown.core/TextUnit, kotlin/String) // com.nouprax.markdown.core.lsp/Capabilities.<init>|<init>(com.nouprax.markdown.core.TextUnit;kotlin.String){}[0]
-
-    final val cues // com.nouprax.markdown.core.lsp/Capabilities.cues|{}cues[0]
-        final fun <get-cues>(): kotlin/String // com.nouprax.markdown.core.lsp/Capabilities.cues.<get-cues>|<get-cues>(){}[0]
-    final val unit // com.nouprax.markdown.core.lsp/Capabilities.unit|{}unit[0]
-        final fun <get-unit>(): com.nouprax.markdown.core/TextUnit // com.nouprax.markdown.core.lsp/Capabilities.unit.<get-unit>|<get-unit>(){}[0]
-
-    final fun component1(): com.nouprax.markdown.core/TextUnit // com.nouprax.markdown.core.lsp/Capabilities.component1|component1(){}[0]
-    final fun component2(): kotlin/String // com.nouprax.markdown.core.lsp/Capabilities.component2|component2(){}[0]
-    final fun copy(com.nouprax.markdown.core/TextUnit = ..., kotlin/String = ...): com.nouprax.markdown.core.lsp/Capabilities // com.nouprax.markdown.core.lsp/Capabilities.copy|copy(com.nouprax.markdown.core.TextUnit;kotlin.String){}[0]
-    final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core.lsp/Capabilities.equals|equals(kotlin.Any?){}[0]
-    final fun hashCode(): kotlin/Int // com.nouprax.markdown.core.lsp/Capabilities.hashCode|hashCode(){}[0]
-    final fun toString(): kotlin/String // com.nouprax.markdown.core.lsp/Capabilities.toString|toString(){}[0]
-}
-
-final class com.nouprax.markdown.core.lsp/Completions { // com.nouprax.markdown.core.lsp/Completions|null[0]
-    constructor <init>(kotlin/Int, kotlin/Int) // com.nouprax.markdown.core.lsp/Completions.<init>|<init>(kotlin.Int;kotlin.Int){}[0]
-
-    final val count // com.nouprax.markdown.core.lsp/Completions.count|{}count[0]
-        final fun <get-count>(): kotlin/Int // com.nouprax.markdown.core.lsp/Completions.count.<get-count>|<get-count>(){}[0]
-    final val version // com.nouprax.markdown.core.lsp/Completions.version|{}version[0]
-        final fun <get-version>(): kotlin/Int // com.nouprax.markdown.core.lsp/Completions.version.<get-version>|<get-version>(){}[0]
-
-    final fun component1(): kotlin/Int // com.nouprax.markdown.core.lsp/Completions.component1|component1(){}[0]
-    final fun component2(): kotlin/Int // com.nouprax.markdown.core.lsp/Completions.component2|component2(){}[0]
-    final fun copy(kotlin/Int = ..., kotlin/Int = ...): com.nouprax.markdown.core.lsp/Completions // com.nouprax.markdown.core.lsp/Completions.copy|copy(kotlin.Int;kotlin.Int){}[0]
-    final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core.lsp/Completions.equals|equals(kotlin.Any?){}[0]
-    final fun hashCode(): kotlin/Int // com.nouprax.markdown.core.lsp/Completions.hashCode|hashCode(){}[0]
-    final fun toString(): kotlin/String // com.nouprax.markdown.core.lsp/Completions.toString|toString(){}[0]
-}
-
-final class com.nouprax.markdown.core.lsp/Edit { // com.nouprax.markdown.core.lsp/Edit|null[0]
-    constructor <init>(com.nouprax.markdown.core.lsp/Scope?, kotlin/String) // com.nouprax.markdown.core.lsp/Edit.<init>|<init>(com.nouprax.markdown.core.lsp.Scope?;kotlin.String){}[0]
-
-    final val scope // com.nouprax.markdown.core.lsp/Edit.scope|{}scope[0]
-        final fun <get-scope>(): com.nouprax.markdown.core.lsp/Scope? // com.nouprax.markdown.core.lsp/Edit.scope.<get-scope>|<get-scope>(){}[0]
-    final val text // com.nouprax.markdown.core.lsp/Edit.text|{}text[0]
-        final fun <get-text>(): kotlin/String // com.nouprax.markdown.core.lsp/Edit.text.<get-text>|<get-text>(){}[0]
-
-    final fun component1(): com.nouprax.markdown.core.lsp/Scope? // com.nouprax.markdown.core.lsp/Edit.component1|component1(){}[0]
-    final fun component2(): kotlin/String // com.nouprax.markdown.core.lsp/Edit.component2|component2(){}[0]
-    final fun copy(com.nouprax.markdown.core.lsp/Scope? = ..., kotlin/String = ...): com.nouprax.markdown.core.lsp/Edit // com.nouprax.markdown.core.lsp/Edit.copy|copy(com.nouprax.markdown.core.lsp.Scope?;kotlin.String){}[0]
-    final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core.lsp/Edit.equals|equals(kotlin.Any?){}[0]
-    final fun hashCode(): kotlin/Int // com.nouprax.markdown.core.lsp/Edit.hashCode|hashCode(){}[0]
-    final fun toString(): kotlin/String // com.nouprax.markdown.core.lsp/Edit.toString|toString(){}[0]
-}
-
-final class com.nouprax.markdown.core.lsp/Position { // com.nouprax.markdown.core.lsp/Position|null[0]
-    constructor <init>(kotlin/Int, kotlin/Int) // com.nouprax.markdown.core.lsp/Position.<init>|<init>(kotlin.Int;kotlin.Int){}[0]
-
-    final val character // com.nouprax.markdown.core.lsp/Position.character|{}character[0]
-        final fun <get-character>(): kotlin/Int // com.nouprax.markdown.core.lsp/Position.character.<get-character>|<get-character>(){}[0]
-    final val line // com.nouprax.markdown.core.lsp/Position.line|{}line[0]
-        final fun <get-line>(): kotlin/Int // com.nouprax.markdown.core.lsp/Position.line.<get-line>|<get-line>(){}[0]
-
-    final fun component1(): kotlin/Int // com.nouprax.markdown.core.lsp/Position.component1|component1(){}[0]
-    final fun component2(): kotlin/Int // com.nouprax.markdown.core.lsp/Position.component2|component2(){}[0]
-    final fun copy(kotlin/Int = ..., kotlin/Int = ...): com.nouprax.markdown.core.lsp/Position // com.nouprax.markdown.core.lsp/Position.copy|copy(kotlin.Int;kotlin.Int){}[0]
-    final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core.lsp/Position.equals|equals(kotlin.Any?){}[0]
-    final fun hashCode(): kotlin/Int // com.nouprax.markdown.core.lsp/Position.hashCode|hashCode(){}[0]
-    final fun toString(): kotlin/String // com.nouprax.markdown.core.lsp/Position.toString|toString(){}[0]
-}
-
-final class com.nouprax.markdown.core.lsp/Scope { // com.nouprax.markdown.core.lsp/Scope|null[0]
-    constructor <init>(com.nouprax.markdown.core.lsp/Position, com.nouprax.markdown.core.lsp/Position) // com.nouprax.markdown.core.lsp/Scope.<init>|<init>(com.nouprax.markdown.core.lsp.Position;com.nouprax.markdown.core.lsp.Position){}[0]
-
-    final val end // com.nouprax.markdown.core.lsp/Scope.end|{}end[0]
-        final fun <get-end>(): com.nouprax.markdown.core.lsp/Position // com.nouprax.markdown.core.lsp/Scope.end.<get-end>|<get-end>(){}[0]
-    final val start // com.nouprax.markdown.core.lsp/Scope.start|{}start[0]
-        final fun <get-start>(): com.nouprax.markdown.core.lsp/Position // com.nouprax.markdown.core.lsp/Scope.start.<get-start>|<get-start>(){}[0]
-
-    final fun component1(): com.nouprax.markdown.core.lsp/Position // com.nouprax.markdown.core.lsp/Scope.component1|component1(){}[0]
-    final fun component2(): com.nouprax.markdown.core.lsp/Position // com.nouprax.markdown.core.lsp/Scope.component2|component2(){}[0]
-    final fun copy(com.nouprax.markdown.core.lsp/Position = ..., com.nouprax.markdown.core.lsp/Position = ...): com.nouprax.markdown.core.lsp/Scope // com.nouprax.markdown.core.lsp/Scope.copy|copy(com.nouprax.markdown.core.lsp.Position;com.nouprax.markdown.core.lsp.Position){}[0]
-    final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core.lsp/Scope.equals|equals(kotlin.Any?){}[0]
-    final fun hashCode(): kotlin/Int // com.nouprax.markdown.core.lsp/Scope.hashCode|hashCode(){}[0]
-    final fun toString(): kotlin/String // com.nouprax.markdown.core.lsp/Scope.toString|toString(){}[0]
-}
-
-final class com.nouprax.markdown.core.lsp/Server : kotlin/AutoCloseable { // com.nouprax.markdown.core.lsp/Server|null[0]
-    constructor <init>() // com.nouprax.markdown.core.lsp/Server.<init>|<init>(){}[0]
-
-    final val phase // com.nouprax.markdown.core.lsp/Server.phase|{}phase[0]
-        final fun <get-phase>(): com.nouprax.markdown.core.lsp/Phase // com.nouprax.markdown.core.lsp/Server.phase.<get-phase>|<get-phase>(){}[0]
-
-    final fun close() // com.nouprax.markdown.core.lsp/Server.close|close(){}[0]
-    final fun close(kotlin/String) // com.nouprax.markdown.core.lsp/Server.close|close(kotlin.String){}[0]
-    final fun complete(kotlin/String, com.nouprax.markdown.core.lsp/Position): com.nouprax.markdown.core.lsp/Completions // com.nouprax.markdown.core.lsp/Server.complete|complete(kotlin.String;com.nouprax.markdown.core.lsp.Position){}[0]
-    final fun initialize(kotlin.collections/List<com.nouprax.markdown.core/TextUnit>): com.nouprax.markdown.core.lsp/Capabilities // com.nouprax.markdown.core.lsp/Server.initialize|initialize(kotlin.collections.List<com.nouprax.markdown.core.TextUnit>){}[0]
-    final fun open(kotlin/String, kotlin/Int, kotlin/String) // com.nouprax.markdown.core.lsp/Server.open|open(kotlin.String;kotlin.Int;kotlin.String){}[0]
-    final fun shutdown() // com.nouprax.markdown.core.lsp/Server.shutdown|shutdown(){}[0]
-    final fun update(kotlin/String, kotlin/Int, kotlin.collections/List<com.nouprax.markdown.core.lsp/Edit>) // com.nouprax.markdown.core.lsp/Server.update|update(kotlin.String;kotlin.Int;kotlin.collections.List<com.nouprax.markdown.core.lsp.Edit>){}[0]
-}
-
-final class com.nouprax.markdown.core.lsp/ServerException : kotlin/RuntimeException { // com.nouprax.markdown.core.lsp/ServerException|null[0]
-    constructor <init>(com.nouprax.markdown.core.lsp/ServerException.Code) // com.nouprax.markdown.core.lsp/ServerException.<init>|<init>(com.nouprax.markdown.core.lsp.ServerException.Code){}[0]
-
-    final val code // com.nouprax.markdown.core.lsp/ServerException.code|{}code[0]
-        final fun <get-code>(): com.nouprax.markdown.core.lsp/ServerException.Code // com.nouprax.markdown.core.lsp/ServerException.code.<get-code>|<get-code>(){}[0]
-
-    final enum class Code : kotlin/Enum<com.nouprax.markdown.core.lsp/ServerException.Code> { // com.nouprax.markdown.core.lsp/ServerException.Code|null[0]
-        enum entry INTERNAL_ERROR // com.nouprax.markdown.core.lsp/ServerException.Code.INTERNAL_ERROR|null[0]
-        enum entry INVALID_PARAMS // com.nouprax.markdown.core.lsp/ServerException.Code.INVALID_PARAMS|null[0]
-        enum entry INVALID_REQUEST // com.nouprax.markdown.core.lsp/ServerException.Code.INVALID_REQUEST|null[0]
-        enum entry NOT_INITIALIZED // com.nouprax.markdown.core.lsp/ServerException.Code.NOT_INITIALIZED|null[0]
-
-        final val entries // com.nouprax.markdown.core.lsp/ServerException.Code.entries|#static{}entries[0]
-            final fun <get-entries>(): kotlin.enums/EnumEntries<com.nouprax.markdown.core.lsp/ServerException.Code> // com.nouprax.markdown.core.lsp/ServerException.Code.entries.<get-entries>|<get-entries>#static(){}[0]
-        final val value // com.nouprax.markdown.core.lsp/ServerException.Code.value|{}value[0]
-            final fun <get-value>(): kotlin/Int // com.nouprax.markdown.core.lsp/ServerException.Code.value.<get-value>|<get-value>(){}[0]
-
-        final fun valueOf(kotlin/String): com.nouprax.markdown.core.lsp/ServerException.Code // com.nouprax.markdown.core.lsp/ServerException.Code.valueOf|valueOf#static(kotlin.String){}[0]
-        final fun values(): kotlin/Array<com.nouprax.markdown.core.lsp/ServerException.Code> // com.nouprax.markdown.core.lsp/ServerException.Code.values|values#static(){}[0]
-    }
-}
-
 final class com.nouprax.markdown.core/Attributes { // com.nouprax.markdown.core/Attributes|null[0]
     constructor <init>(kotlin.collections/List<kotlin/String>, kotlin.collections/List<com.nouprax.markdown.core/Record>) // com.nouprax.markdown.core/Attributes.<init>|<init>(kotlin.collections.List<kotlin.String>;kotlin.collections.List<com.nouprax.markdown.core.Record>){}[0]
 
@@ -669,15 +515,6 @@ final class com.nouprax.markdown.core/Comment : com.nouprax.markdown.core/Markup
         final fun <get-literal>(): kotlin/String // com.nouprax.markdown.core/Comment.literal.<get-literal>|<get-literal>(){}[0]
     final val runs // com.nouprax.markdown.core/Comment.runs|{}runs[0]
         final fun <get-runs>(): kotlin.collections/List<com.nouprax.markdown.core/Run> // com.nouprax.markdown.core/Comment.runs.<get-runs>|<get-runs>(){}[0]
-}
-
-final class com.nouprax.markdown.core/Context { // com.nouprax.markdown.core/Context|null[0]
-    final val blocks // com.nouprax.markdown.core/Context.blocks|{}blocks[0]
-        final fun <get-blocks>(): kotlin.collections/List<com.nouprax.markdown.core/Opener> // com.nouprax.markdown.core/Context.blocks.<get-blocks>|<get-blocks>(){}[0]
-    final val inlines // com.nouprax.markdown.core/Context.inlines|{}inlines[0]
-        final fun <get-inlines>(): kotlin.collections/List<com.nouprax.markdown.core/Opener> // com.nouprax.markdown.core/Context.inlines.<get-inlines>|<get-inlines>(){}[0]
-    final val slots // com.nouprax.markdown.core/Context.slots|{}slots[0]
-        final fun <get-slots>(): kotlin.collections/List<com.nouprax.markdown.core/Slot> // com.nouprax.markdown.core/Context.slots.<get-slots>|<get-slots>(){}[0]
 }
 
 final class com.nouprax.markdown.core/CrossEmbed : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/CrossEmbed|null[0]
@@ -1108,31 +945,6 @@ final class com.nouprax.markdown.core/MarkdownCoreException : kotlin/RuntimeExce
         final fun <get-code>(): com.nouprax.markdown.core/ErrorCode // com.nouprax.markdown.core/MarkdownCoreException.code.<get-code>|<get-code>(){}[0]
 }
 
-final class com.nouprax.markdown.core/MarkdownSession : kotlin/AutoCloseable { // com.nouprax.markdown.core/MarkdownSession|null[0]
-    constructor <init>(kotlin/String = ..., com.nouprax.markdown.core/TextUnit = ...) // com.nouprax.markdown.core/MarkdownSession.<init>|<init>(kotlin.String;com.nouprax.markdown.core.TextUnit){}[0]
-
-    final val document // com.nouprax.markdown.core/MarkdownSession.document|{}document[0]
-        final fun <get-document>(): com.nouprax.markdown.core/Document // com.nouprax.markdown.core/MarkdownSession.document.<get-document>|<get-document>(){}[0]
-    final val text // com.nouprax.markdown.core/MarkdownSession.text|{}text[0]
-        final fun <get-text>(): kotlin/String // com.nouprax.markdown.core/MarkdownSession.text.<get-text>|<get-text>(){}[0]
-    final val unit // com.nouprax.markdown.core/MarkdownSession.unit|{}unit[0]
-        final fun <get-unit>(): com.nouprax.markdown.core/TextUnit // com.nouprax.markdown.core/MarkdownSession.unit.<get-unit>|<get-unit>(){}[0]
-
-    final var context // com.nouprax.markdown.core/MarkdownSession.context|{}context[0]
-        final fun <get-context>(): com.nouprax.markdown.core/Context // com.nouprax.markdown.core/MarkdownSession.context.<get-context>|<get-context>(){}[0]
-
-    final fun append(kotlin/String): com.nouprax.markdown.core/Document // com.nouprax.markdown.core/MarkdownSession.append|append(kotlin.String){}[0]
-    final fun close() // com.nouprax.markdown.core/MarkdownSession.close|close(){}[0]
-    final fun edit(com.nouprax.markdown.core/Position, com.nouprax.markdown.core/Position, kotlin/String): com.nouprax.markdown.core/Document // com.nouprax.markdown.core/MarkdownSession.edit|edit(com.nouprax.markdown.core.Position;com.nouprax.markdown.core.Position;kotlin.String){}[0]
-    final fun flush(): com.nouprax.markdown.core/Document // com.nouprax.markdown.core/MarkdownSession.flush|flush(){}[0]
-    final fun locate(com.nouprax.markdown.core/Position) // com.nouprax.markdown.core/MarkdownSession.locate|locate(com.nouprax.markdown.core.Position){}[0]
-    final fun markers(com.nouprax.markdown.core/Markup): kotlin.collections/List<com.nouprax.markdown.core/Scope> // com.nouprax.markdown.core/MarkdownSession.markers|markers(com.nouprax.markdown.core.Markup){}[0]
-    final fun path(com.nouprax.markdown.core/Position): kotlin.collections/List<com.nouprax.markdown.core/Markup> // com.nouprax.markdown.core/MarkdownSession.path|path(com.nouprax.markdown.core.Position){}[0]
-    final fun scope(com.nouprax.markdown.core/Markup, com.nouprax.markdown.core/SlotKind?): kotlin.collections/List<com.nouprax.markdown.core/Scope> // com.nouprax.markdown.core/MarkdownSession.scope|scope(com.nouprax.markdown.core.Markup;com.nouprax.markdown.core.SlotKind?){}[0]
-    final fun spell(com.nouprax.markdown.core/Slot, kotlin.collections/List<kotlin/String>): kotlin.collections/List<com.nouprax.markdown.core/Slot.Insertion?> // com.nouprax.markdown.core/MarkdownSession.spell|spell(com.nouprax.markdown.core.Slot;kotlin.collections.List<kotlin.String>){}[0]
-    final fun spell(com.nouprax.markdown.core/Slot, kotlin/String): com.nouprax.markdown.core/Slot.Insertion? // com.nouprax.markdown.core/MarkdownSession.spell|spell(com.nouprax.markdown.core.Slot;kotlin.String){}[0]
-}
-
 final class com.nouprax.markdown.core/Metadata : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/Metadata|null[0]
     final val abstract // com.nouprax.markdown.core/Metadata.abstract|{}abstract[0]
         final fun <get-abstract>(): com.nouprax.markdown.core/MetadataValue? // com.nouprax.markdown.core/Metadata.abstract.<get-abstract>|<get-abstract>(){}[0]
@@ -1164,24 +976,6 @@ final class com.nouprax.markdown.core/Metadata : com.nouprax.markdown.core/Marku
         final fun <get-time>(): com.nouprax.markdown.core/MetadataValue? // com.nouprax.markdown.core/Metadata.time.<get-time>|<get-time>(){}[0]
     final val title // com.nouprax.markdown.core/Metadata.title|{}title[0]
         final fun <get-title>(): com.nouprax.markdown.core/MetadataValue? // com.nouprax.markdown.core/Metadata.title.<get-title>|<get-title>(){}[0]
-
-    final object Companion { // com.nouprax.markdown.core/Metadata.Companion|null[0]
-        final val fields // com.nouprax.markdown.core/Metadata.Companion.fields|{}fields[0]
-            final fun <get-fields>(): kotlin.collections/List<kotlin/String> // com.nouprax.markdown.core/Metadata.Companion.fields.<get-fields>|<get-fields>(){}[0]
-    }
-}
-
-final class com.nouprax.markdown.core/Opener { // com.nouprax.markdown.core/Opener|null[0]
-    final val kind // com.nouprax.markdown.core/Opener.kind|{}kind[0]
-        final fun <get-kind>(): com.nouprax.markdown.core/NodeKind? // com.nouprax.markdown.core/Opener.kind.<get-kind>|<get-kind>(){}[0]
-    final val scope // com.nouprax.markdown.core/Opener.scope|{}scope[0]
-        final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/Opener.scope.<get-scope>|<get-scope>(){}[0]
-
-    final fun component1(): com.nouprax.markdown.core/NodeKind? // com.nouprax.markdown.core/Opener.component1|component1(){}[0]
-    final fun component2(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/Opener.component2|component2(){}[0]
-    final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/Opener.equals|equals(kotlin.Any?){}[0]
-    final fun hashCode(): kotlin/Int // com.nouprax.markdown.core/Opener.hashCode|hashCode(){}[0]
-    final fun toString(): kotlin/String // com.nouprax.markdown.core/Opener.toString|toString(){}[0]
 }
 
 final class com.nouprax.markdown.core/Paragraph : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/Paragraph|null[0]
@@ -1280,39 +1074,6 @@ final class com.nouprax.markdown.core/Scope { // com.nouprax.markdown.core/Scope
     final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/Scope.equals|equals(kotlin.Any?){}[0]
     final fun hashCode(): kotlin/Int // com.nouprax.markdown.core/Scope.hashCode|hashCode(){}[0]
     final fun toString(): kotlin/String // com.nouprax.markdown.core/Scope.toString|toString(){}[0]
-}
-
-final class com.nouprax.markdown.core/Slot { // com.nouprax.markdown.core/Slot|null[0]
-    final val after // com.nouprax.markdown.core/Slot.after|{}after[0]
-        final fun <get-after>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/Slot.after.<get-after>|<get-after>(){}[0]
-    final val before // com.nouprax.markdown.core/Slot.before|{}before[0]
-        final fun <get-before>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/Slot.before.<get-before>|<get-before>(){}[0]
-    final val closed // com.nouprax.markdown.core/Slot.closed|{}closed[0]
-        final fun <get-closed>(): kotlin/Boolean // com.nouprax.markdown.core/Slot.closed.<get-closed>|<get-closed>(){}[0]
-    final val kind // com.nouprax.markdown.core/Slot.kind|{}kind[0]
-        final fun <get-kind>(): com.nouprax.markdown.core/SlotKind // com.nouprax.markdown.core/Slot.kind.<get-kind>|<get-kind>(){}[0]
-    final val owner // com.nouprax.markdown.core/Slot.owner|{}owner[0]
-        final fun <get-owner>(): com.nouprax.markdown.core/NodeKind // com.nouprax.markdown.core/Slot.owner.<get-owner>|<get-owner>(){}[0]
-    final val prefix // com.nouprax.markdown.core/Slot.prefix|{}prefix[0]
-        final fun <get-prefix>(): kotlin.collections/List<kotlin/String> // com.nouprax.markdown.core/Slot.prefix.<get-prefix>|<get-prefix>(){}[0]
-
-    final class Insertion { // com.nouprax.markdown.core/Slot.Insertion|null[0]
-        final val cursor // com.nouprax.markdown.core/Slot.Insertion.cursor|{}cursor[0]
-            final fun <get-cursor>(): kotlin/Int // com.nouprax.markdown.core/Slot.Insertion.cursor.<get-cursor>|<get-cursor>(){}[0]
-        final val text // com.nouprax.markdown.core/Slot.Insertion.text|{}text[0]
-            final fun <get-text>(): kotlin/String // com.nouprax.markdown.core/Slot.Insertion.text.<get-text>|<get-text>(){}[0]
-
-        final fun component1(): kotlin/String // com.nouprax.markdown.core/Slot.Insertion.component1|component1(){}[0]
-        final fun component2(): kotlin/Int // com.nouprax.markdown.core/Slot.Insertion.component2|component2(){}[0]
-        final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/Slot.Insertion.equals|equals(kotlin.Any?){}[0]
-        final fun hashCode(): kotlin/Int // com.nouprax.markdown.core/Slot.Insertion.hashCode|hashCode(){}[0]
-        final fun toString(): kotlin/String // com.nouprax.markdown.core/Slot.Insertion.toString|toString(){}[0]
-    }
-
-    final object Companion { // com.nouprax.markdown.core/Slot.Companion|null[0]
-        final val cues // com.nouprax.markdown.core/Slot.Companion.cues|{}cues[0]
-            final fun <get-cues>(): kotlin.collections/List<kotlin/Char> // com.nouprax.markdown.core/Slot.Companion.cues.<get-cues>|<get-cues>(){}[0]
-    }
 }
 
 final class com.nouprax.markdown.core/SoftBreak : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/SoftBreak|null[0]

@@ -3,7 +3,6 @@
 #include "formula.h"
 #include "element.h"
 #include "inline_internal.h"
-#include "parts.h"
 
 #include <assert.h>
 #include <string.h>
@@ -49,12 +48,6 @@ static node_formula *get_formula(markdown_core_node *node) { return (node_formul
 
 markdown_core_chunk markdown_core_elements_formula_literal(const markdown_core_node *node) {
     return ((const node_formula *)node->opaque)->literal;
-}
-
-void markdown_core_elements_formula_halves(const markdown_core_node *node, const unsigned char **front,
-                                           bufsize_t *front_size, const unsigned char **back, bufsize_t *back_size) {
-    const node_formula *formula = node->opaque;
-    markdown_core_literal_halves(node, &formula->literal, formula->start, front, front_size, back, back_size);
 }
 
 bool markdown_core_elements_formula_read(const markdown_core_node *node, const unsigned char **data, bufsize_t *size) {
@@ -299,7 +292,6 @@ static markdown_core_node *match_formula_delimiter(const markdown_core_element_i
         markdown_core_chunk *input = markdown_core_inline_state_get_chunk(inline_state);
         /* An opener with no closer opens a formula once one follows. */
         if (close < 0) {
-            markdown_core_inline_open(inline_state, MARKDOWN_CORE_KIND_FORMULA, start, from, NULL, 0);
         }
         if (close >= 0 && formula_body_admitted(rule, input->data + from, close - from)) {
             /* A dynamic parent's policy is observed at delimiter reduction, in
@@ -754,39 +746,6 @@ static bool close_formula_block(const markdown_core_element_instance *self, mark
  * any other element claims `\\` before taking its fast path for a run of
  * escaped backslashes (escape.c). */
 
-static markdown_core_node_type formula_former(const markdown_core_element_instance *self,
-                                              const markdown_core_node *node) {
-    (void)self;
-    return node->kind == MARKDOWN_CORE_NODE_FORMULA_BLOCK && ((const node_formula *)node->opaque)->fence_char
-               ? MARKDOWN_CORE_NODE_CODE_BLOCK
-               : MARKDOWN_CORE_NODE_NONE;
-}
-
-/* The fence it was, whose info string names a formula, as its opening left
- * it, which its completion promotes again (markdown_core_formula_promote_fence). */
-static bool formula_revert(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                           markdown_core_node *node, markdown_core_node *parent, uint32_t *kept) {
-    (void)kept;
-    const node_formula *formula = get_formula(node);
-    const markdown_core_code fence = {.literal_start = formula->head,
-                                      .fence_length = formula->fence_size,
-                                      .fence_offset = formula->fence_offset,
-                                      .fence_char = formula->fence_char,
-                                      .fenced = 1};
-    const markdown_core_node_set_kind_result result =
-        markdown_core_parser_set_node_kind(parser, node, parent, MARKDOWN_CORE_NODE_CODE_BLOCK);
-    assert(result != MARKDOWN_CORE_NODE_SET_KIND_REJECTED);
-    if (result != MARKDOWN_CORE_NODE_SET_KIND_OK) {
-        return false;
-    }
-    *node->as.code = fence;
-    node->as.code->info = markdown_core_optional_chunk_present(markdown_core_chunk_literal("formula"));
-    formula_opaque_free(NULL, node);
-    node->opaque = NULL;
-    markdown_core_node_set_element(node, NULL);
-    return true;
-}
-
 static const markdown_core_record_ops FORMULA_PAYLOAD = {
     .init = formula_opaque_alloc,
     .free = formula_opaque_free,
@@ -824,12 +783,7 @@ static const markdown_core_line_ops FORMULA_LINES = {
 static const markdown_core_node_type FORMULA_LEADERS[] = {MARKDOWN_CORE_NODE_CODE_BLOCK, MARKDOWN_CORE_NODE_NONE};
 
 static const markdown_core_follow FORMULA_FOLLOWS[] = {
-    {.at = MARKDOWN_CORE_FOLLOW_COMPLETE,
-     .kinds = FORMULA_LEADERS,
-     .follow = S_follow_fence,
-     .makes = MARKDOWN_CORE_NODE_FORMULA_BLOCK,
-     .former = formula_former,
-     .revert = formula_revert},
+    {.at = MARKDOWN_CORE_FOLLOW_COMPLETE, .kinds = FORMULA_LEADERS, .follow = S_follow_fence},
     {0},
 };
 
@@ -847,14 +801,8 @@ static markdown_core_placement S_placement(const markdown_core_node *node) {
 }
 
 const markdown_core_facet MARKDOWN_CORE_FORMULA_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_FORMULA,
-     .parts = markdown_core_formula_parts,
-     .literal = S_literal,
-     .placement = S_placement},
-    {.kind = MARKDOWN_CORE_KIND_FORMULA_BLOCK,
-     .parts = markdown_core_formula_parts,
-     .literal = S_literal,
-     .placement = S_placement},
+    {.kind = MARKDOWN_CORE_KIND_FORMULA, .literal = S_literal, .placement = S_placement},
+    {.kind = MARKDOWN_CORE_KIND_FORMULA_BLOCK, .literal = S_literal, .placement = S_placement},
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 
@@ -869,36 +817,3 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_FORMULA = {
     .opens = &FORMULA_OPENS,
     .lines = &FORMULA_LINES,
 };
-
-/* THE PARTS OF A FORMULA (parts.h): its literal, after its opening `$` or
- * `$$`, `\(` or `\[`, or its fence line. A `$` past the opener is the
- * literal's: `$$$a$$$` is a standalone formula whose literal is `$a`. */
-void markdown_core_formula_parts(markdown_core_parts *parts) {
-    const unsigned char *s = parts->text;
-    const bufsize_t n = parts->length;
-    bufsize_t from = 0;
-    while (from < n && from < 2 && s[from] == '\\') {
-        from++;
-    }
-    from = from && from < n && (s[from] == '(' || s[from] == '[') ? from + 1 : 0;
-    if (!from && n && s[0] == '$') {
-        from = markdown_core_node_get_kind(parts->node) == MARKDOWN_CORE_KIND_FORMULA_BLOCK ||
-                       markdown_core_elements_get_formula_mode((markdown_core_node *)parts->node) ==
-                           MARKDOWN_CORE_FORMULA_MODE_STANDALONE
-                   ? 2
-                   : 1;
-        from = from < n ? from : n;
-    }
-    /* A fence's line is the fence and the word that names a formula. */
-    if (n && (s[0] == '`' || s[0] == '~' || markdown_core_is_space_or_tab(s[0]))) {
-        while (from < n && !markdown_core_is_line_end(s[from])) {
-            from++;
-        }
-    }
-    /* Its literal in at most two parts, which part at a line's start. */
-    const unsigned char *front, *back;
-    bufsize_t front_size, back_size;
-    markdown_core_elements_formula_halves(parts->node, &front, &front_size, &back, &back_size);
-    from = markdown_core_parts_find(parts, from, front, front_size);
-    markdown_core_parts_find(parts, from, back, back_size);
-}

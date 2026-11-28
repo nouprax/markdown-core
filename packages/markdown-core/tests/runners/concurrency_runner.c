@@ -16,12 +16,10 @@
 //                delimiter stack, reference map, or special-character
 //                table, and no parse may leave state behind for the next.
 //
-//   literal      An edit inside a long code block, an HTML block, an HTML
-//                comment and a formula fence leaves each literal for the
-//                first read to join (node.h, A LITERAL, LAZY); a barrier
-//                releases every thread into that first read of one
-//                document, and each must read the same bytes, the block's
-//                lines as the edited text has them.
+//   literal      A long code block, an HTML block, an HTML comment and a
+//                formula fence: a barrier releases every thread into a
+//                read of each literal of one document, and each must read
+//                the same bytes, the block's lines as the text has them.
 //
 //   lifecycle    Repeated parse/free cycles interleaved with failure paths
 //                must not affect a later parser instance — the last parse
@@ -448,44 +446,20 @@ static int case_literal(void) {
                        : block == 3 ? lines - 1 - made->from
                                     : lines - made->from;
     }
-    markdown_core_session *session;
-    const markdown_core_document *document;
-    if (markdown_core_session_new((const uint8_t *)text, size, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) !=
-            MARKDOWN_CORE_OK ||
-        markdown_core_session_flush(session, &document) != MARKDOWN_CORE_OK) {
-        fprintf(stderr, "concurrency: literal session failed\n");
+    markdown_core_document *document = NULL;
+    if (markdown_core_document_parse((const uint8_t *)text, size, &document) != MARKDOWN_CORE_OK) {
+        fprintf(stderr, "concurrency: literal parse failed\n");
         return 1;
     }
     int failed = 0;
+    const markdown_core_nodes children = markdown_core_node_children(markdown_core_document_root(document));
+    if (children.count != BLOCKS) {
+        fprintf(stderr, "concurrency: literal blocks %zu\n", children.count);
+        failed = 1;
+    }
     for (int round = 0; round < LITERAL_ROUNDS && !failed; round++) {
-        /* One digit of a line in the middle of each block, which the edit's
-         * reading leaps in. */
-        const char digit = (char)('0' + round % 10);
         for (int block = 0; block < BLOCKS && !failed; block++) {
-            const int32_t at_line = blocks[block].middle + round % 7;
-            const markdown_core_position at = {at_line, blocks[block].column},
-                                         end = {at_line, blocks[block].column + 1};
-            if (markdown_core_session_edit(session, at, end, (const uint8_t *)&digit, 1, &document) !=
-                MARKDOWN_CORE_OK) {
-                fprintf(stderr, "concurrency: literal edit failed\n");
-                failed = 1;
-            }
-        }
-        const markdown_core_nodes children = markdown_core_node_children(markdown_core_document_root(document));
-        if (failed || children.count != BLOCKS) {
-            fprintf(stderr, "concurrency: literal blocks %zu\n", children.count);
-            failed = 1;
-            break;
-        }
-        for (int block = 0; block < BLOCKS && !failed; block++) {
-            /* What the block's lines hold now, from the session's text. */
             const literal_block *made = &blocks[block];
-            uint8_t *bytes = malloc(markdown_core_session_text_size(session));
-            if (!bytes) {
-                failed = 1;
-                break;
-            }
-            markdown_core_session_text(session, bytes);
             barrier start;
             barrier_init(&start, THREAD_COUNT);
             reader readers[THREAD_COUNT];
@@ -503,16 +477,15 @@ static int case_literal(void) {
             for (int i = 0; i < THREAD_COUNT && !failed; i++) {
                 if (readers[i].status != MARKDOWN_CORE_OK || readers[i].value.length != made->length ||
                     readers[i].value.data != readers[0].value.data ||
-                    memcmp(readers[i].value.data, bytes + made->from, made->length) != 0) {
+                    memcmp(readers[i].value.data, text + made->from, made->length) != 0) {
                     fprintf(stderr, "concurrency: literal round %d block %d reader %d differs (%zu vs %zu)\n", round,
                             block, i, readers[i].value.length, made->length);
                     failed = 1;
                 }
             }
-            free(bytes);
         }
     }
-    markdown_core_session_close(session);
+    markdown_core_document_free(document);
     return failed;
 }
 

@@ -57,8 +57,7 @@ const OWNERS = new Set([
     "core/blocks.c:markdown_core_parser_extend_source_lines",
     "core/blocks.c:S_parse_source",
     "core/blocks.c:S_mark",
-    "core/blocks.c:S_feed",
-    "core/blocks.c:S_candidates_see_end"
+    "core/blocks.c:S_feed"
 ]);
 
 function librarySources() {

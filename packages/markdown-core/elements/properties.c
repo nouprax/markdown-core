@@ -3,7 +3,6 @@
 #include "metadata.h"
 #include "parser.h"
 #include "node.h"
-#include "parts.h"
 #include "buffer.h"
 #include <string.h>
 #include <limits.h>
@@ -18,18 +17,13 @@
  * (docs/specs/dialect/properties.md) sets its field, the first time only;
  * any other member is skipped as a whole. No source range is read twice.
  *
- * The parse decodes the payload once, into the document's metadata, and
- * the places' reader decodes it again on request (properties.h): each
- * member's name, its values, and the bytes the fields skip, for the
- * fields' scopes (parts.h) and the context query's slots. */
+ * The parse decodes the payload once, into the document's metadata. */
 typedef struct {
     const unsigned char *text;
     /* Where the payload ends: the closing fence's line. */
     size_t end;
     markdown_core_properties_work *work;
     markdown_core_metadata_fields *metadata;
-    /* The reader's places, or NULL in the parse. */
-    markdown_core_metadata_places *places;
     markdown_core_yaml_parser yaml;
     bool failed;
     /* One-line lookahead: the boundary line is the next member's line, and
@@ -95,16 +89,6 @@ static bool equals(const unsigned char *text, size_t size, const char *word) {
 static const char *const names[] = {"name",    "title",    "subtitle", "time",  "date",
                                     "authors", "keywords", "abstract", "state", "comment"};
 #define NAME_COUNT (sizeof(names) / sizeof(*names))
-
-size_t markdown_core_metadata_field_count(void) { return NAME_COUNT; }
-
-markdown_core_status markdown_core_metadata_field_at(size_t index, markdown_core_string *name) {
-    if (index >= NAME_COUNT) {
-        return MARKDOWN_CORE_OUT_OF_BOUNDS;
-    }
-    *name = (markdown_core_string){(const uint8_t *)names[index], strlen(names[index])};
-    return MARKDOWN_CORE_OK;
-}
 
 /* Resolve the decoded name directly to its optional destination field. */
 static markdown_core_metadata_value *field_slot(markdown_core_metadata_fields *metadata, const unsigned char *name,
@@ -198,27 +182,6 @@ static bool resolve(properties *p, markdown_core_yaml_event *e, markdown_core_me
     return true;
 }
 
-static void record(properties *p, markdown_core_slot_kind slot, markdown_core_yaml_style style, size_t from,
-                   size_t to) {
-    markdown_core_metadata_places *places = p->places;
-    markdown_core_metadata_place *items =
-        markdown_core_reserve(places->items, &places->capacity, places->count + 1, sizeof(*items));
-    if (!items) {
-        p->failed = true;
-        return;
-    }
-    places->items = items;
-    items[places->count++] = (markdown_core_metadata_place){slot, style, from, to};
-}
-
-/* Records a place for the reader; the parse keeps none. */
-static inline void place(properties *p, markdown_core_slot_kind slot, markdown_core_yaml_style style, size_t from,
-                         size_t to) {
-    if (p->places) {
-        record(p, slot, style, from, to);
-    }
-}
-
 /* Reads the member that starts its line at `start` and ends at `end`: a
  * block mapping of one name, whose value is a scalar on the name's line, a
  * literal there on a prose field, or a list of text and numbers. */
@@ -251,7 +214,6 @@ static bool decode(properties *p, size_t start, size_t end, markdown_core_metada
     if (!*slot || (*slot)->kind) {
         return false;
     }
-    place(p, MARKDOWN_CORE_SLOT_FIELD, e->style, e->from, e->to);
     e++;
     /* The value. */
     if (e->kind == MARKDOWN_CORE_YAML_SCALAR) {
@@ -259,7 +221,6 @@ static bool decode(properties *p, size_t start, size_t end, markdown_core_metada
         valid = e + 1 == last && e->line == line && (e->style != MARKDOWN_CORE_YAML_LITERAL || prose) &&
                 resolve(p, e, &value->as.scalar);
         if (valid) {
-            place(p, MARKDOWN_CORE_SLOT_VALUE, e->style, e->from, e->to);
         }
         return valid;
     }
@@ -276,7 +237,6 @@ static bool decode(properties *p, size_t start, size_t end, markdown_core_metada
         if (item.kind != MARKDOWN_CORE_METADATA_TEXT && item.kind != MARKDOWN_CORE_METADATA_NUMBER) {
             return false;
         }
-        place(p, MARKDOWN_CORE_SLOT_VALUE, e->style, e->from, e->to);
         markdown_core_metadata_list_item *items =
             markdown_core_reserve(value->as.list.items, &room, value->as.list.count + 1, sizeof(*items));
         if (!items) {
@@ -300,7 +260,6 @@ static bool decode(properties *p, size_t start, size_t end, markdown_core_metada
  * reading its value. */
 static void member(properties *p, size_t start, size_t first, size_t key, size_t end) {
     markdown_core_metadata_value *slot = NULL, value = {0};
-    const size_t count = p->places ? p->places->count : 0;
     bool known = key != 0;
     if (known && p->text[first] != '"' && p->text[first] != '\'') {
         size_t stop = key - 1;
@@ -315,22 +274,12 @@ static void member(properties *p, size_t start, size_t first, size_t key, size_t
     }
     if (known && decode(p, start, end, &slot, &value) && !p->failed) {
         *slot = value;
-        for (size_t i = 0; i < p->yaml.comment_count; i++) {
-            place(p, MARKDOWN_CORE_SLOT_NONE, MARKDOWN_CORE_YAML_PLAIN, p->yaml.comments[i].from,
-                  p->yaml.comments[i].to);
-        }
         return;
     }
     free_value(&value);
-    /* A member skipped as a whole is one field of no slot kind, from its
-     * name to its last byte that is no space or line ending. */
-    if (p->places) {
-        p->places->count = count;
-    }
     while (end > first && markdown_core_is_whitespace(p->text[end - 1])) {
         end--;
     }
-    place(p, MARKDOWN_CORE_SLOT_NONE, MARKDOWN_CORE_YAML_PLAIN, first, end);
 }
 
 /* Return the byte after a directly authored block key's colon. The same
@@ -418,14 +367,10 @@ static size_t block_boundary(properties *p, size_t line, size_t indent) {
     enum { VALUE_PREFIX, VALUE_SCALAR, VALUE_QUOTED, VALUE_SEQUENCE, VALUE_BRACKETED } form = VALUE_PREFIX;
     size_t array_depth = 0, object_depth = 0;
     unsigned char quote = 0;
-    bool first = true, probed = false, node = true;
+    bool first = true, node = true;
     for (; line < p->end; line = next_line(s, p->stop, p->end)) {
         classify_line(p, line);
         size_t cursor = line, e = p->stop, nonspace = p->first;
-        if (!first && p->places && line == p->places->line) {
-            probed = true;
-            p->places->held = array_depth != 0 || object_depth != 0;
-        }
         if (!first && nonspace < e && nonspace - cursor <= indent) {
             bool list_line = nonspace - cursor == indent && s[nonspace] == '-' &&
                              (nonspace + 1 == e || markdown_core_is_space_or_tab(s[nonspace + 1]));
@@ -441,13 +386,6 @@ static size_t block_boundary(properties *p, size_t line, size_t indent) {
             if (!continuation) {
                 return line;
             }
-        }
-        if (probed && line != p->places->line) {
-            size_t content = nonspace;
-            while (content < e && markdown_core_is_space_or_tab(s[content])) {
-                content++;
-            }
-            p->places->held = p->places->held || (content < e && s[content] != '#');
         }
         size_t token = first ? p->key : 0;
         for (size_t i = token ? token : nonspace; i < e; i++) {
@@ -529,7 +467,6 @@ static void payload(properties *p, size_t start) {
         if (content == e || s[content] == '#' || s[first] == '%' ||
             (e - first >= 3 && memcmp(s + first, "...", 3) == 0 &&
              (e == first + 3 || markdown_core_is_space_or_tab(s[first + 3])))) {
-            place(p, MARKDOWN_CORE_SLOT_NONE, MARKDOWN_CORE_YAML_PLAIN, content, e);
             line = next_line(s, e, p->end);
             continue;
         }
@@ -564,12 +501,6 @@ int markdown_core_properties_fence(const unsigned char *data) {
         dashes++;
     }
     return markdown_core_is_line_end(data[dashes]) ? dashes : -1;
-}
-
-bool markdown_core_properties_stops(const markdown_core_element_instance *self, const unsigned char *line,
-                                    size_t length) {
-    (void)self;
-    return length >= 3 && line[0] == '-' && line[1] == '-' && line[2] == '-';
 }
 
 bool markdown_core_properties_closed(markdown_core_properties_work *work, markdown_core_parser *parser,
@@ -618,7 +549,6 @@ bool markdown_core_properties_closed(markdown_core_properties_work *work, markdo
     if (closed) {
         markdown_core_reader_open(reader, parser->root);
     }
-    markdown_core_reader_opens(reader, owner, closed);
     *fence = close;
     return closed;
 }
@@ -649,32 +579,4 @@ size_t markdown_core_properties_parse(markdown_core_properties_work *work, markd
     parser->root->as.document->metadata = node;
     markdown_core_parser_settle_field(parser, node);
     return consumed;
-}
-
-bool markdown_core_metadata_text(const unsigned char *text, size_t size) {
-    return size && !equals(text, size, "null") && !equals(text, size, "true") && !equals(text, size, "false") &&
-           !number(text, size);
-}
-
-bool markdown_core_metadata_places_read(const unsigned char *text, size_t length,
-                                        markdown_core_metadata_places *places) {
-    const size_t end = length >= 3 ? length - 3 : 0;
-    markdown_core_metadata_fields fields = {0};
-    markdown_core_properties_work work = {0};
-    properties p = {.text = text, .end = end, .work = &work, .metadata = &fields, .places = places};
-    payload(&p, next_line(text, 3 < end ? 3 : end, end));
-    properties_close(&p);
-    markdown_core_metadata_fields_free(&fields);
-    return !p.failed;
-}
-
-/* An envelope's parts: its places that hold bytes. */
-void markdown_core_metadata_parts(markdown_core_parts *parts) {
-    markdown_core_metadata_places places = {0};
-    parts->failed = !markdown_core_metadata_places_read(parts->text, (size_t)parts->length, &places) || parts->failed;
-    for (size_t i = 0; i < places.count; i++) {
-        markdown_core_parts_add(parts, places.items[i].slot, (bufsize_t)places.items[i].from,
-                                (bufsize_t)places.items[i].to);
-    }
-    markdown_core_free(places.items);
 }

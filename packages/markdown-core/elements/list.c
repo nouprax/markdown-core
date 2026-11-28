@@ -1,4 +1,3 @@
-#include "parts.h"
 #include "list.h"
 #include "tasklist.h"
 #include "block_internal.h"
@@ -193,41 +192,12 @@ static bool continue_container(const markdown_core_element_instance *self, markd
     return markdown_core_list_continue(parser, node, reader, joining, taken);
 }
 static const markdown_core_node_type LIST_KINDS[] = {MARKDOWN_CORE_NODE_LIST, MARKDOWN_CORE_NODE_NONE};
-/* A list reopened at an item's line (blocks.c, THE NESTED REOPEN) is laid
- * out by none of its items yet, and its last line was blank as the line
- * before the item's was; an item keeps no state of its own. */
-static void reopen_block(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                         markdown_core_node *node, const markdown_core_node *next, bool blank) {
-    (void)self;
-    (void)parser;
-    (void)next;
-    if (node->kind != MARKDOWN_CORE_NODE_LIST) {
-        return;
-    }
-    node->flags &=
-        (markdown_core_node_internal_flags) ~(MARKDOWN_CORE_NODE__LIST_LOOSE | MARKDOWN_CORE_NODE__LIST_LOOSE_FOLLOWED |
-                                              MARKDOWN_CORE_NODE__LIST_LAST_LINE_BLANK);
-    if (blank) {
-        node->flags |= MARKDOWN_CORE_NODE__LIST_LAST_LINE_BLANK;
-    }
-    node->as.list->tight = false;
-}
 static bool blank_line(const markdown_core_element_instance *self, markdown_core_parser *parser,
                        markdown_core_node *node, markdown_core_reader *reader) {
     (void)self;
     return !(node->kind == MARKDOWN_CORE_NODE_LIST_ITEM && !markdown_core_parser_last_child(node) &&
              markdown_core_reader_starts(reader, parser, node, reader->number));
 }
-
-static const markdown_core_edit_ops LIST_EDIT = {
-    .reopens = true,
-    .reopen_block = reopen_block,
-    .abuts = LIST_KINDS,
-    /* A line after it, past blank lines, may still be its next item, and a
-     * list it does not continue takes what its marker leaves open from it
-     * (markdown_core_list_open). */
-    .awaits = LIST_KINDS,
-};
 
 static const markdown_core_fold_ops LIST_FOLD = {
     .child = fold_child,
@@ -251,13 +221,11 @@ static const markdown_core_line_ops LIST_LINES = {
 };
 
 const markdown_core_facet MARKDOWN_CORE_LIST_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_LIST_ITEM, .parts = markdown_core_list_item_parts},
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_LIST = {
     .facets = MARKDOWN_CORE_LIST_FACETS,
-    .edit = &LIST_EDIT,
     .state_size = sizeof(markdown_core_list_work),
     .name = "list",
     .fold = &LIST_FOLD,

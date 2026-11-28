@@ -1,4 +1,0 @@
-# Failures the field and marker oracle cannot judge (tests/runners/field_runner.c).
-#
-# One per line: FIXTURE:EXAMPLE-LINE: WHAT # reason. An entry that no
-# failure meets any more fails the run, so the list only shrinks.

@@ -87,13 +87,9 @@ if (declared.join("\n") !== exported.join("\n")) {
 if (declared.join("\n") !== machOExported.join("\n")) {
     throw new Error("C header declarations and the Mach-O export list differ");
 }
-// A session is the one object that changes: its text takes appends, and
-// edits once flushed (docs/plans/2026-09-29-incremental-parsing.md, R6, R8
-// and 12.3).
-const sessionText = /^markdown_core_session_(?:new|append|edit)$/;
 for (const symbol of declared) {
     if (
-        (!sessionText.test(symbol) && /_(?:set|insert|append|prepend|replace|unlink|edit|new|render)(?:_|$)/.test(symbol)) ||
+        /_(?:set|insert|append|prepend|replace|unlink|edit|new|render)(?:_|$)/.test(symbol) ||
         /_(?:feed|stream|snapshot|delta|diagnostic)(?:_|$)/.test(symbol) ||
         /_parser_(?:new|new_with_mem|feed|finish|free)$/.test(symbol) ||
         /_parse_file$/.test(symbol)
@@ -137,11 +133,6 @@ retired_surface_terms='render|feed|stream|snapshot|delta|diagnostic|concrete|Con
 # Mutation verbs end at an identifier or camel/snake-case word boundary;
 # a noun sharing a lowercase prefix does not name a mutation operation.
 mutation_surface_terms='set[A-Z]|(insert|append|prepend|replace|unlink|edit)([A-Z_]|\b)'
-# A session is the one object that changes: its text takes appends, and
-# edits once flushed (docs/plans/2026-09-29-incremental-parsing.md, R6, R8
-# and 12.3). Only its own `append` and `edit` are exempt from the mutation
-# verbs.
-session_text_operation='/MarkdownSession\.(swift|kt):[0-9]+:[[:space:]]*public (func|fun) (append|edit)\('
 
 CLANG_MODULE_CACHE_PATH="$temp_dir/swift-module-cache" \
     swift package --disable-sandbox dump-package >"$temp_dir/swift-package.json"
@@ -150,14 +141,14 @@ import fs from "node:fs";
 
 const manifest = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
 const products = manifest.products.map((product) => `${product.name}:${product.targets.join(",")}`);
-if (products.join("\n") !== "MarkdownCore:MarkdownCore\nMarkdownCoreLSP:MarkdownCoreLSP") {
+if (products.join("\n") !== "MarkdownCore:MarkdownCore") {
     throw new Error(`Unexpected SwiftPM products: ${products.join(", ")}`);
 }
 NODE
 
 if grep -R -n -E \
     "public (class|struct|enum|protocol|typealias|func|var|let|static func).*\\b(${retired_surface_terms}|${mutation_surface_terms}|nativeHandle|pointer|memory|wasm)" \
-    packages/swift-markdown-core/Sources/MarkdownCore | grep -v -E "$session_text_operation"; then
+    packages/swift-markdown-core/Sources/MarkdownCore; then
     fail "Swift exports a retired API, mutation, or native implementation detail"
 fi
 grep -q 'public func dump(in source: String)' packages/swift-markdown-core/Sources/MarkdownCore/DocumentScope.swift \
@@ -202,7 +193,7 @@ grep -q 'explicitApi()' packages/kotlin-markdown-core/build.gradle.kts \
     || fail "Kotlin explicit API mode is disabled"
 if grep -R -n -E \
     "public (class|data class|sealed class|enum class|object|interface|typealias|fun|val|var).*\\b(${retired_surface_terms}|${mutation_surface_terms}|nativeHandle|pointer|memory|wasm)" \
-    packages/kotlin-markdown-core/src/commonMain | grep -v -E "$session_text_operation"; then
+    packages/kotlin-markdown-core/src/commonMain; then
     fail "Kotlin exports a retired API, mutation, or native implementation detail"
 fi
 grep -q 'public fun dump(source: String): String' \
@@ -245,12 +236,10 @@ grep -q 'public enum class MarkupVisitPhase' \
 # (docs/architecture/wire-format.md). No target keeps its own encoder or walks
 # the C tree itself.
 kotlin_src=packages/kotlin-markdown-core/src
-# The language engine's header and library ride beside the wire's; its calls
-# answer statuses and plain values, not trees.
-grep -q '^headers = markdown_core_wire.h markdown_core_lsp.h$' "$kotlin_src/nativeInterop/cinterop/markdown_core_kotlin.def" \
+grep -q '^headers = markdown_core_wire.h$' "$kotlin_src/nativeInterop/cinterop/markdown_core_kotlin.def" \
     && grep -q '^package = com.nouprax.markdown.core.internal.capi$' \
         "$kotlin_src/nativeInterop/cinterop/markdown_core_kotlin.def" \
-    && grep -q '^staticLibraries = libmarkdown-core-lsp.a libmarkdown-core-wire.a libmarkdown-core.a$' \
+    && grep -q '^staticLibraries = libmarkdown-core-wire.a libmarkdown-core.a$' \
         "$kotlin_src/nativeInterop/cinterop/markdown_core_kotlin.def" \
     && grep -q 'markdown_core_wire_parse' "$kotlin_src/nativePlatformMain/kotlin/com/nouprax/markdown/core/PlatformParser.native.kt" \
     && grep -q 'markdown_core_wire_parse' "$kotlin_src/native/markdown_core_kotlin_jni.c" \
@@ -309,12 +298,8 @@ const [, , manifestPath, runtimePath] = process.argv;
 const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
 const rootExport = manifest.exports?.["."];
 const exportKeys = Object.keys(manifest.exports ?? {}).sort();
-if (exportKeys.join("\n") !== ".\n./lsp\n./markdown-core.wasm") {
+if (exportKeys.join("\n") !== ".\n./markdown-core.wasm") {
     throw new Error(`Unexpected npm export paths: ${exportKeys.join(", ")}`);
-}
-const lspExport = manifest.exports?.["./lsp"];
-if (lspExport?.types !== "./dist/lsp.d.ts" || lspExport?.import !== "./dist/lsp.js") {
-    throw new Error("npm lsp export does not point at the reviewed ESM and declaration files");
 }
 if (rootExport?.types !== "./dist/index.d.ts" || rootExport?.import !== "./dist/index.js") {
     throw new Error("npm root export does not point at the reviewed ESM and declaration files");
@@ -328,7 +313,7 @@ const runtimeExports = [
         match[1].split(",").map((name) => name.trim())
     )
 ].sort();
-const expectedRuntime = ["Attributes", "Document", "MarkdownCoreError", "MarkdownSession", "MarkupDumper", "Metadata", "Slot", "markupEquals", "walk"].sort();
+const expectedRuntime = ["Attributes", "Document", "MarkdownCoreError", "MarkupDumper", "markupEquals", "walk"].sort();
 if (runtimeExports.join("\n") !== expectedRuntime.join("\n")) {
     throw new Error(`Unexpected ES runtime exports: ${runtimeExports.join(", ")}`);
 }

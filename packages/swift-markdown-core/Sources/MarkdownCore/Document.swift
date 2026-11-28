@@ -2,8 +2,8 @@ import MarkdownCoreC
 
 /// Why a call of the library failed.
 public enum ErrorCode: Sendable, Hashable {
-    /// An allocation failed, or the source or a session's text exceeds the
-    /// engine's 1 GiB capacity. The parse is abandoned rather than
+    /// An allocation failed, or the source exceeds the engine's 1 GiB
+    /// capacity. The parse is abandoned rather than
     /// returning a document with something missing from it.
     case allocationFailed
     /// The source is too short for the node a scope or dump reads, or a
@@ -12,11 +12,6 @@ public enum ErrorCode: Sendable, Hashable {
     /// A value was read as another kind. It is the engine's code, shared by
     /// every binding; typed Swift nodes never reach it.
     case kindMismatch
-    /// A ``MarkdownSession`` was asked to append or flush after it was
-    /// flushed.
-    case sessionFlushed
-    /// A ``MarkdownSession`` was asked to edit before it was flushed.
-    case sessionStreaming
 }
 
 /// The library's one error: a call that cannot answer without crashing or
@@ -103,7 +98,7 @@ public struct Document: Markup {
 }
 
 extension Document {
-    /// The value copy of a native document, from a parse or a session. It
+    /// The value copy of a native document, from a parse. It
     /// borrows nothing from `native`, which may be released right after.
     ///
     /// - Throws: ``MarkdownCoreError`` with ``ErrorCode/allocationFailed``

@@ -3,8 +3,6 @@
 #include "code_block_scanners.h"
 #include "code_block.h"
 #include "block_internal.h"
-#include "sink.h"
-#include "parts.h"
 #include "attributes.h"
 #include <string.h>
 
@@ -115,118 +113,6 @@ static bool close_code(const markdown_core_element_instance *self, markdown_core
     markdown_core_literal_set(b, &b->as.code->literal, start, end);
     return true;
 }
-/* The character reference at `at`, an `&`, when it spells whitespace, as
- * the info string's decoding reads it: its length; 0 when it spells
- * anything else or nothing; -1 when the data ends while it may still be
- * one. */
-static bufsize_t space_reference(const unsigned char *data, bufsize_t at, bufsize_t length) {
-    bufsize_t i = at + 1;
-    if (i < length && data[i] == '#') {
-        i++;
-        const bool hex = i < length && (data[i] | 0x20) == 'x';
-        i += hex;
-        const bufsize_t digits = i, most = hex ? 6 : 7;
-        long point = 0;
-        for (; i < length && i - digits < most; i++) {
-            const unsigned char c = data[i], low = c | 0x20;
-            if (markdown_core_isdigit((char)c)) {
-                point = point * (hex ? 16 : 10) + (c - '0');
-            } else if (hex && low >= 'a' && low <= 'f') {
-                point = point * 16 + (low - 'a' + 10);
-            } else {
-                break;
-            }
-        }
-        if (i >= length) {
-            return -1;
-        }
-        return i > digits && data[i] == ';' && (point == 9 || point == 10 || point == 13 || point == 32) ? i + 1 - at
-                                                                                                         : 0;
-    }
-    static const char *const names[] = {"Tab;", "NewLine;"};
-    for (size_t n = 0; n < sizeof(names) / sizeof(*names); n++) {
-        const bufsize_t size = (bufsize_t)strlen(names[n]);
-        const bufsize_t have = length - i < size ? length - i : size;
-        if (!memcmp(data + i, names[n], (size_t)have)) {
-            return have < size ? -1 : 1 + size;
-        }
-    }
-    return 0;
-}
-
-/* Where an info string's first word goes on past a cursor: at a space or a
- * reference that spells one, or at the attribute tail that ends the line,
- * as the fence's info string leaves it; a brace that opens no tail is a
- * byte of the word. `cut` says whether a reference the data's end cuts
- * short may yet spell a space. */
-static bufsize_t info_word(const unsigned char *data, bufsize_t length, bool *cut) {
-    bufsize_t stop = length;
-    while (stop > 0 && markdown_core_is_whitespace(data[stop - 1])) {
-        stop--;
-    }
-    markdown_core_attribute_parser attributes = {.data = data, .length = stop};
-    const bufsize_t tail = markdown_core_attributes_tail(&attributes, 0, stop);
-    const int oom = attributes.oom;
-    markdown_core_attribute_parser_free(&attributes);
-    if (oom) {
-        return -1;
-    }
-    bufsize_t end = 0;
-    *cut = false;
-    while (end < length && !markdown_core_is_whitespace(data[end]) && end != tail) {
-        /* References decode before escapes, as S_fence_info decodes them:
-         * a backslash before one escapes what it spells, and a space it
-         * spells still ends the word. */
-        if (data[end] == '\\' && end + 1 < length && markdown_core_ispunct(data[end + 1]) && data[end + 1] != '&') {
-            end += 2;
-            continue;
-        }
-        if (data[end] == '&') {
-            const bufsize_t space = space_reference(data, end, length);
-            if (space > 0) {
-                break;
-            }
-            *cut = *cut || space < 0;
-        }
-        end++;
-    }
-    return end;
-}
-static bufsize_t info_end(const unsigned char *data, bufsize_t length) {
-    bool cut;
-    return info_word(data, length, &cut);
-}
-
-/* The fence line's field the line's end cuts short, `rest` its `length`
- * bytes past the fence, to the parse's context sink (a member of an open
- * attribute tail is the tail's taker's to report): the info string's first
- * word, after the spaces and
- * the references that spell them before it. Both are candidates: what
- * follows the cursor decides whether the brace opens a tail or is a byte of
- * the word, so the query confirms one against the whole line. */
-static void S_report_info(markdown_core_parser *parser, markdown_core_reader *reader, const unsigned char *rest,
-                          bufsize_t length) {
-    const bufsize_t offset = reader->offset;
-    bufsize_t start = 0, space;
-    while (start < length) {
-        if (markdown_core_is_space_or_tab(rest[start])) {
-            start++;
-        } else if (rest[start] == '&' && (space = space_reference(rest, start, length)) > 0) {
-            start += space;
-        } else {
-            break;
-        }
-    }
-    bool cut;
-    const bufsize_t end = info_word(rest + start, length - start, &cut);
-    if (end < 0) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-    } else if (!cut && start + end == length) {
-        const markdown_core_field info = {
-            MARKDOWN_CORE_SLOT_INFO, MARKDOWN_CORE_KIND_CODE_BLOCK, offset + start, info_end, {{0}}, 0, false, 0};
-        markdown_core_parser_open(parser, MARKDOWN_CORE_KIND_CODE_BLOCK, reader->nonspace, offset, &info, 1);
-    }
-}
 
 /* THE FENCE LINE GIVES THE INFO STRING AS THE BLOCK OPENS, once: `rest`,
  * `length` bytes, is the line past the fence, the reader's offset, which the block's content
@@ -245,9 +131,6 @@ static void S_fence_info(const markdown_core_element_instance *self, markdown_co
      * info string ends where what is taken begins. */
     const bufsize_t offset = reader->offset;
     bufsize_t info_end = pos - markdown_core_parser_offer(parser, b, rest - offset, offset, offset + pos, true);
-    if (parser->sink) {
-        S_report_info(parser, reader, rest, pos);
-    }
     b->as.code->literal_start = pos + 1;
     markdown_core_strbuf tmp = MARKDOWN_CORE_BUF_INIT();
     bufsize_t info_start = 0;
@@ -351,69 +234,6 @@ static bool blank_line(const markdown_core_element_instance *self, markdown_core
     (void)self;
     return !node->as.code->fenced;
 }
-/* A fenced block an edit reopens at a later line (blocks.c, THE LEAP) has
- * met no closing fence yet. */
-static void reopen_code(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                        markdown_core_node *node, const markdown_core_node *next, bool blank) {
-    (void)self;
-    (void)parser;
-    (void)next;
-    (void)blank;
-    node->as.code->fence_closed = false;
-}
-/* THE PARTS OF A CODE BLOCK (parts.h): a fenced block's info string, the
- * rest of its fence line less the attribute tail and the spaces around it,
- * as S_fence_info reads it, and the tail; and its literal. */
-void markdown_core_code_block_parts(markdown_core_parts *parts) {
-    const markdown_core_code *code = parts->node->as.code;
-    const unsigned char *s = parts->text;
-    const bufsize_t n = parts->length;
-    bufsize_t at = 0;
-    if (code->fenced) {
-        while (at < n && markdown_core_is_space_or_tab(s[at])) {
-            at++;
-        }
-        while (at < n && s[at] == code->fence_char) {
-            at++;
-        }
-        bufsize_t eol = at;
-        while (eol < n && !markdown_core_is_line_end(s[eol])) {
-            eol++;
-        }
-        bufsize_t end = markdown_core_attributes_tail_parts(parts, at, eol);
-        while (at < end && markdown_core_is_space_or_tab(s[at])) {
-            at++;
-        }
-        while (end > at && markdown_core_is_space_or_tab(s[end - 1])) {
-            end--;
-        }
-        markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_INFO, at, end);
-        at = eol + (eol < n && s[eol] == '\r' && eol + 1 < n && s[eol + 1] == '\n') + (eol < n);
-    }
-    /* Its literal in at most two parts, which part at a line's start. */
-    const unsigned char *front, *back;
-    bufsize_t front_size, back_size;
-    markdown_core_literal_halves(parts->node, &code->literal, code->literal_start, &front, &front_size, &back,
-                                 &back_size);
-    at = markdown_core_parts_lines(parts, at, front, front_size);
-    markdown_core_parts_lines(parts, at, back, back_size);
-}
-
-/* A fenced block an edit's reading closes as it did (blocks.c, THE SPLICE
- * IN A BLOCK) met its closing fence as it did: the fence closed it when the
- * end condition did. */
-static void spliced_code(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                         markdown_core_node *node) {
-    (void)self;
-    (void)parser;
-    node->as.code->fence_closed =
-        node->as.code->fenced && (node->flags & MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION) != 0;
-}
-
-static const markdown_core_edit_ops CODE_BLOCK_EDIT = {
-    .reopen_block = reopen_code,
-    .spliced = spliced_code,
-};
 
 static const markdown_core_content_ops CODE_BLOCK_CONTENT = {
     .mode = MARKDOWN_CORE_CONTENT_LITERAL,
@@ -433,14 +253,12 @@ static const markdown_core_line_ops CODE_BLOCK_LINES = {
 };
 
 const markdown_core_facet MARKDOWN_CORE_CODE_BLOCK_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_CODE_BLOCK, .parts = markdown_core_code_block_parts},
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CODE_BLOCK = {
     .peers = CODE_BLOCK_PEERS,
     .facets = MARKDOWN_CORE_CODE_BLOCK_FACETS,
-    .edit = &CODE_BLOCK_EDIT,
     .name = "code_block",
     .content = &CODE_BLOCK_CONTENT,
     .opens = &CODE_BLOCK_OPENS,

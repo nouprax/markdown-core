@@ -137,103 +137,14 @@ dimension or separate pairing registry.
 
 With `--baseline-ref`, only engine source comes from the base revision. The
 current harness, corpus, preset and reference binaries are used on both sides.
-The base revision builds the stage runners and the stream runner. Markdown
-Core's stage harness calls the engine's internal parse entry,
-`markdown_core_parse_document`, which both revisions share while the public API
-changes; the stream harness calls the session API.
+The base revision builds the stage runners. Markdown Core's stage harness
+calls the engine's internal parse entry, `markdown_core_parse_document`, which
+both revisions share while the public API changes.
 Each document's `source_to_buffer` Ir and its `buffer_to_ast` Ir must each be
 at most 1.02 times its baseline. An improvement in one stage, another document
 or an aggregate median cannot hide a regression in the other stage. The gate
 sees only the two stages. It does not replace reviewing allocation behavior,
 or reviewing whether a change moves work into parser creation.
-
-## Streams
-
-`pnpm benchmark:streams` measures what an application pays per streamed
-chunk, as the
-[incremental gates](../../../docs/plans/2026-09-29-incremental-gates.md)
-define it. `scripts/benchmark/workloads.mjs` generates its workloads: every
-grammar corpus document with the `tokens` and `scalars` families, and every
-scale and adversarial shape at 16 KB, 64 KB, 256 KB and 1 MB with `tokens` and
-`rows`. `stream_runner` opens a subject on an empty text, appends the
-workload's document through `bench_apply_step` one chunk at a time, finalizes
-it through `bench_finalize`, and dumps a callgrind profile after each window of
-chunks and after the finalize. A session window's cost is the edge into
-`bench_apply_step` or `bench_finalize`, and a `reparse` window's is the two
-parse stages of each `Document.parse` in it: creating, starting and releasing
-the parser are not parsing. A stream of at most 1,024 chunks has one chunk per window, and a
-longer stream has 1,024 windows, unless 6.3 measures it at every step (see
-below), when it has one chunk per window too; the finalize is one more. The
-driver, `scripts/benchmark/streams.mjs`, names the window count
-(`--windows`); it shares `run.mjs`'s build, provenance,
-isolation and callgrind invocation, so its binaries are the ones the stage
-benchmark describes.
-
-Three subjects run the workloads. `reparse` keeps the text and parses the whole
-of it: the R column, measured at each window's last chunk, so a long stream is
-not reparsed after every chunk, and at the finalize. `session` appends through
-the engine's session: the S column, measured on every stream R runs at every
-step -- each of at most 1,024 chunks, and each of a shape 6.2 leaves to 6.3
-at the shape's smallest size whatever its length (`stepwise`, decision G17)
--- where its total over the chunks and the finalize is at most 1.25 times
-R's (6.3), and on every stream of a shape whose cost per chunk the language
-keeps local (`LOCAL_SHAPES`: the scale shapes, the 10,000-item list and the
-1,000 nested quotes), where the highest chunk window up to a quarter of the
-stream and up to its end costs at most 1.25 times the highest up to its first
-sixteenth (6.2). `binding` steps the same session
-through the MCB3 entries and releases each step's message: the B column, on
-the streams of at most 1,024 chunks, counting what the messages add to the session's steps --
-the part of a binding's build that reads the C document, without building the
-platform objects. B is reported without a gate (G14). `oneshot_ir` is the
-stage runner's two stages on each workload's final text.
-
-With `--baseline-ref`, the base revision's engine is rebuilt with this run's
-harness, as the stage gate does, and measured on the same workloads. R's
-p95, maximum and total Ir of each workload must be at most 1.02 times the
-base's, and S's on the streams 6.3 measures (6.4).
-
-The same run measures each edit, in edit workloads: a document and its edit
-scripts, named `DOCUMENT.edits`. Every grammar corpus document and every shape
-at its smallest size runs every edit family but `undo` (one `random` seed),
-one window per edit; a shape's larger sizes run `typing` and `far` in at most
-four windows a script, because each of their edits reparses up to a megabyte.
-`stream_runner --scripts FILE` runs every script of the file in one process:
-each opens the subject on the document and finalizes before the counts are
-zeroed, and then each window's edits go through `bench_apply_step`. Only
-`reparse` takes edits until the session does (plan 12.9, step E1): its
-window is the two parse stages of the `Document.parse` of the window's last
-edit, a fresh parse of that edit's text, and the edits before it in the window
-only replace the text. Edits are reported without a gate or a base.
-
-```sh
-scripts/tools/setup-environment.sh --install oracle-cmark oracle-cmark-gfm
-pnpm benchmark:streams
-pnpm benchmark:streams --workload prose-ascii-16k.tokens
-pnpm benchmark:streams --workload prose-ascii-16k.edits
-pnpm benchmark:streams --set corpus --baseline-ref "$(git rev-parse origin/main)"
-```
-
-Outputs default to `build/benchmark-streams`: `streams.md`, `streams.json`
-(every workload's per-window Ir and its p50, p95, maximum and total, and every
-edit script's per-window Ir), the
-generated `workloads/`, and in `callgrind/` the raw profile of each workload's
-most expensive window; the base revision's profiles are under `baseline/`.
-`scripts/benchmark/stream-gates.mjs` holds the arithmetic of the stream gates.
-
-The grammar corpus's workloads take hours of callgrind on one runner, so CI
-measures them in parts on parallel runners and joins the parts into one
-report:
-
-```sh
-pnpm benchmark:streams --set corpus --shard 0/8 --out build/stream-parts/0
-# ... one run per part, on any machine with the same toolchain ...
-pnpm benchmark:streams --merge build/stream-parts
-```
-
-Part `I` of `N` measures the workloads at positions `I`, `I + N`, ... of the
-set, and the edit workloads at the same positions of theirs. The join refuses parts that differ in their toolchain, binaries, workload
-set or base revision, and a set of parts that misses or repeats one. The
-gates apply to the joined report.
 
 ## The attribute grammar, against lexbor
 
@@ -248,33 +159,3 @@ profiles live in `build/benchmark-attributes`.
 
 This operation-level comparison is not pooled into document-parser ratios.
 It has its own provenance and input receipts, and remains a separate CI job.
-
-## Completion latency
-
-`pnpm benchmark:completion` reports what the language engine pays per
-completion request (LSP plan, section 7). `completion_runner` opens the engine
-on a document and sends each edit script of the stream benchmark's edit
-workloads (`workloads.mjs`) as didChange notifications, as a client typing it
-would. A request is the didChange of one edit followed by the completion at the
-end of the edit's text, both inside `bench_request`; its cost is that function's
-inclusive Ir, split into the edit (`markdown_core_lsp_update`) and the
-completion (`markdown_core_lsp_complete`). Opening the server and the document
-is in no request, and the edits between measured requests reach the server
-outside every request.
-
-Every script is measured at up to 8 evenly spaced edits over the whole script,
-at every document size. Callgrind starts with instrumentation off, and the
-runner turns it on around each measured request only, so the edits between run
-at valgrind's uninstrumented speed and the full set takes about 40 minutes on
-four cores. A script with an edit, or a cursor after an edit, between the `\r`
-and `\n` of a line break is skipped, since no protocol position names that
-place; the report counts them. The runner checks that the document's session
-ends in the script's text.
-
-The report groups requests by document size, the grammar corpus and the shapes
-at 16, 64 and 256 KiB, with p50, p95 and maximum next to the plan's proposed
-budget, which is p95 wall time on a device and so is not compared with the
-counts. Nothing is gated (D5). `build/benchmark-completion` holds
-`completion.json`, `completion.md`, `requests.json` with every request, the
-costliest request's profile per workload in `callgrind/NAME.out.max`, and the
-workloads. CI runs it as its own job, and the PR comment shows its table.

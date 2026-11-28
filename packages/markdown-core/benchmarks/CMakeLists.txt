@@ -85,34 +85,6 @@ if(MARKDOWN_CORE_CMARK_GFM_SOURCE_DIR AND MARKDOWN_CORE_CMARK_GFM_BUILD_DIR)
                                                          "${MARKDOWN_CORE_CMARK_GFM_LIBRARY}")
 endif()
 
-# The stream benchmark's runner (docs/plans/2026-09-29-incremental-gates.md,
-# section 5). It shares the incremental harness with the correctness runner, so
-# both read the same workload files, and it links the same static engine as
-# the stage runner, with the MCB3 encoder its `binding` subject steps the
-# session through. Like the stage runners it is never registered with CTest.
-add_executable(markdown_core_stream_runner stream_runner.c incremental_harness.c)
-target_include_directories(markdown_core_stream_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}"
-                                                               "${CMAKE_CURRENT_SOURCE_DIR}/../include")
-target_link_libraries(markdown_core_stream_runner PRIVATE libmarkdown-core-wire libmarkdown-core-public-static)
-# A base revision from before the session's edit (incremental_harness.h, THE
-# BASE'S EDITS).
-file(READ "${CMAKE_CURRENT_SOURCE_DIR}/../include/markdown_core.h" _markdown_core_facade)
-string(FIND "${_markdown_core_facade}" "markdown_core_session_edit(" _markdown_core_edit)
-if(_markdown_core_edit EQUAL -1)
-    target_compile_definitions(markdown_core_stream_runner PRIVATE MARKDOWN_CORE_BENCH_SESSION_EDITLESS)
-endif()
-
-# The completion latency benchmark's runner (docs/plans/
-# 2026-10-23-lsp-completion-engine.md, section 7): the language engine on the
-# stream benchmark's edit scripts, one completion request per window. It reads
-# the scripts through the incremental harness and the document's session
-# through the engine's internal accessor, which checks its edits' text. Like
-# the stage runners it is never registered with CTest.
-add_executable(markdown_core_completion_runner completion_runner.c incremental_harness.c)
-target_include_directories(markdown_core_completion_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}"
-                                                                   "${CMAKE_CURRENT_SOURCE_DIR}/../lsp")
-target_link_libraries(markdown_core_completion_runner PRIVATE libmarkdown-core-lsp libmarkdown-core-public-static)
-
 # The attribute comparison's two runners.
 #
 # Separate binaries from the stage runners above, and separate on purpose: the

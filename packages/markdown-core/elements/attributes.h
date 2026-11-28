@@ -69,53 +69,16 @@ bufsize_t markdown_core_attributes_tail(markdown_core_attribute_parser *parser, 
 int markdown_core_attributes_parse(markdown_core_attribute_parser *parser, bufsize_t start,
                                    markdown_core_attributes *result, bufsize_t *end);
 
-/* THE PARTS OF AN ATTRIBUTE BLOCK (parts.h) in a node of a kind of a peer:
- * those of the container whose `{` is at `brace`, one past its `}`, or
- * `brace` when none closes there; and those of the container that ends a
- * block's line at `end`, but for spaces and tabs, read after `from` as the
- * block's tail was taken (core/element.h, markdown_core_follow): its `{`,
- * or the end of the line's other bytes when it has none. */
-struct markdown_core_parts;
-bufsize_t markdown_core_attributes_parts(struct markdown_core_parts *parts, bufsize_t brace);
-bufsize_t markdown_core_attributes_tail_parts(struct markdown_core_parts *parts, bufsize_t from, bufsize_t end);
 /* The workspace a recognizer of the parse borrows: the attribute element's
  * (`scratch`). */
 markdown_core_attribute_scratch *markdown_core_attributes_scratch(const markdown_core_element_instance *self);
-struct markdown_core_field;
 /* THE SYNTAX QUESTION A PEER ASKS (element.h, `peers`): where an attribute
- * block at content offset `start` of a construct of kind `owner` closes,
+ * block at content offset `start` of a construct closes,
  * one past its `}`, or 0 when none closes there. The block's value is the
  * attribute element's to write: it updates the node the construct makes
  * (no-flush.md 10.13). */
 bufsize_t markdown_core_attributes_closes(const markdown_core_element_instance *self,
-                                          markdown_core_inline_state *inline_state, bufsize_t start,
-                                          markdown_core_node_kind owner);
-/* What keeps the members of the many braces of one stretch linear: zeroed
- * before the first brace, freed after the last. */
-typedef struct markdown_core_member_memo {
-    bufsize_t *walks, *values;
-    struct markdown_core_field *found;
-    size_t count, room, asked;
-    bool refused;
-} markdown_core_member_memo;
-void markdown_core_member_memo_free(markdown_core_member_memo *memo);
-/* THE MEMBER AN ATTRIBUTE BLOCK THAT DOES NOT CLOSE IS IN AT ITS END, the
- * block's `{` at `start` of the `n` bytes at `s`: an `#` identifier, a `.`
- * class, a record's name, or its value after the name its prefix holds; a
- * member boundary reads as a name not yet begun. False when the block is no
- * block whatever follows. The field's owner is left to the caller. A memo,
- * or NULL, is shared by the braces asked about on the same `n` bytes. */
-bool markdown_core_attributes_open_member(const unsigned char *s, bufsize_t n, bufsize_t start,
-                                          struct markdown_core_field *field, markdown_core_member_memo *memo);
-/* Where a member's name, read from `data`, ends. */
-bufsize_t markdown_core_attributes_name_end(const unsigned char *data, bufsize_t length);
-/* The attribute tails a block of kind `owner` may open on the line being
- * read, `line`, at or after `from`, that the line's end at `end` leaves
- * open, to the parse's context sink: every brace that may be one, since
- * which is the tail only the finished line tells; whether there is one. */
-bool markdown_core_attributes_report(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                     markdown_core_node_kind owner, const unsigned char *line, bufsize_t from,
-                                     bufsize_t end);
+                                          markdown_core_inline_state *inline_state, bufsize_t start);
 /* A PEER'S SYNTAX QUESTION OF A BLOCK LINE: where the attribute block at
  * `start` of the `length` bytes at `data` closes, one past its `}`, or 0
  * when none closes there. What it recognized stays in `held`, zeroed before

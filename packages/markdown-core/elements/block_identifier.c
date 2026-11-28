@@ -1,8 +1,6 @@
 #include "block_identifier.h"
 #include "block_internal.h"
 #include "markdown-core-elements.h"
-#include "sink.h"
-#include "parts.h"
 #include <string.h>
 
 typedef struct {
@@ -74,33 +72,12 @@ static bool S_attach_block_identifier(markdown_core_parser *parser, markdown_cor
     return true;
 }
 
-/* Whether the content of `paragraph`, `length` bytes, ends the text
- * before the cursor but for spaces and line endings. */
-static bool S_ends_text(markdown_core_parser *parser, markdown_core_node *paragraph, bufsize_t length) {
-    const markdown_core_context_sink *sink = parser->sink;
-    markdown_core_place span;
-    if (!length || !markdown_core_text_place(parser, &paragraph->content_map, length - 1, length, &span)) {
-        return false;
-    }
-    size_t at = span.end;
-    while (at < sink->length && (sink->source[at] == ' ' || sink->source[at] == '\t' || sink->source[at] == '\n' ||
-                                 sink->source[at] == '\r')) {
-        at++;
-    }
-    return at >= sink->length;
-}
-
 void markdown_core_block_attach_paragraph_identifier(markdown_core_block_identifier_work *work,
                                                      markdown_core_parser *parser, markdown_core_node *paragraph,
                                                      markdown_core_node *parent, markdown_core_reader *reader) {
     block_identifier candidate;
     const markdown_core_chunk text = markdown_core_node_text(paragraph);
     if (!S_scan_block_identifier(work, text.data, text.len, &candidate)) {
-        return;
-    }
-    /* In the text before a cursor, an identifier the cursor follows may be
-     * text of a construct the line goes on with: the run reads it. */
-    if (parser->sink && S_ends_text(parser, paragraph, text.len)) {
         return;
     }
     markdown_core_node *owner = paragraph;
@@ -192,12 +169,6 @@ bool markdown_core_block_attach_identifier_line(const markdown_core_element_inst
     return true;
 }
 
-bool markdown_core_block_identifier_writes(const markdown_core_element_instance *self, const unsigned char *line,
-                                           size_t length) {
-    (void)self;
-    return length && memchr(line, '#', length) != NULL;
-}
-
 /* THE FEED of the identifier line's candidate (element.h): the first line
  * after it, or the blank lines before one, decides its boundary. */
 markdown_core_candidate_step markdown_core_block_feed_identifier_line(const markdown_core_element_instance *self,
@@ -210,58 +181,4 @@ markdown_core_candidate_step markdown_core_block_feed_identifier_line(const mark
     (void)line;
     (void)ends;
     return MARKDOWN_CORE_CANDIDATE_ENDS;
-}
-
-/* Where the identifier `#anchor#` stands on a line of its own or at a
- * line's end in the text: the first such place, or the last when `last`;
- * -1 for none. */
-static bufsize_t S_identifier_place(const markdown_core_parts *parts, const markdown_core_chunk *anchor, bool last) {
-    const unsigned char *s = parts->text;
-    const bufsize_t n = parts->length, size = anchor->len;
-    bufsize_t found = -1;
-    for (bufsize_t at = 0; at + size + 2 <= n; at++) {
-        if (s[at] != '#' || s[at + size + 1] != '#' || memcmp(s + at + 1, anchor->data, (size_t)size) ||
-            (at && !markdown_core_is_space_or_tab(s[at - 1]) && !markdown_core_is_line_end(s[at - 1]))) {
-            continue;
-        }
-        bufsize_t end = at + size + 2;
-        while (end < n && markdown_core_is_space_or_tab(s[end])) {
-            end++;
-        }
-        if (end >= n || markdown_core_is_line_end(s[end])) {
-            found = at;
-            if (!last) {
-                break;
-            }
-        }
-    }
-    return found;
-}
-
-/* THE PARTS OF A BLOCK THAT A BLOCK IDENTIFIER NAMES (parts.h): the
- * identifier a paragraph's text ends with, as S_scan_block_identifier
- * reads it, which is the paragraph's own or, when its list item took it,
- * lent; and a list's, a table's or a callout's on the line after it. */
-void markdown_core_block_identifier_parts(markdown_core_parts *parts) {
-    const markdown_core_node *node = parts->node;
-    if (markdown_core_node_get_kind(node) == MARKDOWN_CORE_KIND_PARAGRAPH) {
-        markdown_core_block_identifier_work work = {0};
-        block_identifier candidate;
-        if (node->cut_back && S_scan_block_identifier(&work, parts->text, parts->length, &candidate)) {
-            const bufsize_t at = (bufsize_t)(candidate.identifier.data - parts->text);
-            if (node->attributes.anchor.len) {
-                markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_ID, at, at + candidate.identifier.len);
-            } else {
-                markdown_core_parts_lend(parts, MARKDOWN_CORE_SLOT_ID, at, at + candidate.identifier.len);
-            }
-        }
-        return;
-    }
-    if (node->attributes.anchor.len) {
-        const bufsize_t at = S_identifier_place(parts, &node->attributes.anchor,
-                                                markdown_core_node_get_kind(node) != MARKDOWN_CORE_KIND_LIST_ITEM);
-        if (at >= 0) {
-            markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_ID, at + 1, at + 1 + node->attributes.anchor.len);
-        }
-    }
 }

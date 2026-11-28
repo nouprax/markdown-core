@@ -68,9 +68,7 @@ jobs:
                   pnpm audit:allocator-seam
                   pnpm audit:source-lists
                   pnpm audit:node-kinds
-                  pnpm audit:incremental-set
                   pnpm audit:ast-projections
-                  pnpm audit:context-coverage
 
     health-check-c:
         needs: changes
@@ -1009,11 +1007,6 @@ jobs:
                       suite: conformance
                       label: Linux · Clang · Shared · Conformance
                     - os: ubuntu-latest
-                      compiler: clang
-                      shared: "ON"
-                      suite: incremental
-                      label: Linux · Clang · Shared · Incremental
-                    - os: ubuntu-latest
                       compiler: gcc
                       shared: "OFF"
                       suite: correctness
@@ -1023,11 +1016,6 @@ jobs:
                       shared: "OFF"
                       suite: conformance
                       label: Linux · GCC · Static · Conformance
-                    - os: ubuntu-latest
-                      compiler: gcc
-                      shared: "OFF"
-                      suite: incremental
-                      label: Linux · GCC · Static · Incremental
                     - os: macos-latest
                       compiler: clang
                       shared: "ON"
@@ -1038,11 +1026,6 @@ jobs:
                       shared: "ON"
                       suite: conformance
                       label: macOS · Clang · Shared · Conformance
-                    - os: macos-latest
-                      compiler: clang
-                      shared: "ON"
-                      suite: incremental
-                      label: macOS · Clang · Shared · Incremental
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
             - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -1064,8 +1047,6 @@ jobs:
                       label: Windows · Static · Correctness
                     - suite: conformance
                       label: Windows · Static · Conformance
-                    - suite: incremental
-                      label: Windows · Static · Incremental
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
             - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2

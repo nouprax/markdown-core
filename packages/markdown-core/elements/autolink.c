@@ -108,7 +108,6 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_angle_saw_end(markdown_core_in
     if (!first || markdown_core_isalnum((char)first) ||
         (first > ' ' && first < 0x7f && strchr(".!#$%&'*+/=?^_`{|}~-", first))) {
         markdown_core_inline_saw_end(inline_state);
-        markdown_core_inline_open(inline_state, MARKDOWN_CORE_KIND_NONE, from - 1, from, NULL, 0);
     }
 }
 

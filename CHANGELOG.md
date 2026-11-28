@@ -6,6 +6,17 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Only the whole-document parse remains. The incremental session is removed
+  from C and all three bindings, with its streaming steps (new, append,
+  flush), its edits and its error codes (`SESSION_FLUSHED`,
+  `SESSION_STREAMING`); so are the language engine and its Swift
+  `MarkdownCoreLSP` product, Kotlin `lsp` package and ES `./lsp` entry point,
+  the context queries (locate, context, spell), the field and marker
+  queries, slot kinds and cues, and `Metadata.fields`. Parsing, the AST
+  accessors, the dump, the definition tables and the scope, path and
+  hit-test queries are unchanged. The incremental correctness set, the
+  stream and completion benchmarks and their CI jobs go with them.
+
 - Parse fixes found by the random differential against the Rust parser: a
   callout right after a reference definition has its title; a backslash
   formula opener with no closer, `\\(` or `\\[`, is escaped as written (`\(`);

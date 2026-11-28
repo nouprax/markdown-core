@@ -396,15 +396,6 @@ struct markdown_core_node {
     markdown_core_place place;
     markdown_core_extent extent;
     int internal_offset;
-    /* WHAT ITS READING READ (blocks.c, THE REACH), in a parse that notes
-     * reach, measured from where it starts, `place.start`, so that text
-     * before it moving moves none of them: its reading began `opened` bytes
-     * before it (a paragraph its definitions were cut from); it was held
-     * open to `closed` past its start, its close's reading (a SPAN); its
-     * element's decisions read up to `look` past its start, and those of
-     * openers on its lines that opened no block of their own (a LOOK). 0
-     * for none. */
-    uint32_t opened, closed, look;
     /* This node's slice of parser-owned content-to-source runs. Zero count
      * means there is no mapped content (for example, an empty cell). */
     markdown_core_content_map content_map;

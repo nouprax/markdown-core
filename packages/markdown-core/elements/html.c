@@ -1,5 +1,4 @@
 #include "html_scanners.h"
-#include "parts.h"
 #include "html.h"
 #include "inline_internal.h"
 #define advance(inline_state) ((inline_state)->pos += 1)
@@ -120,7 +119,6 @@ static const markdown_core_inline_ops HTML_INLINES = {
 };
 
 const markdown_core_facet MARKDOWN_CORE_HTML_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_HTML, .parts = markdown_core_literal_parts},
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 

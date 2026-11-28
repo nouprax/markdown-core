@@ -76,75 +76,8 @@ println(document.dump(source))
 dialect, in which every feature is always recognized: footnotes, tables,
 strikethrough, autolinks, task lists, formulas, and directives, on the
 CommonMark base. Quotation marks, hyphens, and periods are stored as written.
-The result is an immutable value tree. The package exposes parsing, appending
-through a session, and typed AST inspection, not rendering.
-
-### Sessions
-
-A `MarkdownSession` holds a text and the document parsed from it, and extends
-both with each append, as text streams in. The new document continues the
-previous one: a node that continues an old node keeps its id, so a Compose
-`key` survives the append.
-
-```kotlin
-MarkdownSession("# Title\n\nfir").use { session ->   // TextUnit.UTF16 by default
-    session.append("st\n")
-    session.append("\n> quote\n")
-    val document = session.document             // a snapshot of the text so far
-    val final = session.flush()              // the tree of Document.parse(session.text), ids aside
-}
-```
-
-Until `flush`, each document is a snapshot of the text so far: a lookup of
-a reference or footnote sees only the definitions that start before the
-inline root asking. A session's `unit` is how its documents count scope
-columns. The caller ends the text with `flush`, which returns the final
-document; afterwards `append` and `flush` throw
-`ErrorCode.SESSION_FLUSHED`, and `document` and `text` stay readable.
-`close` releases the engine's session; the documents it returned stay complete
-values.
-
-After `flush`, `edit(start, end, text)` replaces the text between two
-cursors, positions in the session's unit, and returns the parse of the new
-text. The session reads again only the blocks the edit reaches: a node the
-edit did not reach is the old node, and one it read again keeps its id. An
-edit before `flush` throws `ErrorCode.SESSION_STREAMING`.
-
-```kotlin
-MarkdownSession("# Title\n\nfirst\n").use { session ->
-    session.flush()
-    session.edit(Position(3, 6), Position(3, 6), " line")   // "first" becomes "first line"
-}
-```
-
-A session also answers an editor's queries from the engine's parse of its
-text, which it holds, so no query parses the text again or takes the source.
-An editor holds one flushed session per open text and edits it as the text
-changes.
-
-```kotlin
-MarkdownSession("See [[Field notes]]\n").use { session ->
-    session.flush()
-    session.locate(Position(1, 12))                          // the session's cursor moves there
-    val slot = session.context.slots.single()                // SlotKind.DEST of a NodeKind.CROSS_LINK
-    session.spell(slot, "Old notes")                         // Insertion(text = "Old notes", cursor = 9)
-    val link = session.path(Position(1, 8)).last()           // the cross link, under the root and paragraph
-    session.scope(link, SlotKind.DEST)                       // [1:7..1:17]
-    session.markers(link)                                    // [1:5..1:6, 1:18..1:19], the `[[` and the `]]`
-}
-```
-
-The `context` is the session's state at its cursor: `locate` moves the cursor
-and updates it in place to the blocks and inline constructs the text before
-the cursor leaves open and the `Slot`s the cursor may be writing, and an append,
-`flush` or an edit clears it. `session.spell(slot, value)` writes a value in a slot
-of the current context in the slot's own syntax, with the closer an open
-construct needs, and its caret counts columns in the session's unit; a slot of
-a context a later step replaced throws `OUT_OF_BOUNDS`. Nothing is handed out
-to free: the context lives and goes with the session. `scope` and `markers` take a node of the
-current document, or one an append left unchanged. `Metadata.fields` names the
-properties fields and `Slot.cues` the characters after which a slot may begin
-empty, an editor's completion triggers.
+The result is an immutable value tree. The package exposes parsing and typed AST
+inspection, not rendering.
 
 ### Identity, equality and scopes
 
@@ -187,46 +120,16 @@ scalar. The canonical dump always prints UTF-8 columns.
 The library throws one exception, `MarkdownCoreException`, whose `code` says
 why:
 
-- `ErrorCode.ALLOCATION_FAILED`: `Document.parse` or a session step could not
-  allocate, or the text exceeds 1 GiB of UTF-8, or its tree exceeds a byte
-  array's capacity.
+- `ErrorCode.ALLOCATION_FAILED`: `Document.parse` could not allocate, or the
+  text exceeds 1 GiB of UTF-8, or its tree exceeds a byte array's capacity.
 - `ErrorCode.OUT_OF_BOUNDS`: `scope` or `dump` got a source that ends before
   a node's last range does, or `node` got a position whose line or column is below 1. A
   position past the source, or one no node holds, answers `null`.
 - `ErrorCode.KIND_MISMATCH`: the engine's code for a value read as the wrong
   kind. It is shared by every binding; the typed Kotlin nodes never reach it.
-- `ErrorCode.SESSION_FLUSHED`: a session's `append` or `flush` after its
-  `flush`.
 
 A node of another document is not checked, and the answer for it means
 nothing.
-
-### Language server
-
-`com.nouprax.markdown.core.lsp.Server` is the language engine, the
-semantics of the Language Server Protocol 3.17 over the parser, called in
-process: each method is one protocol method, and answers as the C engine and
-the JSON-RPC adapter `markdown-core-server` do. Completion answers an empty
-list until the providers land.
-
-```kotlin
-Server().use { server ->
-    val capabilities = server.initialize(listOf(TextUnit.UTF8, TextUnit.UTF16))  // UTF-8 when offered
-    server.open("file:///note.md", 1, "# Title\n\n[a](")
-    val end = Position(2, 4)
-    server.update("file:///note.md", 2, listOf(Edit(Scope(end, end), "/url)")))
-    val completions = server.complete("file:///note.md", Position(2, 4))   // completions.version == 2
-    server.close("file:///note.md")
-    server.shutdown()
-}
-```
-
-Positions count from 0 in the negotiated `capabilities.unit`; an `Edit` with
-no scope replaces the whole text. A method that fails throws
-`ServerException`, whose `code` is the protocol's error: `NOT_INITIALIZED`,
-`INVALID_REQUEST`, `INVALID_PARAMS` or `INTERNAL_ERROR`. An update checks
-every edit before the first applies, so a refused one leaves the document as
-it was. `close()` releases the server; `close(uri)` is didClose.
 
 ### Compose
 

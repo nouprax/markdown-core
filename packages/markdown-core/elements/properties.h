@@ -27,45 +27,8 @@ typedef struct {
 bool markdown_core_properties_closed(markdown_core_properties_work *work, markdown_core_parser *parser,
                                      markdown_core_reader *reader, const markdown_core_element_instance *owner,
                                      size_t *fence);
-/* THE STOP LINES of the envelope's opener (element.h, `stops`): a line that
- * begins with "---", which takes in every fence. */
-bool markdown_core_properties_stops(const markdown_core_element_instance *self, const unsigned char *line,
-                                    size_t length);
 size_t markdown_core_properties_parse(markdown_core_properties_work *work, markdown_core_parser *parser,
                                       markdown_core_reader *reader, size_t fence);
 int markdown_core_properties_fence(const unsigned char *data);
-
-/* A PLACE of an envelope's payload, as the places' reader finds it: a
- * member's name, of slot kind FIELD, or one of its values, of slot kind
- * VALUE, each a scalar written in `style` whose bytes run from `from` to
- * `to`, without its quotes and from a literal's first text to its last
- * line's end, an empty one where the parser read it; or bytes no field
- * holds, of slot kind NONE: a member skipped as a whole, a comment, or a
- * line between members. A member's name comes before its values. */
-typedef struct {
-    markdown_core_slot_kind slot;
-    markdown_core_yaml_style style;
-    size_t from, to;
-} markdown_core_metadata_place;
-
-/* The places, and what the reader answers of one line, `line`, of the
- * payload: whether a member holds it, a bracketed value it leaves open or
- * a line it owns after it that holds more than a comment, so that a name
- * written there would not begin a member of its own lines. */
-typedef struct {
-    markdown_core_metadata_place *items;
-    size_t count, capacity;
-    size_t line;
-    bool held;
-} markdown_core_metadata_places;
-
-/* Reads the places of the envelope `text`, `length` bytes from its opening
- * fence through its closing one, in order, into `places`, whose items the
- * caller frees; false when an allocation failed. */
-bool markdown_core_metadata_places_read(const unsigned char *text, size_t length,
-                                        markdown_core_metadata_places *places);
-/* Whether a plain scalar of `size` bytes of `text` resolves to text, not
- * to null, a boolean or a number. */
-bool markdown_core_metadata_text(const unsigned char *text, size_t size);
 
 #endif

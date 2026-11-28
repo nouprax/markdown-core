@@ -1,5 +1,0 @@
-one
-
-A para
-
-two

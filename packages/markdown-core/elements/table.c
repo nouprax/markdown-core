@@ -9,7 +9,6 @@
 #include <string.h>
 #include <limits.h>
 #include "utf8.h"
-#include "parts.h"
 
 #include "table.h"
 #include "directive.h"
@@ -339,22 +338,6 @@ static markdown_core_node *try_opening_table_header(const markdown_core_element_
                           reader->nonspace)) {
         return NULL;
     }
-    /* A delimiter row that opens with `:` is one only while the input's
-     * end leaves it be: written on, it may be a directive's name. */
-    const int first = reader->nonspace;
-    if (parser->sink && self->peers[TABLE_DIRECTIVE] && markdown_core_reader_peek(reader, first) == ':' &&
-        !markdown_core_reader_ends(reader, first + 1) &&
-        !markdown_core_is_whitespace(markdown_core_reader_peek(reader, first + 1))) {
-        int end = first;
-        while (!markdown_core_reader_ends(reader, end) &&
-               !markdown_core_is_whitespace(markdown_core_reader_peek(reader, end))) {
-            end++;
-        }
-        if (end == markdown_core_reader_length(reader) ||
-            markdown_core_is_line_end(markdown_core_reader_peek(reader, end))) {
-            markdown_core_directive_report_line(parser, first);
-        }
-    }
 
     if (!recognize_pipe_row((unsigned char *)markdown_core_reader_rest(reader, reader->nonspace),
                             markdown_core_reader_length(reader) - reader->nonspace, &delimiter_row)) {
@@ -600,51 +583,13 @@ static void opaque_adopt(markdown_core_node *view, markdown_core_node *node) {
     }
 }
 
-/* A reopen at the old row `next` counts what the rows before it invented
- * again, as the row holds it; one past its last row, which its close
- * counted, keeps the count it closed with. */
-static void reopen_block(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                         markdown_core_node *node, const markdown_core_node *next, bool blank) {
-    (void)self;
-    (void)parser;
-    (void)blank;
-    if (node->kind != MARKDOWN_CORE_NODE_TABLE) {
-        return;
-    }
-    if (!next) {
-        return;
-    }
-    assert(next->kind == MARKDOWN_CORE_NODE_TABLE_ROW);
-    ((markdown_core_table *)node->opaque)->autocompleted_cells = (size_t)next->internal_offset;
-}
-
-/* A row read again stands as the old one did when the rows before it
- * invented as many cells: the cap refuses the same rows after it, and the
- * counts the old rows hold stay exact. */
-static bool resumes(const markdown_core_element_instance *self, const markdown_core_parser *parser,
-                    const markdown_core_node *node, const markdown_core_node *next) {
-    (void)self;
-    (void)parser;
-    const size_t now = ((const markdown_core_table *)node->opaque)->autocompleted_cells;
-    return (now < INT_MAX ? (int)now : INT_MAX) == next->internal_offset;
-}
-
-static const markdown_core_node_type TABLE_KINDS[] = {MARKDOWN_CORE_NODE_TABLE, MARKDOWN_CORE_NODE_NONE};
-
 /* A DELIMITER ROW FOLLOWS A PARAGRAPH (element.h, markdown_core_follow):
  * the paragraph's last line heads a table (S_open_table), the paragraph
- * itself when that line was all of it. An edit reads the table's lines as
- * its own, so it names no former kind. */
+ * itself when that line was all of it. */
 static const markdown_core_node_type TABLE_LEADERS[] = {MARKDOWN_CORE_NODE_PARAGRAPH, MARKDOWN_CORE_NODE_NONE};
 static const markdown_core_follow TABLE_FOLLOWS[] = {
-    {.at = MARKDOWN_CORE_FOLLOW_LINE, .kinds = TABLE_LEADERS, .makes = MARKDOWN_CORE_NODE_TABLE},
+    {.at = MARKDOWN_CORE_FOLLOW_LINE, .kinds = TABLE_LEADERS},
     {0},
-};
-
-static const markdown_core_edit_ops TABLE_EDIT = {
-    /* An edit reads again from a row, the rows before it kept: each is one
-     * line, and none takes the next. */
-    .reopens = true, .reopen_block = reopen_block, .resumes = resumes, .abuts = TABLE_KINDS, .headed = true,
 };
 
 static const markdown_core_record_ops TABLE_PAYLOAD = {
@@ -675,14 +620,12 @@ static const markdown_core_line_ops TABLE_LINES = {
 };
 
 const markdown_core_facet MARKDOWN_CORE_TABLE_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_TABLE_ROW, .parts = markdown_core_table_row_parts},
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_TABLE = {
     .peers = TABLE_PEERS,
     .facets = MARKDOWN_CORE_TABLE_FACETS,
-    .edit = &TABLE_EDIT,
     .follows = TABLE_FOLLOWS,
     .name = "table",
     .payload = &TABLE_PAYLOAD,
@@ -691,35 +634,3 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_TABLE = {
     .opens = &TABLE_OPENS,
     .lines = &TABLE_LINES,
 };
-
-/* A pipe row's part: the cells written past its table's width, which the
- * row drops, as one field of no slot kind. */
-void markdown_core_table_row_parts(markdown_core_parts *parts) {
-    const unsigned char *text = parts->text;
-    bufsize_t start = markdown_core_parts_last(parts, 0), end = parts->length;
-    while (start < end && markdown_core_is_space_or_tab(text[start])) {
-        start++;
-    }
-    if (start == 0 || start >= end || text[start] != '|') {
-        return;
-    }
-    start++;
-    for (bufsize_t at = start; at < end; at++) {
-        if (markdown_core_is_line_end(text[at])) {
-            return;
-        }
-    }
-    while (end > start && markdown_core_is_whitespace(text[end - 1])) {
-        end--;
-    }
-    if (end > start && text[end - 1] == '|' && !(end - 1 > start && text[end - 2] == '\\')) {
-        end--;
-    }
-    while (start < end && markdown_core_is_space_or_tab(text[start])) {
-        start++;
-    }
-    while (end > start && markdown_core_is_space_or_tab(text[end - 1])) {
-        end--;
-    }
-    markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_NONE, start, end);
-}

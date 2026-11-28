@@ -198,14 +198,6 @@ typedef struct markdown_core_split {
     unsigned char bytes[];
 } markdown_core_split;
 
-/* A split whose back may hold `room` bytes, empty, or NULL when storage could
- * not be had. */
-markdown_core_split *markdown_core_split_new(size_t room);
-
-/* The split with room for `room` bytes, its back moved to the room's end:
- * NULL, with `split` as it was, when storage could not be had. */
-markdown_core_split *markdown_core_split_grow(markdown_core_split *split, size_t room);
-
 void markdown_core_split_free(markdown_core_split *split);
 
 /* The back's first byte. */
@@ -217,11 +209,6 @@ static MARKDOWN_CORE_INLINE unsigned char *markdown_core_split_back(const markdo
 static MARKDOWN_CORE_INLINE markdown_core_split *markdown_core_strbuf_split_of(const markdown_core_strbuf *buf) {
     return (markdown_core_split *)(void *)(buf->ptr - buf->asize - offsetof(markdown_core_split, bytes));
 }
-
-/* `buf`, which holds a content's front, views the content whole, its back
- * the split's, which then holds the front's storage and is the view's: the
- * room holds the content whole. */
-void markdown_core_strbuf_split_view(markdown_core_strbuf *buf, markdown_core_split *split);
 
 /* The view `buf` holds the content's front again, as a buffer of its own,
  * and the split its back, the caller's. */
