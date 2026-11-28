@@ -313,6 +313,14 @@ impl<'a> Compiler<'a> {
                     found = Some(self.bytes.len());
                     index = self.exits[index] + 1;
                 }
+                // And a last line in a block quote that holds only its
+                // prefix: the block goes on to the prefix's end.
+                Name::BlockQuotePrefix
+                    if line_end(self.bytes, self.end(index)) == self.bytes.len() =>
+                {
+                    found = Some(self.end(index));
+                    index = self.exits[index] + 1;
+                }
                 name if between(name) => index = self.exits[index] + 1,
                 _ => break,
             }
@@ -991,6 +999,10 @@ impl<'a> Compiler<'a> {
         while at < self.events.len() {
             let event = &self.events[at];
             if event.kind == EventKind::Exit {
+                // A blank line ends a block quote: it is not inside it.
+                if event.name == Name::BlockQuote {
+                    break;
+                }
                 at += 1;
                 continue;
             }

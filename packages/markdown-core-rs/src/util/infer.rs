@@ -176,6 +176,9 @@ fn between(name: Name) -> bool {
             | Name::SpaceOrTab
             | Name::ContainerIndent
             | Name::ListItemPrefix
+            // The prefix of a block quote around the list, on a line of
+            // the item.
+            | Name::BlockQuotePrefix
     )
 }
 
