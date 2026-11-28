@@ -544,15 +544,20 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_process_delimiters
     bool opener_found;
     /* One slot per RULE, so the array is sized by construction. It used to be
      * `[3][128]` indexed by a byte the public push accepts unconstrained. */
-    bufsize_t openers_bottom[3][MARKDOWN_CORE_DELIM_RULE_COUNT];
+    /* By whether the closer can also open, its length mod 3 and its rule, as
+     * cmark 0.31 keeps them: a closer that can open fails against openers
+     * the rule of three lets an only-closer match (`**d*n*r*`). */
+    bufsize_t openers_bottom[2][3][MARKDOWN_CORE_DELIM_RULE_COUNT];
     bufsize_t word_bottom = stack_bottom;
     bufsize_t affix_bottom = stack_bottom;
     int i;
 
     // initialize openers_bottom:
-    for (i = 0; i < 3; i++) {
-        for (int rule = 0; rule < MARKDOWN_CORE_DELIM_RULE_COUNT; rule++) {
-            openers_bottom[i][rule] = stack_bottom;
+    for (int both = 0; both < 2; both++) {
+        for (i = 0; i < 3; i++) {
+            for (int rule = 0; rule < MARKDOWN_CORE_DELIM_RULE_COUNT; rule++) {
+                openers_bottom[both][i][rule] = stack_bottom;
+            }
         }
     }
 
@@ -591,7 +596,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_process_delimiters
             // Now look backwards for first matching opener:
             opener = delimiter_previous(closer);
             opener_found = false;
-            bufsize_t bottom = openers_bottom[closer->length % 3][closer->rule];
+            bufsize_t bottom = openers_bottom[closer->can_open != 0][closer->length % 3][closer->rule];
             if (bottom < affix_bottom) {
                 bottom = affix_bottom;
             }
@@ -640,7 +645,8 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_process_delimiters
             }
             if (!opener_found) {
                 // set lower bound for future searches for openers
-                openers_bottom[old_closer->length % 3][old_closer->rule] = old_closer->position;
+                openers_bottom[old_closer->can_open != 0][old_closer->length % 3][old_closer->rule] =
+                    old_closer->position;
                 if (!old_closer->can_open) {
                     // we can remove a closer that can't be an
                     // opener, once we've seen there's no

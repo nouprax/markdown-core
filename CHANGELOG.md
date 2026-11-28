@@ -15,7 +15,9 @@ promised to remain compatible between releases.
   (`@http://e`); an unclosed block whose empty last line is in a block
   quote ends after that line's prefix, in one run per line; and a link
   destination with a parenthesis left open is no destination, as CommonMark
-  6.3 has it (`[](( "")` is text).
+  6.3 has it (`[](( "")` is text); and a closer of `*` or `_` that can also
+  open no longer bounds the opener search of one that only closes, as in
+  cmark 0.31 (`**d*n*r*` is `*<em>d<em>n</em>r</em>`).
 
 - Ordered list markers are decimal only, `1.` or `1)`: Pandoc's letters,
   Roman numerals, `#.` and both-sided `(1)` markers are ordinary text, and a

@@ -92,16 +92,24 @@ pub const STARTS: Starts = Starts::Bytes(b"\t -=");
 ///     ^
 /// ```
 fn start(tokenizer: &mut Tokenizer) -> State {
-    if !tokenizer.lazy
-        && !tokenizer.pierce
-        // Require a paragraph before.
-        && (!tokenizer.events.is_empty()
-            && matches!(tokenizer.events[skip::opt_back(
+    let before = if tokenizer.events.is_empty() {
+        None
+    } else {
+        Some(
+            tokenizer.events[skip::opt_back(
                 &tokenizer.events,
                 tokenizer.events.len() - 1,
                 &[Name::LineEnding, Name::SpaceOrTab],
             )]
-            .name, Name::Content | Name::HeadingSetextUnderline))
+            .name,
+        )
+    };
+    if !tokenizer.lazy
+        && !tokenizer.pierce
+        // Require a paragraph before, or an underline, which this line
+        // does not continue when it is a thematic break.
+        && (before == Some(Name::Content)
+            || (before == Some(Name::HeadingSetextUnderline) && !rule(tokenizer)))
     {
         tokenizer.enter(Name::HeadingSetextUnderline);
 
@@ -117,6 +125,25 @@ fn start(tokenizer: &mut Tokenizer) -> State {
     } else {
         State::Nok
     }
+}
+
+/// Whether the line from here is three or more `-` and the spaces or tabs
+/// after them: a thematic break, which only a paragraph's underline is.
+fn rule(tokenizer: &Tokenizer) -> bool {
+    let bytes = tokenizer.parse_state.bytes;
+    let mut index = tokenizer.point.index;
+    while matches!(bytes.get(index), Some(b' ' | b'\t')) {
+        index += 1;
+    }
+    let start = index;
+    while bytes.get(index) == Some(&b'-') {
+        index += 1;
+    }
+    let dashes = index - start;
+    while matches!(bytes.get(index), Some(b' ' | b'\t')) {
+        index += 1;
+    }
+    dashes >= 3 && matches!(bytes.get(index), None | Some(b'\n' | b'\r'))
 }
 
 /// After optional whitespace, at `-` or `=`.

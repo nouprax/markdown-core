@@ -475,7 +475,20 @@ impl<'a> Compiler<'a> {
                 let fence = self.child(index, Name::DirectiveContainerFence);
                 let (name, label) =
                     fence.map_or((String::new(), None), |fence| self.directive_head(fence));
-                let runs = Self::whole(self.lead(index), self.last(index).1);
+                // An unclosed one runs to the end of the input, its blank
+                // lines at the end included; a closed one ends at its
+                // closing fence.
+                let fences = self
+                    .inside(index)
+                    .into_iter()
+                    .filter(|child| self.name(*child) == Name::DirectiveContainerFence)
+                    .count();
+                let end = if fences < 2 {
+                    self.stop(index)
+                } else {
+                    self.last(index).1
+                };
+                let runs = Self::whole(self.lead(index), end);
                 let content = self.block_content(index);
                 let mut node = Node::new(
                     Kind::DirectiveBlock {
@@ -1518,10 +1531,21 @@ impl<'a> Compiler<'a> {
                     .child(index, Name::Label)
                     .and_then(|label| self.child(label, Name::LabelText));
                 let (content, inner) = match text {
-                    Some(text) => (
-                        self.label_content(text),
-                        self.runs(self.start(text), self.end(text)),
-                    ),
+                    Some(text) => {
+                        // A last line of only its prefix, before the `]`, is
+                        // not the note's: it ends with the line ending.
+                        let mut end = self.end(text);
+                        let mut at = end;
+                        while at > self.start(text)
+                            && matches!(self.bytes[at - 1], b' ' | b'\t' | b'>')
+                        {
+                            at -= 1;
+                        }
+                        if at < end && at > self.start(text) && self.bytes[at - 1] == b'\n' {
+                            end = at;
+                        }
+                        (self.label_content(text), self.runs(self.start(text), end))
+                    }
                     None => (vec![], runs.clone()),
                 };
                 self.script = script;

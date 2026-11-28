@@ -1565,3 +1565,56 @@ Document scope=1:1..3:23 anchor=null attributes={} children=2
     │   └── Text scope=3:2..3:17 anchor=null attributes={} literal="see http://x.com" children=0
     └── Text scope=3:19..3:23 anchor=null attributes={} literal=" here" children=0
 ````````````````````````````````
+
+A numeric character reference to a control character is that character:
+only U+0000 and invalid code points are U+FFFD (CommonMark 2.5). (A C0
+control would do as well, but cmark's XML, which judges this file, cannot
+carry one.)
+
+```````````````````````````````` example
+&#x7F; &#x80; &#x9F; &#0; &#xD800;
+.
+Document scope=1:1..1:34 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:34 anchor=null attributes={} children=1
+    └── Text scope=1:1..1:34 anchor=null attributes={} literal="   � �" children=0
+````````````````````````````````
+
+A thematic break after a setext heading's underline is a thematic break:
+only a paragraph has an underline.
+
+```````````````````````````````` example
+a
+-
+---
+.
+Document scope=1:1..3:3 anchor=null attributes={} children=2
+├── Heading scope=1:1..2:1 anchor=null attributes={} level=2 children=1
+│   └── Text scope=1:1..1:1 anchor=null attributes={} literal="a" children=0
+└── ThematicBreak scope=3:1..3:3 anchor=null attributes={} children=0
+````````````````````````````````
+
+A closer that can also open, failing by the rule of three, bounds only the
+searches of closers that can also open, as in cmark 0.31: the last `*`,
+which only closes, still finds the opener before it.
+
+```````````````````````````````` example
+**d*n*r*
+
+*]**=**=**
+.
+Document scope=1:1..3:10 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:8 anchor=null attributes={} children=2
+│   ├── Text scope=1:1..1:1 anchor=null attributes={} literal="*" children=0
+│   └── Emphasis scope=1:2..1:8 anchor=null attributes={} children=3
+│       ├── Text scope=1:3..1:3 anchor=null attributes={} literal="d" children=0
+│       ├── Emphasis scope=1:4..1:6 anchor=null attributes={} children=1
+│       │   └── Text scope=1:5..1:5 anchor=null attributes={} literal="n" children=0
+│       └── Text scope=1:7..1:7 anchor=null attributes={} literal="r" children=0
+└── Paragraph scope=3:1..3:10 anchor=null attributes={} children=2
+    ├── Emphasis scope=3:1..3:9 anchor=null attributes={} children=3
+    │   ├── Text scope=3:2..3:2 anchor=null attributes={} literal="]" children=0
+    │   ├── Strong scope=3:3..3:7 anchor=null attributes={} children=1
+    │   │   └── Text scope=3:5..3:5 anchor=null attributes={} literal="=" children=0
+    │   └── Text scope=3:8..3:8 anchor=null attributes={} literal="=" children=0
+    └── Text scope=3:10..3:10 anchor=null attributes={} literal="*" children=0
+````````````````````````````````

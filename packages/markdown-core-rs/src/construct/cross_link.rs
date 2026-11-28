@@ -135,13 +135,20 @@ fn dest(tokenizer: &mut Tokenizer, part: Part, open: bool) -> State {
             tokenizer.exit(Name::CrossLinkSeparator);
             State::Next(StateName::CrossLink(Step::LabelStart))
         }
-        Some(b'\\') => {
+        // `\|` is the separator; any other backslash is a byte of the
+        // destination.
+        Some(b'\\')
+            if tokenizer.parse_state.bytes.get(tokenizer.point.index + 1) == Some(&b'|') =>
+        {
+            if part != Part::Filled {
+                return State::Nok;
+            }
             if open {
                 tokenizer.exit(Name::CrossLinkDest);
             }
             tokenizer.enter(Name::CrossLinkSeparator);
             tokenizer.consume();
-            State::Next(StateName::CrossLink(Step::Pipe { part }))
+            State::Next(StateName::CrossLink(Step::Pipe))
         }
         Some(b'#') if part == Part::Hash => State::Nok,
         Some(code) => {
@@ -161,31 +168,17 @@ fn dest(tokenizer: &mut Tokenizer, part: Part, open: bool) -> State {
     }
 }
 
-/// After a backslash in the destination, at a `|` that makes them a separator.
+/// After a backslash in the destination, at the `|` that makes them a
+/// separator.
 ///
 /// ```markdown
 /// > | a [[b\|c]] d
 ///           ^
 /// ```
-fn pipe(tokenizer: &mut Tokenizer, part: Part) -> State {
-    if tokenizer.current == Some(b'|') {
-        if part != Part::Filled {
-            return State::Nok;
-        }
-        tokenizer.consume();
-        tokenizer.exit(Name::CrossLinkSeparator);
-        State::Next(StateName::CrossLink(Step::LabelStart))
-    } else {
-        // An ordinary backslash of the destination.
-        tokenizer.exit(Name::CrossLinkSeparator);
-        let len = tokenizer.events.len();
-        tokenizer.events[len - 2].name = Name::CrossLinkDest;
-        tokenizer.events[len - 1].name = Name::CrossLinkDest;
-        State::Redo(StateName::CrossLink(Step::Dest {
-            part: Part::Filled,
-            open: false,
-        }))
-    }
+fn pipe(tokenizer: &mut Tokenizer) -> State {
+    tokenizer.consume();
+    tokenizer.exit(Name::CrossLinkSeparator);
+    State::Next(StateName::CrossLink(Step::LabelStart))
 }
 
 /// After the separator, at the label.
@@ -260,7 +253,7 @@ pub enum Step {
     Open,
     OpenSecond,
     Dest { part: Part, open: bool },
-    Pipe { part: Part },
+    Pipe,
     LabelStart,
     Label,
     Close,
@@ -280,7 +273,7 @@ pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
         Step::Open => open(tokenizer),
         Step::OpenSecond => open_second(tokenizer),
         Step::Dest { part, open } => dest(tokenizer, part, open),
-        Step::Pipe { part } => pipe(tokenizer, part),
+        Step::Pipe => pipe(tokenizer),
         Step::LabelStart => label_start(tokenizer),
         Step::Label => label(tokenizer),
         Step::Close => close(tokenizer),

@@ -74,15 +74,10 @@ pub fn decode_named(value: &str) -> Option<String> {
 /// * [`micromark-util-decode-numeric-character-reference` in `micromark`](https://github.com/micromark/micromark/tree/main/packages/micromark-util-decode-numeric-character-reference)
 /// * [*§ 2.5 Entity and numeric character references* in `CommonMark`](https://spec.commonmark.org/0.31/#entity-and-numeric-character-references)
 pub fn decode_numeric(value: &str, radix: u32) -> String {
+    // An invalid code point, a surrogate or one past U+10FFFF, is none, and
+    // U+0000 is replaced too (CommonMark 2.5); controls are kept.
     if let Some(char) = char::from_u32(u32::from_str_radix(value, radix).unwrap()) {
-        if !matches!(char,
-            // C0 except for HT, LF, FF, CR, space.
-            '\0'..='\u{08}' | '\u{0B}' | '\u{0E}'..='\u{1F}' |
-            // Control character (DEL) of C0, and C1 controls.
-            '\u{7F}'..='\u{9F}'
-            // Lone surrogates, noncharacters, and out of span are handled by
-            // Rust.
-        ) {
+        if char != '\0' {
             return char.into();
         }
     }
