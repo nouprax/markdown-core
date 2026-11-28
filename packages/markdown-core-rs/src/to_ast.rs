@@ -55,10 +55,21 @@ fn line_start_before_end(bytes: &[u8]) -> usize {
 struct Compiler<'a> {
     events: &'a [Event],
     bytes: &'a [u8],
+    /// `bytes` as text, checked once.
+    source: &'a str,
     /// The index of the exit of each enter event.
     exits: Vec<usize>,
+    /// Per event, back through the exits right before it and it: the
+    /// first exit of a line ending, `usize::MAX` when an enter comes first.
+    breaks: Vec<usize>,
+    /// Per event, on through the exits at it and after it: the first event
+    /// that is an enter or the exit of a block quote or a definition body,
+    /// which blank lines are not in.
+    ahead: Vec<usize>,
     /// Container prefixes of continuation lines, with the whitespace before
-    /// them: gaps between the runs of the leaves they interrupt.
+    /// them: gaps between the runs of the leaves they interrupt. Prefixes
+    /// that touch or overlap are one hole, so the holes are apart and in
+    /// order.
     holes: Vec<Span>,
     /// Whether a table cell's content is being compiled, where `\|` in
     /// code is a pipe.
@@ -111,16 +122,63 @@ impl<'a> Compiler<'a> {
                 }
             }
         }
+        // The run of whitespace read last, from its start: the prefixes of a
+        // line under many containers are in one run, read once.
+        let mut known = (0, 0);
         for hole in &mut holes {
-            while hole.start > 0 && matches!(bytes[hole.start - 1], b' ' | b'\t') {
-                hole.start -= 1;
+            let mut start = hole.start;
+            let mut end = hole.start;
+            while start > 0 && matches!(bytes[start - 1], b' ' | b'\t') {
+                if known.0 < start && start <= known.1 {
+                    // Whitespace back to where the known run starts.
+                    start = known.0;
+                    end = end.max(known.1);
+                    break;
+                }
+                start -= 1;
             }
+            known = (start, end);
+            hole.start = start;
         }
         holes.sort_by_key(|hole: &Span| hole.start);
+        let mut merged: Vec<Span> = Vec::with_capacity(holes.len());
+        for hole in holes {
+            match merged.last_mut() {
+                Some(last) if hole.start <= last.end => last.end = last.end.max(hole.end),
+                _ => merged.push(hole),
+            }
+        }
+        let holes = merged;
+        let mut breaks = vec![usize::MAX; events.len()];
+        for (index, event) in events.iter().enumerate() {
+            if event.kind == EventKind::Exit {
+                breaks[index] = if event.name == Name::LineEnding {
+                    index
+                } else if index > 0 {
+                    breaks[index - 1]
+                } else {
+                    usize::MAX
+                };
+            }
+        }
+        let mut ahead = vec![events.len(); events.len()];
+        for index in (0..events.len()).rev() {
+            let event = &events[index];
+            ahead[index] = if event.kind == EventKind::Exit
+                && !matches!(event.name, Name::BlockQuote | Name::DefinitionBody)
+            {
+                ahead.get(index + 1).copied().unwrap_or(events.len())
+            } else {
+                index
+            };
+        }
         Compiler {
             events,
             bytes,
+            source: str::from_utf8(bytes).expect("expected text"),
             exits,
+            breaks,
+            ahead,
             holes,
             cell: false,
             item_paragraph: None,
@@ -149,29 +207,22 @@ impl<'a> Compiler<'a> {
     /// line's container prefix, which is on the line.
     fn stop(&self, index: usize) -> usize {
         let end = self.end(index);
-        let mut at = self.exits[index];
-        while at > index + 1 && self.events[at - 1].kind == EventKind::Exit {
-            at -= 1;
-            if self.events[at].name == Name::LineEnding {
-                if end == self.bytes.len() {
-                    return self.events[at - 1].point.index;
-                }
-                if self.events[at].point.index == end {
-                    // Past each prefix of the line, which touch or overlap
-                    // (a hole takes the whitespace before it).
-                    let mut past = end;
-                    while let Some(hole) = self
-                        .holes
-                        .iter()
-                        .find(|hole| hole.start <= past && hole.end > past)
-                    {
-                        past = hole.end;
-                    }
-                    if past > end {
-                        return past;
+        // The line ending, if any, among the exits right before the exit of
+        // the token, in it.
+        let at = self.breaks[self.exits[index] - 1];
+        if at != usize::MAX && at > index {
+            if end == self.bytes.len() {
+                return self.events[at - 1].point.index;
+            }
+            if self.events[at].point.index == end {
+                // Past each prefix of the line, which touch or overlap
+                // (a hole takes the whitespace before it).
+                let hole = self.holes.partition_point(|hole| hole.end <= end);
+                if let Some(hole) = self.holes.get(hole) {
+                    if hole.start <= end && hole.end > end {
+                        return hole.end;
                     }
                 }
-                break;
             }
         }
         end
@@ -186,7 +237,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn slice(&self, start: usize, end: usize) -> &'a str {
-        str::from_utf8(&self.bytes[start..end]).expect("expected events at char boundaries")
+        &self.source[start..end]
     }
 
     fn text(&self, index: usize) -> &'a str {
@@ -209,7 +260,8 @@ impl<'a> Compiler<'a> {
         let end = end.max(start);
         let mut runs = vec![];
         let mut from = start;
-        for hole in &self.holes {
+        let first = self.holes.partition_point(|hole| hole.end <= from);
+        for hole in &self.holes[first..] {
             if hole.end <= from {
                 continue;
             }
@@ -310,7 +362,7 @@ impl<'a> Compiler<'a> {
                 if matches!(event.name, Name::BlockQuote | Name::DefinitionBody) {
                     break;
                 }
-                index += 1;
+                index = self.ahead[index];
                 continue;
             }
             match event.name {
@@ -885,7 +937,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn list(&mut self, index: usize) -> Node {
-        let loose = list_loose(self.events, index, true);
+        let loose = list_loose(self.events, &self.exits, index, true);
         let mut items = vec![];
         let mut first = None;
         for child in self.inside(index) {
@@ -2145,31 +2197,40 @@ enum Pipes {
 /// separator.
 fn label_dimensions(label: &str, pipes: Pipes) -> Option<(&str, usize, Dimensions)> {
     let source = label.as_bytes();
-    let mut cut = None;
-    let mut index = 0;
-    let mut escape = false;
-    while index < source.len() {
-        let contracted = source[index] == b'\\' && source.get(index + 1) == Some(&b'|');
-        let width = if contracted && pipes != Pipes::Image {
-            2
-        } else {
-            1
-        };
-        let byte = if contracted && pipes == Pipes::Cell {
-            b'|'
-        } else {
-            source[index]
-        };
-        if escape {
-            escape = false;
-        } else if byte == b'|' || (contracted && pipes == Pipes::Cross) {
-            cut = Some((index, index + width));
-        } else if byte == b'\\' && pipes != Pipes::Cross {
-            // In an image label, an escaped byte is no separator.
-            escape = true;
-        }
-        index += width;
+    // The dimensions are digits and `x`, so the last separator, if any, is
+    // right before the bytes of those at the end: read back from there, so a
+    // long label costs no more than a short one.
+    let mut tail = source.len();
+    while tail > 0 && matches!(source[tail - 1], b'0'..=b'9' | b'x') {
+        tail -= 1;
     }
+    let cut = if tail == 0 {
+        None
+    } else if source[tail - 1] == b'|' {
+        let pipe = tail - 1;
+        // The backslashes right before the pipe.
+        let mut first = pipe;
+        while first > 0 && source[first - 1] == b'\\' {
+            first -= 1;
+        }
+        let slashes = pipe - first;
+        // An image's backslash escapes the byte after it; a cross embed's
+        // escapes nothing, and its `\|` is a separator; in a cell each `\|`
+        // is a `|` first, and a backslash escapes the byte after it: `\\` is
+        // one, and an escaped `\` takes the `|`.
+        let escaped = match pipes {
+            Pipes::Image => slashes % 2 == 1,
+            Pipes::Cell => slashes > 0 && slashes.is_multiple_of(2),
+            Pipes::Cross => false,
+        };
+        if escaped {
+            return None;
+        }
+        let contracted = pipes != Pipes::Image && slashes > 0;
+        Some((if contracted { pipe - 1 } else { pipe }, tail))
+    } else {
+        return None;
+    };
     let (rest, tail) = match cut {
         Some((before, after)) => (&label[..before], &label[after..]),
         None => ("", label),

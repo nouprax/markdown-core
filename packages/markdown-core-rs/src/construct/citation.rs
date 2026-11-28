@@ -47,7 +47,7 @@ use crate::choice::Starts;
 use crate::construct::{autolink, html_text, raw_text};
 use crate::event::{Event, Kind, Name, Point};
 use crate::state::{Name as StateName, State};
-use crate::tokenizer::{Label, LabelKind, Tokenizer};
+use crate::tokenizer::{Label, LabelKind, Shut, Tokenizer};
 use crate::util::char::{after_index, before_index};
 use crate::util::classes::{classes, LETTER, NUMBER};
 use crate::util::slice::advance;
@@ -372,23 +372,18 @@ fn exit_of(events: &[Event], index: usize) -> usize {
 }
 
 /// The sections of the bracket whose start exits at `open` and whose end
-/// enters at `close`, with `pairs` the brackets closed before it: those in
-/// it are opaque, so their `;`s and keys are not its own.
+/// enters at `close`, with `pairs` the brackets closed before it and `shut`
+/// the brackets whose `]` matched nothing: those in it are opaque, so their
+/// `;`s and keys are not its own.
 pub fn sections(
     events: &[Event],
     bytes: &[u8],
     pairs: &[Label],
+    shut: &[Shut],
     open: usize,
     close: usize,
 ) -> Vec<Section> {
-    let mut nested: Vec<(usize, usize)> = pairs
-        .iter()
-        .rev()
-        .take_while(|pair| pair.end.1 > open)
-        .map(|pair| (pair.start.0, pair.end.1))
-        .collect();
-    // In the order they start: a pair closes before one around it does.
-    nested.sort_unstable();
+    let nested = held(events, bytes, pairs, shut, open, close);
     let mut list = Vec::new();
     let mut section = Section {
         content: None,
@@ -401,20 +396,42 @@ pub fn sections(
     // their own.
     let mut depth = 0;
     let mut index = open + 1;
+    // Where the data at `index` resumes, past the `]` of a shut bracket.
+    let mut resume = None;
     while index < close {
-        while next < nested.len() && nested[next].0 < index {
+        while next < nested.len() && nested[next].start < index {
             next += 1;
         }
-        if next < nested.len() && nested[next].0 == index {
-            let end = nested[next].1 + 1;
-            extend(&mut section, whole(index), whole(end));
-            index = end;
+        if resume.is_none() && next < nested.len() && nested[next].start == index {
+            let item = &nested[next];
+            match item.byte {
+                None => {
+                    extend(&mut section, whole(index), whole(item.end + 1));
+                    index = item.end + 1;
+                }
+                Some(byte) => {
+                    let exit = exit_of(events, item.end);
+                    if byte + 1 == events[exit].point.index {
+                        extend(&mut section, whole(index), whole(exit + 1));
+                        index = exit + 1;
+                    } else {
+                        let end = Cursor {
+                            event: item.end,
+                            byte: Some(byte + 1),
+                        };
+                        extend(&mut section, whole(index), end);
+                        index = item.end;
+                        resume = Some(byte + 1);
+                    }
+                }
+            }
             continue;
         }
         let exit = exit_of(events, index);
         match events[index].name {
             Name::Data => {
-                let from = events[index].point.index;
+                let first = events[index].point.index;
+                let from = resume.take().unwrap_or(first);
                 let to = events[exit].point.index;
                 for at in from..to {
                     match bytes[at] {
@@ -429,12 +446,12 @@ pub fn sections(
                         }
                         // A space after a backslash is content (a nonbreaking
                         // space in Pandoc).
-                        b'\t' | b' ' if at == from || bytes[at - 1] != b'\\' => {}
+                        b'\t' | b' ' if at == first || bytes[at - 1] != b'\\' => {}
                         byte => {
                             if byte == b']' && depth > 0 {
                                 depth -= 1;
                             }
-                            let start = if at == from {
+                            let start = if at == first {
                                 whole(index)
                             } else {
                                 Cursor {
@@ -484,6 +501,87 @@ pub fn sections(
         index = exit + 1;
     }
     list.push(section);
+    list
+}
+
+/// A bracket held in another, opaque to it: a pair or a shut bracket.
+struct Opaque {
+    /// Enter index of its start.
+    start: usize,
+    /// Exit index of the end of a pair; enter index of the data that starts
+    /// with the `]` of a shut bracket.
+    end: usize,
+    /// Byte index of the `]` of a shut bracket.
+    byte: Option<usize>,
+}
+
+/// The brackets that the bracket whose start exits at `open` and whose end
+/// enters at `close` holds directly, in the order they start.
+///
+/// Pairs and shut brackets nest, and each list is in the order they close,
+/// so those in the bracket are at the back of each, and the ones it holds
+/// directly are the last one to close and, before each, the last one to
+/// close before it starts.
+fn held(
+    events: &[Event],
+    bytes: &[u8],
+    pairs: &[Label],
+    shut: &[Shut],
+    open: usize,
+    close: usize,
+) -> Vec<Opaque> {
+    let pair_low = pairs.partition_point(|pair| pair.end.1 <= open);
+    let mut pair_top = pairs.partition_point(|pair| pair.end.1 < close);
+    let shut_low = shut.partition_point(|item| item.end <= open);
+    let mut shut_top = shut.partition_point(|item| item.end < close);
+    let mut list: Vec<Opaque> = Vec::new();
+    loop {
+        let pair = pairs[pair_low..pair_top].last();
+        let item = shut[shut_low..shut_top].last();
+        let start = match (pair, item) {
+            (None, None) => break,
+            (Some(pair), item) if item.is_none_or(|item| item.end < pair.end.1) => {
+                list.push(Opaque {
+                    start: pair.start.0,
+                    end: pair.end.1,
+                    byte: None,
+                });
+                pair.start.0
+            }
+            (_, None) => unreachable!(),
+            (_, Some(item)) => {
+                shut_top -= 1;
+                // Only a bracket whose start and `]` are as when it shut,
+                // whose start opens in its holder, is opaque.
+                let start = &events[item.start];
+                let end = &events[item.end];
+                if start.kind != Kind::Enter
+                    || !matches!(
+                        start.name,
+                        Name::LabelLink
+                            | Name::LabelImage
+                            | Name::LabelNote
+                            | Name::FootnoteCallLabel
+                    )
+                    || end.kind != Kind::Enter
+                    || end.name != Name::Data
+                    || end.point.index != item.byte
+                    || bytes.get(item.byte) != Some(&b']')
+                {
+                    continue;
+                }
+                list.push(Opaque {
+                    start: item.start,
+                    end: item.end,
+                    byte: Some(item.byte),
+                });
+                item.start
+            }
+        };
+        pair_top = pair_low + pairs[pair_low..pair_top].partition_point(|pair| pair.end.1 < start);
+        shut_top = shut_low + shut[shut_low..shut_top].partition_point(|item| item.end < start);
+    }
+    list.reverse();
     list
 }
 
@@ -560,7 +658,14 @@ pub fn tail(sections: &[Section]) -> bool {
 pub fn insert(tokenizer: &mut Tokenizer, label: &Label, author: Option<usize>, pairs: &[Label]) {
     let events = &tokenizer.events;
     let bytes = tokenizer.parse_state.bytes;
-    let all = sections(events, bytes, pairs, label.start.1, label.end.0);
+    let all = sections(
+        events,
+        bytes,
+        pairs,
+        &tokenizer.labels.shut,
+        label.start.1,
+        label.end.0,
+    );
     let mut inserts: Vec<(Cursor, Vec<Event>)> = Vec::new();
     let mut add = |cursor: Cursor, names: &[(Kind, Name)]| {
         let point = match cursor.byte {
@@ -638,28 +743,34 @@ pub fn insert(tokenizer: &mut Tokenizer, label: &Label, author: Option<usize>, p
         add(end, &[(Kind::Exit, Name::Citation)]);
     }
     add(whole(label.end.1 + 1), &[(Kind::Exit, Name::Cite)]);
-    let nested: Vec<usize> = pairs
-        .iter()
-        .rev()
-        .take_while(|pair| pair.end.1 > label.start.1)
-        .map(|pair| match pair.kind {
+    // The pairs the label holds directly, as in `held`: an insert enters
+    // where only those do, as the others are in them.
+    let low = pairs.partition_point(|pair| pair.end.1 <= label.start.1);
+    let mut top = pairs.len();
+    let mut nested: Vec<usize> = Vec::new();
+    while top > low {
+        let pair = &pairs[top - 1];
+        nested.push(match pair.kind {
             LabelKind::Tail { author, .. } => author,
             _ => pair.start.0,
-        })
-        .collect();
+        });
+        top = low + pairs[low..top - 1].partition_point(|inner| inner.end.1 <= pair.start.1);
+    }
+    // In the order they enter.
+    nested.reverse();
     place(tokenizer, &inserts, &nested);
 }
 
 /// Place `inserts`: between events, or cutting a data event in two.
-/// The brackets that enter at `nested` are inside, and were inserted
-/// before: what enters where one of them does goes around it.
+/// The brackets that enter at `nested`, in order, are inside, and were
+/// inserted before: what enters where one of them does goes around it.
 fn place(tokenizer: &mut Tokenizer, inserts: &[(Cursor, Vec<Event>)], nested: &[usize]) {
     let mut index = 0;
     while index < inserts.len() {
         let (cursor, _) = &inserts[index];
         if cursor.byte.is_none() {
             let (cursor, list) = inserts[index].clone();
-            if nested.contains(&cursor.event) {
+            if nested.binary_search(&cursor.event).is_ok() {
                 tokenizer.map.add_before(cursor.event, 0, list);
             } else {
                 tokenizer.map.add(cursor.event, 0, list);

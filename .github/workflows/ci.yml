@@ -240,6 +240,12 @@ jobs:
               run: node scripts/tools/check-rust-recursion.mjs
             - name: Check Rust transition coverage
               run: node scripts/correctness/cover.mjs --check
+            - name: Install callgrind
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install --no-install-recommends --yes valgrind
+            - name: Check Rust parse cost is linear
+              run: node scripts/correctness/check-rust-linear.mjs
 
     health-checks-ready:
         name: Health Checks - Ready

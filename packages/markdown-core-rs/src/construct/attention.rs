@@ -88,7 +88,7 @@ use crate::util::char::{
     after_index as char_after_index, before_index as char_before_index, class_opt,
     Kind as CharacterKind,
 };
-use alloc::{vec, vec::Vec};
+use alloc::{collections::BTreeMap, vec, vec::Vec};
 
 /// Bytes this construct can start at.
 pub const STARTS: Starts = Starts::Bytes(b"*+=^_~");
@@ -98,7 +98,7 @@ pub const STARTS: Starts = Starts::Bytes(b"*+=^_~");
 const TRANSPARENT: u8 = b'~';
 
 /// What a run of markers can pair into.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum Rule {
     /// `*`: emphasis, strong.
     Asterisk,
@@ -262,10 +262,11 @@ impl Rule {
 #[derive(Debug)]
 struct Sequence {
     rule: Rule,
-    /// We track whether sequences are in balanced events, and where those
-    /// events start, so that one attention doesn’t start in say, one link, and
-    /// end in another.
-    stack: Vec<usize>,
+    /// We track whether sequences are in balanced events, and where the
+    /// innermost of those starts (`NONE` in none), so that one attention
+    /// doesn’t start in say, one link, and end in another: events nest, so
+    /// the innermost decides all of them.
+    stack: usize,
     /// Whitespace seen in text before this sequence; a word body cannot
     /// pair across whitespace.
     spaces: usize,
@@ -328,24 +329,33 @@ fn inside(tokenizer: &mut Tokenizer, marker: u8, size: usize) -> State {
 pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
     // Find all sequences, gather info about them.
     let mut sequences = read_sequences(tokenizer);
+    // The sequences before the current one that can still open, in order: a
+    // match takes the openers between its two sequences away, as attention
+    // nests, so they are a stack, and what a match takes is its top.
+    let mut openers: Vec<usize> = vec![];
+    // Where the search down the openers stops, per what a closer looks for:
+    // the openers below where an earlier search for the same failed fail
+    // for this one too, as matching only ever takes openers away.
+    let mut bottoms = BTreeMap::new();
 
-    // Now walk through them and match them.
-    let mut close = 0;
-
-    while close < sequences.len() {
-        let sequence_close = &sequences[close];
-        let mut next_index = close + 1;
-
-        // Find a sequence that can close.
-        if sequence_close.close {
+    for close in 0..sequences.len() {
+        while sequences[close].close {
+            let sequence_close = &sequences[close];
             let spec = sequence_close.rule.spec();
-            let mut open = close;
+            let key = (
+                sequence_close.rule,
+                sequence_close.stack,
+                sequence_close.open,
+                sequence_close.run % 3,
+            );
+            let bottom = bottoms.get(&key).copied().unwrap_or(0);
+            let mut found = None;
+            let mut depth = openers.len();
 
-            // Now walk back to find an opener.
-            while open > 0 {
-                open -= 1;
-
-                let sequence_open = &sequences[open];
+            // Now walk down to find an opener.
+            while depth > 0 && openers[depth - 1] >= bottom {
+                depth -= 1;
+                let sequence_open = &sequences[openers[depth]];
 
                 // A word body cannot reach past whitespace.
                 if spec.inner == Inner::Word && sequence_open.spaces != sequence_close.spaces {
@@ -353,8 +363,7 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
                 }
 
                 // An opener matching our closer:
-                if sequence_open.open
-                    && sequence_close.rule == sequence_open.rule
+                if sequence_close.rule == sequence_open.rule
                     && sequence_close.stack == sequence_open.stack
                 {
                     // If the opening can close or the closing can open,
@@ -370,24 +379,35 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
                         continue;
                     }
 
-                    // We found a match!
-                    next_index = match_sequences(tokenizer, &mut sequences, open, close);
-
+                    found = Some(depth);
                     break;
                 }
             }
+
+            let Some(depth) = found else {
+                bottoms.insert(key, close);
+                break;
+            };
+
+            // We found a match! The openers above it are between the two.
+            openers.truncate(depth + 1);
+            let open = openers[depth];
+            match_sequences(tokenizer, &mut sequences, open, close);
+            if !sequences[open].open {
+                openers.pop();
+            }
         }
 
-        close = next_index;
+        if sequences[close].open {
+            openers.push(close);
+        }
     }
 
-    // Mark remaining sequences as data.
-    let mut index = 0;
-    while index < sequences.len() {
-        let sequence = &sequences[index];
+    // Mark remaining sequences as data: those taken out have no markers
+    // left.
+    for sequence in sequences.iter().filter(|sequence| sequence.size > 0) {
         tokenizer.events[sequence.index].name = Name::Data;
         tokenizer.events[sequence.index + 1].name = Name::Data;
-        index += 1;
     }
 
     tokenizer.map.consume(&mut tokenizer.events);
@@ -545,7 +565,7 @@ fn read_sequences(tokenizer: &mut Tokenizer) -> Vec<Sequence> {
                 sequences.push(Sequence {
                     rule,
                     index,
-                    stack: stack.clone(),
+                    stack: stack.last().copied().unwrap_or(NONE),
                     spaces: seen,
                     start_point: enter.point.clone(),
                     end_point: exit.point.clone(),
@@ -579,15 +599,10 @@ fn read_sequences(tokenizer: &mut Tokenizer) -> Vec<Sequence> {
 #[allow(clippy::too_many_lines)]
 fn match_sequences(
     tokenizer: &mut Tokenizer,
-    sequences: &mut Vec<Sequence>,
+    sequences: &mut [Sequence],
     open: usize,
     close: usize,
-) -> usize {
-    // Where to move to next.
-    // Stay on this closing sequence for the next iteration: it
-    // might close more things.
-    // It’s changed if sequences are removed.
-    let mut next = close;
+) {
     let spec = sequences[close].rule.spec();
 
     // Number of markers to use from the sequence.
@@ -596,25 +611,6 @@ fn match_sequences(
     } else {
         spec.min
     };
-
-    // We’re *on* a closing sequence, with a matching opening
-    // sequence.
-    // Now we make sure that we can’t have misnested attention:
-    //
-    // ```html
-    // <em>a <strong>b</em> c</strong>
-    // ```
-    //
-    // Do that by marking everything between it as no longer
-    // possible to open anything.
-    // Theoretically we should mark as `close: false` too, but
-    // we don’t look for closers backwards, so it’s not needed.
-    let mut between = open + 1;
-
-    while between < close {
-        sequences[between].open = false;
-        between += 1;
-    }
 
     let names = if take == 1 { spec.lone } else { spec.double }
         .expect("expected a node for the markers taken");
@@ -707,9 +703,11 @@ fn match_sequences(
         ],
     );
 
-    // Remove closing sequence if fully used.
+    // A sequence with no markers left is taken out: it opens and closes
+    // nothing more.
     if sequences[close].size == 0 {
-        sequences.remove(close);
+        sequences[close].open = false;
+        sequences[close].close = false;
         tokenizer.map.add(close_index, 2, vec![]);
     } else {
         // Shift remaining closing sequence forward.
@@ -720,16 +718,16 @@ fn match_sequences(
     }
 
     if sequences[open].size == 0 {
-        sequences.remove(open);
+        sequences[open].open = false;
+        sequences[open].close = false;
         tokenizer.map.add(open_index, 2, vec![]);
-        // Everything shifts one to the left, account for it in next iteration.
-        next -= 1;
     } else {
         tokenizer.events[open_index + 1].point = sequences[open].end_point.clone();
     }
-
-    next
 }
+
+/// No index: the innermost balanced event of a sequence in none.
+const NONE: usize = usize::MAX;
 
 /// Steps of this construct.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

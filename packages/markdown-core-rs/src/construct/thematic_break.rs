@@ -93,7 +93,12 @@ fn start(tokenizer: &mut Tokenizer) -> State {
 ///     ^
 /// ```
 fn before(tokenizer: &mut Tokenizer) -> State {
-    match tokenizer.current {
+    let current = tokenizer.current;
+    match current {
+        // A break that stops at a byte that is no marker, whitespace, or
+        // line ending tells each later one of the same marker before that
+        // byte: `- - - a` is read once, not at each of its list items.
+        Some(marker @ (b'*' | b'-' | b'_')) if tokenizer.scan(key(marker)) => State::Nok,
         Some(b'*' | b'-' | b'_') => State::Redo(StateName::ThematicBreak(Step::AtBreak {
             marker: tokenizer.current.unwrap(),
             size: 0,
@@ -112,14 +117,17 @@ fn at_break(tokenizer: &mut Tokenizer, marker: u8, size: usize) -> State {
     if tokenizer.current == Some(marker) {
         tokenizer.enter(Name::ThematicBreakSequence);
         State::Redo(StateName::ThematicBreak(Step::Sequence { marker, size }))
-    } else if size >= THEMATIC_BREAK_MARKER_COUNT_MIN
-        && matches!(tokenizer.current, None | Some(b'\n'))
-    {
-        tokenizer.exit(Name::ThematicBreak);
-        // Feel free to interrupt.
-        tokenizer.interrupt = false;
-        State::Ok
+    } else if matches!(tokenizer.current, None | Some(b'\n')) {
+        if size >= THEMATIC_BREAK_MARKER_COUNT_MIN {
+            tokenizer.exit(Name::ThematicBreak);
+            // Feel free to interrupt.
+            tokenizer.interrupt = false;
+            State::Ok
+        } else {
+            State::Nok
+        }
     } else {
+        tokenizer.barren(key(marker));
         State::Nok
     }
 }
@@ -151,6 +159,11 @@ fn sequence(tokenizer: &mut Tokenizer, marker: u8, size: usize) -> State {
 }
 
 /// Steps of this construct.
+/// The key of the scan for a break of `marker`.
+fn key(marker: u8) -> u16 {
+    0x200 | u16::from(marker)
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Step {
     Start,

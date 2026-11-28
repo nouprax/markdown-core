@@ -16,7 +16,7 @@ use crate::subtokenize::Subresult;
 use crate::util::stack::room;
 
 use crate::util::{constant::TAB_SIZE, edit_map::EditMap};
-use alloc::{boxed::Box, string::String, vec, vec::Vec};
+use alloc::{boxed::Box, collections::BTreeMap, string::String, vec, vec::Vec};
 
 /// Containers.
 ///
@@ -285,6 +285,23 @@ pub struct Labels {
     pub loose: Vec<LabelStart>,
     /// Matched images, links, and footnote calls.
     pub pairs: Vec<Label>,
+    /// Brackets whose `]` matched nothing, in the order they close.
+    pub shut: Vec<Shut>,
+    /// The event index and byte index of the `]` tried last.
+    pub close: (usize, usize),
+}
+
+/// A bracket whose `]` matched nothing.
+///
+/// Its `]` starts the data at `end`, after the attempt at it is undone.
+#[derive(Debug)]
+pub struct Shut {
+    /// Enter index of its start.
+    pub start: usize,
+    /// Event index of the data that starts with its `]`.
+    pub end: usize,
+    /// Byte index of its `]`.
+    pub byte: usize,
 }
 
 /// Normalized identifiers defined so far.
@@ -377,6 +394,21 @@ pub struct Tokenizer<'a> {
     /// Whether this is the text of a table cell, where each `\\|` is a `|`
     /// before the text is read.
     pub cell: bool,
+    /// Per thing a construct scans for, by a key the construct chooses, the
+    /// places a scan for it can start and find none, and where those scans
+    /// stop: a construct whose scan does not depend on where it starts reads
+    /// a stretch once, not once per start in it.
+    barren: BTreeMap<u16, (usize, usize)>,
+    /// Where the scan of the construct that uses `barren` started.
+    scan: usize,
+    /// The last run of spaces and tabs [`Tokenizer::blank`][] read: where
+    /// it was asked from and where it ends.
+    run: Option<(usize, usize)>,
+    /// Where the bytes fed so far end, and whether no more follow.
+    fed: (usize, bool),
+    /// How many checks are open: what is read then is undone whatever it
+    /// finds.
+    checks: usize,
 }
 
 impl<'a> Tokenizer<'a> {
@@ -400,6 +432,11 @@ impl<'a> Tokenizer<'a> {
             labels: Labels::default(),
             definitions: Definitions::default(),
             map: EditMap::new(),
+            barren: BTreeMap::new(),
+            scan: 0,
+            run: None,
+            fed: (0, false),
+            checks: 0,
             interrupt: false,
             pierce: false,
             concrete: false,
@@ -410,6 +447,58 @@ impl<'a> Tokenizer<'a> {
             cell: false,
             resolvers: vec![],
         }
+    }
+
+    /// Start a scan for `key` here: whether it finds none, as a scan for it
+    /// from here or earlier that stopped past here did.
+    pub fn scan(&mut self, key: u16) -> bool {
+        self.scan = self.point.index;
+        self.barren
+            .get(&key)
+            .is_some_and(|(from, to)| *from <= self.point.index && self.point.index < *to)
+    }
+
+    /// Whether the rest of the line is blank: spaces and tabs, then a line
+    /// ending or the end; `None` when the bytes fed so far do not tell. A run
+    /// is read once, however many containers ask from in it.
+    pub fn blank(&mut self) -> Option<bool> {
+        let bytes = self.parse_state.bytes;
+        let (fed, last) = self.fed;
+        let at = self.point.index;
+        let end = match self.run {
+            Some((from, to)) if from <= at && at <= to => to,
+            _ => {
+                let mut end = at;
+                while end < fed && matches!(bytes[end], b'\t' | b' ') {
+                    end += 1;
+                }
+                self.run = Some((at, end));
+                end
+            }
+        };
+        if end < fed {
+            Some(bytes[end] == b'\n')
+        } else if last {
+            Some(true)
+        } else {
+            None
+        }
+    }
+
+    /// Whether a check is open, so that what is read now is undone.
+    pub fn tentative(&self) -> bool {
+        self.checks > 0
+    }
+
+    /// The scan for `key` found none, here: a scan for it from where it
+    /// started up to here finds none too.
+    pub fn barren(&mut self, key: u16) {
+        let to = self.point.index;
+        let from = match self.barren.get(&key) {
+            Some((from, end)) if *end == to => (*from).min(self.scan),
+            _ => self.scan,
+        };
+        self.barren.insert(key, (from, to));
     }
 
     /// Register a resolver.
@@ -648,6 +737,7 @@ impl<'a> Tokenizer<'a> {
             nok,
         };
         self.attempts.push(attempt);
+        self.checks += 1;
     }
 
     /// Stack an attempt, moving to `ok` on [`State::Ok`][] and `nok` on
@@ -764,11 +854,18 @@ fn push_steps(
     );
 
     tokenizer.move_to(from);
+    if tokenizer.fed != (to.0, flush) {
+        tokenizer.fed = (to.0, flush);
+        tokenizer.run = None;
+    }
 
     loop {
         match state {
             State::Ok | State::Nok => {
                 if let Some(attempt) = tokenizer.attempts.pop() {
+                    if attempt.kind == AttemptKind::Check {
+                        tokenizer.checks -= 1;
+                    }
                     if attempt.kind == AttemptKind::Check || state == State::Nok {
                         if let Some(spot) = attempt.spot {
                             tokenizer.free(spot);

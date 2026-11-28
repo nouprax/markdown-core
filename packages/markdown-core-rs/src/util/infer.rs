@@ -10,7 +10,15 @@ use alloc::{vec, vec::Vec};
 ///
 /// When `include_items: true` is passed, infers whether the list as a whole
 /// is “loose”.
-pub fn list_loose(events: &[Event], mut index: usize, include_items: bool) -> bool {
+/// `exits` holds the exit index of each enter: what is in the blocks of the
+/// items is passed over, so a list costs its own events, not those of the
+/// lists in it.
+pub fn list_loose(
+    events: &[Event],
+    exits: &[usize],
+    mut index: usize,
+    include_items: bool,
+) -> bool {
     let mut balance = 0;
     // A blank line between items, which is one when an item follows it.
     let mut blank = false;
@@ -28,9 +36,15 @@ pub fn list_loose(events: &[Event], mut index: usize, include_items: bool) -> bo
 
             if balance == 2
                 && event.name == Name::ListItem
-                && (blank || (include_items && list_item_loose(events, index)))
+                && (blank || (include_items && list_item_loose(events, exits, index)))
             {
                 return true;
+            }
+            // In a block of an item: to its exit.
+            if balance > 2 {
+                index = exits[index] + 1;
+                balance -= 1;
+                continue;
             }
         } else {
             balance -= 1;
@@ -104,8 +118,9 @@ pub fn list_loose(events: &[Event], mut index: usize, include_items: bool) -> bo
     false
 }
 
-/// Figure out if an item is spread or not.
-pub fn list_item_loose(events: &[Event], mut index: usize) -> bool {
+/// Figure out if an item is spread or not, with `exits` the exit index of
+/// each enter.
+pub fn list_item_loose(events: &[Event], exits: &[usize], mut index: usize) -> bool {
     debug_assert!(
         matches!(events[index].name, Name::ListItem),
         "expected list item"
@@ -122,6 +137,12 @@ pub fn list_item_loose(events: &[Event], mut index: usize) -> bool {
             balance += 1;
             if blank && balance == 2 && !between(event.name) {
                 return true;
+            }
+            // In a block of the item: to its exit.
+            if balance > 2 {
+                index = exits[index] + 1;
+                balance -= 1;
+                continue;
             }
         } else {
             balance -= 1;

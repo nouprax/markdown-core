@@ -185,14 +185,14 @@ use crate::event::{Event, Kind, Name};
 use crate::resolve::Name as ResolveName;
 use crate::state::{Name as StateName, State};
 use crate::subtokenize::Subresult;
-use crate::tokenizer::{Fallback, Label, LabelKind, LabelStart, Tokenizer};
+use crate::tokenizer::{Fallback, Label, LabelKind, LabelStart, Shut, Tokenizer};
 use crate::util::{
     constant::{LINK_REFERENCE_SIZE_MAX, RESOURCE_DESTINATION_BALANCE_MAX},
     normalize_identifier::normalize_identifier,
     skip,
     slice::{Position, Slice},
 };
-use alloc::{string::String, vec, vec::Vec};
+use alloc::{collections::BTreeSet, string::String, vec, vec::Vec};
 
 /// Bytes this construct can start at.
 pub const STARTS: Starts = Starts::Bytes(b"]");
@@ -214,6 +214,7 @@ fn start(tokenizer: &mut Tokenizer) -> State {
         if !tokenizer.labels.starts.is_empty() {
             let label_start = tokenizer.labels.starts.last().unwrap();
             let end = tokenizer.events.len();
+            tokenizer.labels.close = (end, tokenizer.point.index);
 
             // If the corresponding label (link) start is marked as inactive,
             // it means we’d be wrapping a link, like this:
@@ -326,15 +327,11 @@ fn reference(tokenizer: &mut Tokenizer, end: usize) -> State {
         tokenizer.events[end].point.index,
     );
 
-    // We don’t care about virtual spaces, so `indices` and `as_str` are fine.
-    let mut id = normalize_identifier(
-        Slice::from_indices(tokenizer.parse_state.bytes, indices.0, indices.1).as_str(),
-    );
+    let body = &tokenizer.parse_state.bytes[indices.0..indices.1];
 
     // An inline note holds more than spaces and tabs, and takes nothing
     // after it.
     if start.kind == LabelKind::Note {
-        let body = &tokenizer.parse_state.bytes[indices.0..indices.1];
         return State::Redo(if body.iter().all(|byte| matches!(byte, b'\t' | b' ')) {
             StateName::LabelEnd(Step::Nok)
         } else {
@@ -342,9 +339,23 @@ fn reference(tokenizer: &mut Tokenizer, end: usize) -> State {
         });
     }
 
+    // A label holds at most 999 characters (CommonMark 6.3), so a longer one
+    // matches no definition.
+    let over = body.len() > LINK_REFERENCE_SIZE_MAX * 4
+        || body.iter().filter(|byte| *byte & 0xC0 != 0x80).count() > LINK_REFERENCE_SIZE_MAX;
+    // We don’t care about virtual spaces, so `indices` and `as_str` are fine.
+    let mut id = (!over).then(|| {
+        normalize_identifier(
+            Slice::from_indices(tokenizer.parse_state.bytes, indices.0, indices.1).as_str(),
+        )
+    });
+
     // See if this matches a footnote definition.
     if start.kind == LabelKind::Footnote {
-        if tokenizer.parse_state.definitions.notes.contains(&id) {
+        if id
+            .as_ref()
+            .is_some_and(|id| tokenizer.parse_state.definitions.notes.contains(id))
+        {
             // A resource or a full reference makes it a link all the same.
             if matches!(tokenizer.current, Some(b'(' | b'[')) {
                 tokenizer.labels.starts[start_index].kind = LabelKind::UndefinedFootnote;
@@ -363,13 +374,17 @@ fn reference(tokenizer: &mut Tokenizer, end: usize) -> State {
 
         // Nope, this might be a normal link?
         tokenizer.labels.starts[start_index].kind = LabelKind::UndefinedFootnote;
-        let mut new_id = String::new();
-        new_id.push('^');
-        new_id.push_str(&id);
-        id = new_id;
+        id = id.map(|id| {
+            let mut new_id = String::new();
+            new_id.push('^');
+            new_id.push_str(&id);
+            new_id
+        });
     }
 
-    let defined = tokenizer.parse_state.definitions.links.contains(&id);
+    let defined = id
+        .as_ref()
+        .is_some_and(|id| tokenizer.parse_state.definitions.links.contains(id));
 
     match tokenizer.current {
         // Resource (`[asd](fgh)`)?
@@ -439,6 +454,7 @@ fn cite(tokenizer: &mut Tokenizer, end: usize, tail: bool, defined: bool) -> Sta
         &tokenizer.events,
         bytes,
         &tokenizer.labels.pairs,
+        &tokenizer.labels.shut,
         start.start.1,
         end,
     );
@@ -544,12 +560,17 @@ fn reference_not_full(tokenizer: &mut Tokenizer, end: usize) -> State {
     State::Redo(StateName::LabelEnd(Step::ReferenceCollapsed))
 }
 
-/// Whether a link label (`[`, at most 999 bytes with no unescaped bracket
+/// Whether a link label (`[`, at most 999 characters with no unescaped bracket
 /// and not all whitespace, and `]`) starts at `at`.
 fn label_follows(bytes: &[u8], at: usize) -> bool {
     let mut index = at + 1;
     let mut filled = false;
-    while index < bytes.len() && index - at <= LINK_REFERENCE_SIZE_MAX + 1 {
+    // Characters before `index`: continuation bytes add none.
+    let mut size = 0;
+    while index < bytes.len() && size <= LINK_REFERENCE_SIZE_MAX {
+        if bytes[index] & 0xC0 != 0x80 {
+            size += 1;
+        }
         match bytes[index] {
             b'\\' => {
                 filled = true;
@@ -659,6 +680,12 @@ fn done(tokenizer: &mut Tokenizer, end: usize) -> State {
 /// ```
 fn nok(tokenizer: &mut Tokenizer) -> State {
     let start = tokenizer.labels.starts.pop().unwrap();
+    let (end, byte) = tokenizer.labels.close;
+    tokenizer.labels.shut.push(Shut {
+        start: start.start.0,
+        end,
+        byte,
+    });
     tokenizer.labels.loose.push(start);
     State::Nok
 }
@@ -921,6 +948,7 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
     mark_as_data(tokenizer, &starts);
     let starts = tokenizer.labels.loose.split_off(0);
     mark_as_data(tokenizer, &starts);
+    tokenizer.labels.shut.clear();
 
     tokenizer.map.consume(&mut tokenizer.events);
     None
@@ -931,7 +959,7 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
 /// Returns the starts and ends of tails that are then brackets as text,
 /// which are taken out of `labels`.
 fn settle(tokenizer: &Tokenizer, labels: &mut Vec<Label>) -> Vec<LabelStart> {
-    let mut referents = vec![];
+    let mut referents = BTreeSet::new();
     let mut dropped = vec![];
     let mut index = labels.len();
     while index > 0 {
@@ -963,6 +991,7 @@ fn settle(tokenizer: &Tokenizer, labels: &mut Vec<Label>) -> Vec<LabelStart> {
                 &tokenizer.events,
                 tokenizer.parse_state.bytes,
                 &labels[..index],
+                &tokenizer.labels.shut,
                 labels[index].start.1,
                 labels[index].end.0,
             );

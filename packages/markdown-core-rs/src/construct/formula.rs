@@ -101,6 +101,18 @@ impl Seen {
     }
 }
 
+/// The key of the closer a body of `form` scans for, with `tick` whether it
+/// starts with a backtick.
+fn key(form: Form, tick: bool) -> u16 {
+    let form = match form {
+        Form::Dollar => 0,
+        Form::Dollars => 1,
+        Form::Round => 2,
+        Form::Square => 3,
+    };
+    0x100 | (form * 2 + u16::from(tick && form == 0))
+}
+
 /// Whether `byte` is whitespace to a `$`.
 fn white(byte: Option<u8>) -> bool {
     matches!(byte, Some(b'\t' | b'\n' | b'\r' | b' '))
@@ -137,9 +149,16 @@ fn start(tokenizer: &mut Tokenizer) -> State {
 fn dollars(tokenizer: &Tokenizer) -> usize {
     let events = &tokenizer.events;
     let bytes = tokenizer.parse_state.bytes;
+    // The dollars right before, of text or not.
+    let mut run = tokenizer.point.index;
+    while run > 0 && bytes[run - 1] == b'$' {
+        run -= 1;
+    }
+    // Where the text right before starts, back to the dollars only.
     let mut floor = tokenizer.point.index;
     let mut index = events.len();
-    while index >= 2
+    while floor > run
+        && index >= 2
         && events[index - 1].kind == Kind::Exit
         && events[index - 1].name == Name::Data
         && events[index - 1].point.index == floor
@@ -148,11 +167,7 @@ fn dollars(tokenizer: &Tokenizer) -> usize {
         floor = events[index - 2].point.index;
         index -= 2;
     }
-    let mut at = tokenizer.point.index;
-    while at > floor && bytes[at - 1] == b'$' {
-        at -= 1;
-    }
-    tokenizer.point.index - at
+    tokenizer.point.index - run.max(floor)
 }
 
 /// After the first `$`.
@@ -225,6 +240,12 @@ fn bracket(tokenizer: &mut Tokenizer) -> State {
 ///        ^
 /// ```
 fn body(tokenizer: &mut Tokenizer, form: Form, seen: Seen, open: bool) -> State {
+    // Where a body closes does not depend on where it starts, past whether
+    // it starts with a backtick: a body that reaches the end with no closer
+    // tells each later one with the same form.
+    if seen.size == 0 && tokenizer.scan(key(form, tokenizer.current == Some(b'`'))) {
+        return State::Nok;
+    }
     let special = match tokenizer.current {
         None | Some(b'\n' | b'\\') => true,
         Some(b'$') => matches!(form, Form::Dollar | Form::Dollars),
@@ -246,7 +267,10 @@ fn body(tokenizer: &mut Tokenizer, form: Form, seen: Seen, open: bool) -> State 
         tokenizer.exit(Name::FormulaText);
     }
     match tokenizer.current {
-        None => State::Nok,
+        None => {
+            tokenizer.barren(key(form, seen.tick));
+            State::Nok
+        }
         Some(b'\n') => {
             tokenizer.enter(Name::LineEnding);
             tokenizer.consume();

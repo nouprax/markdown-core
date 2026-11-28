@@ -375,6 +375,19 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
     let mut lists: Vec<(u8, usize, usize, usize)> = vec![];
     let mut index = 0;
     let mut balance = 0;
+    // The exit of each item, by its enter, found in one pass: an item does
+    // not read the items in it to find its end.
+    let mut ends = vec![0; tokenizer.events.len()];
+    let mut open = vec![];
+    for (index, event) in tokenizer.events.iter().enumerate() {
+        if event.name == Name::ListItem {
+            if event.kind == Kind::Enter {
+                open.push(index);
+            } else if let Some(enter) = open.pop() {
+                ends[enter] = index;
+            }
+        }
+    }
 
     // Merge list items.
     while index < tokenizer.events.len() {
@@ -382,7 +395,7 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
 
         if event.name == Name::ListItem {
             if event.kind == Kind::Enter {
-                let end = skip::opt(&tokenizer.events, index, &[Name::ListItem]) - 1;
+                let end = ends[index];
                 let marker = skip::to(&tokenizer.events, index, &[Name::ListItemMarker]);
                 // Guaranteed to be a valid ASCII byte.
                 let marker = tokenizer.parse_state.bytes[tokenizer.events[marker].point.index];
@@ -394,6 +407,15 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
                 while list_index > 0 {
                     list_index -= 1;
                     let previous = &lists_wip[list_index];
+                    // The lists in progress hold the item, from the outside
+                    // in, past those after it: one around it is no list of
+                    // its siblings, nor any further out.
+                    if previous.1 < current.1 {
+                        break;
+                    }
+                    if previous.0 != current.0 || previous.1 != current.1 {
+                        continue;
+                    }
                     let before = skip::opt(
                         &tokenizer.events,
                         previous.3 + 1,

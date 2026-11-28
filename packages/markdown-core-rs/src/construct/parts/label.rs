@@ -197,7 +197,10 @@ fn inside(tokenizer: &mut Tokenizer, mut label: Label) -> State {
                 State::Redo(StateName::Label(Step::AtBreak(label)))
             } else {
                 tokenizer.consume();
-                label.size += 1;
+                // The size is in characters: continuation bytes add none.
+                if byte & 0xC0 != 0x80 {
+                    label.size += 1;
+                }
                 if !matches!(byte, b'\t' | b' ') {
                     label.seen = true;
                 }

@@ -64,6 +64,14 @@ use crate::tokenizer::Tokenizer;
 ///     ^
 /// ```
 fn start(tokenizer: &mut Tokenizer) -> State {
+    // Read each run once: a line under many containers is asked about by
+    // each of them.
+    match tokenizer.blank() {
+        Some(false) => return State::Nok,
+        // A check undoes what it reads: what it finds is all there is to it.
+        Some(true) if tokenizer.tentative() => return State::Ok,
+        _ => {}
+    }
     if matches!(tokenizer.current, Some(b'\t' | b' ')) {
         tokenizer.attempt(State::Next(StateName::BlankLine(Step::After)), State::Nok);
         State::Redo(space_or_tab())

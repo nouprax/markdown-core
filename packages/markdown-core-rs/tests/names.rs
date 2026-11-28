@@ -24,6 +24,7 @@ const OUTSIDE: &[&str] = &[
     "args",
     "as_bytes",
     "binary_search",
+    "by_ref",
     "bytes",
     "cfg",
     "clippy",
@@ -56,6 +57,7 @@ const OUTSIDE: &[&str] = &[
     "to_string_lossy",
     "too_many_lines",
     "try_from",
+    "type",
     "with_capacity",
 ];
 
@@ -179,7 +181,7 @@ fn code(text: &str) -> String {
 fn names() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut found = vec![];
-    for directory in ["src", "tests", "fuzz"] {
+    for directory in ["src", "tests", "fuzz", "examples"] {
         files(&root.join(directory), &mut found);
     }
     let mut bad = vec![];

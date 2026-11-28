@@ -81,11 +81,16 @@ fn properties() {
     ));
 }
 
-// Nested lists cost time cubic in their depth (a separate fix), so they run
-// to a depth the stack alone would not hold.
 #[test]
 fn lists() {
-    let source: String = (0..300)
+    deep(format!("{}a\n", "- ".repeat(LEVELS)));
+}
+
+// Each line of an indented list holds all the indent before it, so the
+// source is square in the depth.
+#[test]
+fn indented_lists() {
+    let source: String = (0..1_000)
         .map(|level| format!("{}- a\n", "  ".repeat(level)))
         .collect();
     deep(source);

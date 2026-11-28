@@ -273,10 +273,13 @@ fn label_inside(tokenizer: &mut Tokenizer, size: usize) -> State {
         tokenizer.exit(Name::FootnoteDefinitionLabel);
         State::Next(StateName::FootnoteDefinition(Step::LabelAfter))
     } else {
-        let next = if matches!(tokenizer.current.unwrap(), b'\\') {
-            StateName::FootnoteDefinition(Step::LabelEscape { size: size + 1 })
+        let byte = tokenizer.current.unwrap();
+        // The size is in characters: continuation bytes add none.
+        let size = size + usize::from(byte & 0xC0 != 0x80);
+        let next = if byte == b'\\' {
+            StateName::FootnoteDefinition(Step::LabelEscape { size })
         } else {
-            StateName::FootnoteDefinition(Step::LabelInside { size: size + 1 })
+            StateName::FootnoteDefinition(Step::LabelInside { size })
         };
         tokenizer.consume();
         State::Next(next)

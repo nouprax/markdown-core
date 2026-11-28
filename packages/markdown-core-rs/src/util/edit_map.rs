@@ -9,7 +9,10 @@
 //! through another tokenizer and inject the result.
 
 use crate::event::Event;
-use alloc::{vec, vec::Vec};
+use alloc::{
+    collections::{BTreeMap, VecDeque},
+    vec::Vec,
+};
 
 /// Shift `previous` and `next` links according to `leaps`.
 ///
@@ -54,17 +57,30 @@ fn shift_links(events: &mut [Event], leaps: &[(usize, usize, usize)]) {
     }
 }
 
-/// Tracks a bunch of edits.
+/// The edit at one index: how many events it removes, and the lists of
+/// events it adds there, in order.
+#[derive(Debug, Default)]
+struct Edit {
+    remove: usize,
+    count: usize,
+    lists: VecDeque<Vec<Event>>,
+}
+
+/// Tracks a bunch of edits, by index: each edit is found and extended,
+/// at either end, in time logarithmic in their number and constant in what
+/// it holds.
 #[derive(Debug)]
 pub struct EditMap {
     /// Record of changes.
-    map: Vec<(usize, usize, Vec<Event>)>,
+    map: BTreeMap<usize, Edit>,
 }
 
 impl EditMap {
     /// Create a new edit map.
     pub fn new() -> EditMap {
-        EditMap { map: vec![] }
+        EditMap {
+            map: BTreeMap::new(),
+        }
     }
     /// Create an edit: a remove and/or add at a certain place.
     pub fn add(&mut self, index: usize, remove: usize, add: Vec<Event>) {
@@ -76,73 +92,52 @@ impl EditMap {
     }
     /// Done, change the events.
     pub fn consume(&mut self, events: &mut Vec<Event>) {
-        self.map
-            .sort_unstable_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
-
         if self.map.is_empty() {
             return;
         }
 
         // Calculate jumps: where items in the current list move to.
         let mut leaps = Vec::with_capacity(self.map.len());
-        let mut index = 0;
         let mut add_acc = 0;
         let mut remove_acc = 0;
-        while index < self.map.len() {
-            let (at, remove, add) = &self.map[index];
-            remove_acc += remove;
-            add_acc += add.len();
+        for (at, edit) in &self.map {
+            remove_acc += edit.remove;
+            add_acc += edit.count;
             leaps.push((*at, remove_acc, add_acc));
-            index += 1;
         }
 
         shift_links(events, &leaps);
 
-        let len_before = events.len();
-        let mut index = self.map.len();
-        let mut vecs = Vec::with_capacity(index * 2 + 1);
-        while index > 0 {
-            index -= 1;
-            vecs.push(events.split_off(self.map[index].0 + self.map[index].1));
-            vecs.push(self.map[index].2.split_off(0));
-            events.truncate(self.map[index].0);
+        let mut old = core::mem::take(events).into_iter();
+        let mut done = 0;
+        events.reserve(old.len() + add_acc - remove_acc);
+        for (at, edit) in core::mem::take(&mut self.map) {
+            events.extend(old.by_ref().take(at - done));
+            for list in edit.lists {
+                events.extend(list);
+            }
+            old.by_ref().take(edit.remove).for_each(drop);
+            done = at + edit.remove;
         }
-        vecs.push(events.split_off(0));
-
-        events.reserve(len_before + add_acc - remove_acc);
-
-        while let Some(mut slice) = vecs.pop() {
-            events.append(&mut slice);
-        }
-
-        self.map.clear();
+        events.extend(old);
     }
 }
 
 /// Create an edit.
-fn add_impl(edit_map: &mut EditMap, at: usize, remove: usize, mut add: Vec<Event>, before: bool) {
-    let mut index = 0;
-
+fn add_impl(edit_map: &mut EditMap, at: usize, remove: usize, add: Vec<Event>, before: bool) {
     if remove == 0 && add.is_empty() {
         return;
     }
 
-    while index < edit_map.map.len() {
-        if edit_map.map[index].0 == at {
-            edit_map.map[index].1 += remove;
-
-            if before {
-                add.append(&mut edit_map.map[index].2);
-                edit_map.map[index].2 = add;
-            } else {
-                edit_map.map[index].2.append(&mut add);
-            }
-
-            return;
-        }
-
-        index += 1;
+    let edit = edit_map.map.entry(at).or_default();
+    edit.remove += remove;
+    edit.count += add.len();
+    if add.is_empty() {
+        return;
     }
-
-    edit_map.map.push((at, remove, add));
+    if before {
+        edit.lists.push_front(add);
+    } else {
+        edit.lists.push_back(add);
+    }
 }
