@@ -122,55 +122,6 @@ static inline markdown_core_input_line *S_line(const markdown_core_tree *lines, 
     return (markdown_core_input_line *)markdown_core_tree_at(lines, index, sizeof(markdown_core_input_line));
 }
 
-/* The facts that input lines `first` up to `end` of the front name go, with
- * the normalized lines they name, which leave the list in one walk: a
- * normalized line names no facts once it goes. The facts past the last a
- * kept line names go too: storage keeps to the text, however many edits
- * read it again. A line names its facts alone, so those are the facts past
- * the last one no leaving line names. A line in the back has no facts. */
-static void S_lines_unfact(markdown_core_parser_input *input, size_t first, size_t end) {
-    markdown_core_tree *lines = &input->lines;
-    bool normalized_freed = false;
-    for (size_t i = first; i < end; i++) {
-        markdown_core_input_line *line = S_line(lines, i);
-        markdown_core_line_facts *facts = markdown_core_input_facts(input, line);
-        if (!facts) {
-            continue;
-        }
-        line->facts = 0;
-        facts->depth = MARKDOWN_CORE_FACTS_DROPPED;
-        if (facts->normalized) {
-            facts->normalized->fact = 0;
-            facts->normalized = NULL;
-            normalized_freed = true;
-        }
-    }
-    for (markdown_core_normalized_line **link = &input->normalized; normalized_freed && *link;) {
-        markdown_core_normalized_line *normalized = *link;
-        if (normalized->fact) {
-            link = &normalized->next;
-        } else {
-            *link = normalized->next;
-            markdown_core_free(normalized);
-        }
-    }
-    while (input->fact_count && input->facts[input->fact_count - 1].depth == MARKDOWN_CORE_FACTS_DROPPED) {
-        input->fact_count--;
-    }
-}
-
-/* The front's lines from `line` on go, with the facts and normalized lines
- * only they name: storage keeps to the text, however many edits read it
- * again. A line names its facts alone, so those are the facts past the last
- * one no leaving line names. */
-static void S_lines_truncate(markdown_core_parser_input *input, size_t line) {
-    markdown_core_tree *lines = &input->lines;
-    S_lines_unfact(input, line, lines->front);
-    if (line < lines->front) {
-        markdown_core_tree_erase(lines, line, lines->front - line);
-    }
-}
-
 static void S_clear_normalized_lines(markdown_core_parser_input *input) {
     while (input->normalized) {
         markdown_core_normalized_line *line = input->normalized;
@@ -3008,9 +2959,6 @@ bool markdown_core_parser_note_use(markdown_core_parser *parser, markdown_core_r
     (void)at;
     return true;
 }
-
-/* The lines of the input from `line` on go. */
-static inline void S_drop_lines(markdown_core_parser_input *input, size_t line) { S_lines_truncate(input, line); }
 
 /* Whether a cut owner reads an item from `byte` (dialect.h, `fronts`). */
 static inline bool S_cut_fronts(const markdown_core_dialect *dialect, unsigned char byte) {

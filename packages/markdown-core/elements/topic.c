@@ -93,19 +93,6 @@ static bool topic_opener(const markdown_core_inline_state *inline_state, bufsize
            !topic_joiner(scalar);
 }
 
-/* The blocks a block identifier may name: the paragraph whose line it ends,
- * or the block before it that its own line follows, as a list, a list item
- * or a table. Which one the document decides, and the identifier the node
- * carries confirms it. */
-static const markdown_core_node_kind NAMED[] = {
-    MARKDOWN_CORE_KIND_PARAGRAPH,       MARKDOWN_CORE_KIND_HEADING,        MARKDOWN_CORE_KIND_LIST,
-    MARKDOWN_CORE_KIND_LIST_ITEM,       MARKDOWN_CORE_KIND_CALLOUT,        MARKDOWN_CORE_KIND_TABLE,
-    MARKDOWN_CORE_KIND_CODE_BLOCK,      MARKDOWN_CORE_KIND_HTML_BLOCK,     MARKDOWN_CORE_KIND_FORMULA_BLOCK,
-    MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK, MARKDOWN_CORE_KIND_THEMATIC_BREAK, MARKDOWN_CORE_KIND_DEFINITION_LIST,
-    MARKDOWN_CORE_KIND_DEFINITION,      MARKDOWN_CORE_KIND_FOOTNOTE,
-};
-enum { NAMED_COUNT = sizeof(NAMED) / sizeof(NAMED[0]) };
-
 /* THE END OF THE TOPIC whose `#` is at `at`, or 0 when there is none. The
  * name is runs of segment characters joined by single `/` signs: a `/`
  * belongs to it only when a segment character follows, so a name neither

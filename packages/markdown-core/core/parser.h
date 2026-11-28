@@ -141,8 +141,7 @@ typedef struct markdown_core_parser_input {
     markdown_core_tree lines;
     struct markdown_core_normalized_line *normalized;
     /* THE FACTS of the lines, a line's `facts` naming its own as its index
-     * plus one, or none. A line that goes to the back loses its facts, which
-     * name blocks and lines a reading may read otherwise (S_lines_unfact). */
+     * plus one, or none. */
     struct markdown_core_line_facts *facts;
     size_t fact_count, fact_capacity;
     /* Whether a column of the input may stand elsewhere than the same
@@ -1096,8 +1095,6 @@ typedef struct markdown_core_input_line {
     uint32_t own;
 } markdown_core_input_line;
 
-#define MARKDOWN_CORE_FACTS_DROPPED INT_MIN
-
 typedef struct markdown_core_line_facts {
     struct markdown_core_normalized_line *normalized;
     /* Table grammar search facts under one matched container prefix. */
@@ -1110,9 +1107,7 @@ typedef struct markdown_core_line_facts {
      * (container, line) prefix is matched at most once per parse. NULL means
      * that no scan has recorded a prefix. */
     const struct markdown_core_node *container;
-    /* Its place in the scan's path: path[depth] == container; or
-     * MARKDOWN_CORE_FACTS_DROPPED once its line dropped, when no line names
-     * it (blocks.c, S_drop_lines). */
+    /* Its place in the scan's path: path[depth] == container. */
     int depth;
     /* The line state after that container's prefix: what S_advance_offset left. */
     bufsize_t offset;
