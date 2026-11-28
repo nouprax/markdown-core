@@ -71,8 +71,8 @@
 //! [atx]: http://www.aaronsw.com/2002/atx/
 
 use crate::choice::Starts;
-use crate::construct::partial_space_or_tab::{space_or_tab, space_or_tab_min_max};
-use crate::construct::{block_identifier, partial_attributes};
+use crate::construct::parts::space_or_tab::{space_or_tab, space_or_tab_min_max};
+use crate::construct::{block_identifier, parts};
 use crate::event::{Content, Event, Kind, Link, Name};
 use crate::resolve::Name as ResolveName;
 use crate::state::{Name as StateName, State};
@@ -328,7 +328,7 @@ fn tail(tokenizer: &mut Tokenizer, exit: usize) {
     if tokenizer.parse_state.bytes[start.index..end].contains(&b'\n') {
         return;
     }
-    if let Some((cut, events)) = partial_attributes::line_tail(tokenizer, start, end) {
+    if let Some((cut, events)) = parts::attributes::line_tail(tokenizer, start, end) {
         tokenizer.events[data].point = cut.clone();
         tokenizer.events[exit].point = cut;
         tokenizer.map.add(exit + 1, 0, events);

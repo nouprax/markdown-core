@@ -17,7 +17,7 @@
 //!
 //! The header makes its block quote a callout: `variant` is its kind, `+`
 //! makes it fold open and `-` fold shut, and the title is text.
-//! [Attributes][partial_attributes] that end the line, after the spaces and
+//! [Attributes][parts::attributes] that end the line, after the spaces and
 //! tabs before them, are the callout's, and a title that was all of them is
 //! none.
 //! Text right after the header, without whitespace, is not a header.
@@ -32,11 +32,11 @@
 //!
 //! [flow]: crate::construct::flow
 //! [block_quote]: crate::construct::block_quote
-//! [partial_attributes]: crate::construct::partial_attributes
+//! [parts::attributes]: crate::construct::parts::attributes
 
 use crate::choice::Starts;
-use crate::construct::partial_attributes;
-use crate::construct::partial_space_or_tab::{space_or_tab, space_or_tab_min_max};
+use crate::construct::parts;
+use crate::construct::parts::space_or_tab::{space_or_tab, space_or_tab_min_max};
 use crate::event::{Content, Link, Name};
 use crate::state::{Name as StateName, State};
 use crate::tokenizer::{Container, Tokenizer};
@@ -195,7 +195,7 @@ fn title(tokenizer: &mut Tokenizer) -> State {
                 State::Next(StateName::Callout(Step::End)),
                 State::Next(StateName::Callout(Step::TitleStart)),
             );
-            State::Redo(StateName::Attributes(partial_attributes::Step::Tail))
+            State::Redo(StateName::Attributes(parts::attributes::Step::Tail))
         }
         _ => State::Redo(StateName::Callout(Step::TitleStart)),
     }
@@ -234,7 +234,7 @@ fn title_inside(tokenizer: &mut Tokenizer) -> State {
         let exit = tokenizer.events.len() - 1;
         let start = tokenizer.events[exit - 2].point.clone();
         let end = tokenizer.point.index;
-        if let Some((cut, events)) = partial_attributes::line_tail(tokenizer, &start, end) {
+        if let Some((cut, events)) = parts::attributes::line_tail(tokenizer, &start, end) {
             tokenizer.events[exit - 1].point = cut.clone();
             tokenizer.events[exit].point = cut;
             tokenizer.events.extend(events);

@@ -42,8 +42,8 @@
 //! [flow]: crate::construct::flow
 
 use crate::choice::Starts;
-use crate::construct::partial_non_lazy_continuation;
-use crate::construct::partial_space_or_tab::{space_or_tab, space_or_tab_min_max};
+use crate::construct::parts;
+use crate::construct::parts::space_or_tab::{space_or_tab, space_or_tab_min_max};
 use crate::event::Name;
 use crate::state::{Name as StateName, State};
 use crate::tokenizer::Tokenizer;
@@ -454,7 +454,7 @@ fn flow_line(tokenizer: &mut Tokenizer, form: Form) -> State {
                 State::Next(StateName::Formula(Step::FlowAfter)),
             );
             State::Redo(StateName::NonLazyContinuation(
-                partial_non_lazy_continuation::Step::Start,
+                parts::non_lazy_continuation::Step::Start,
             ))
         }
         _ => {

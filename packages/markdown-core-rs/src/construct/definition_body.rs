@@ -39,7 +39,7 @@
 //! [definition_term]: crate::construct::definition_term
 
 use crate::construct::blank_line;
-use crate::construct::partial_space_or_tab::{
+use crate::construct::parts::space_or_tab::{
     space_or_tab_min_max, space_or_tab_with_options, Options as SpaceOrTabOptions,
 };
 use crate::event::{Event, Kind, Name};

@@ -153,7 +153,7 @@
 //! [plain]: crate::construct::plain
 //! [character_reference]: crate::construct::character_reference
 //! [character_escape]: crate::construct::character_escape
-//! [label]: crate::construct::partial_label
+//! [label]: crate::construct::parts::label
 //! [label_end]: crate::construct::label_end
 //! [label_start_footnote]: crate::construct::label_start_footnote
 //! [commonmark_block]: https://spec.commonmark.org/0.31/#phase-1-block-structure
@@ -166,7 +166,7 @@
 //! [html_sup]: https://html.spec.whatwg.org/multipage/text-level-semantics.html#the-sub-and-sup-elements
 
 use crate::construct::blank_line;
-use crate::construct::partial_space_or_tab::{
+use crate::construct::parts::space_or_tab::{
     space_or_tab_min_max, space_or_tab_with_options, Options as SpaceOrTabOptions,
 };
 use crate::event::{Content, Link, Name};

@@ -15,11 +15,11 @@
 //!
 //! * [`micromark-factory-space/index.js` in `micromark`](https://github.com/micromark/micromark/blob/main/packages/micromark-factory-space/dev/index.js)
 //!
-//! [destination]: crate::construct::partial_destination
-//! [label]: crate::construct::partial_label
-//! [title]: crate::construct::partial_title
+//! [destination]: crate::construct::parts::destination
+//! [label]: crate::construct::parts::label
+//! [title]: crate::construct::parts::title
 
-use crate::construct::partial_space_or_tab::{
+use crate::construct::parts::space_or_tab::{
     space_or_tab_with_options, Options as SpaceOrTabOptions,
 };
 use crate::event::{Content, Link, Name};

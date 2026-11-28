@@ -58,7 +58,7 @@
 //! [html_ul]: https://html.spec.whatwg.org/multipage/grouping-content.html#the-ul-element
 //! [commonmark_block]: https://spec.commonmark.org/0.31/#phase-1-block-structure
 
-use crate::construct::partial_space_or_tab::{
+use crate::construct::parts::space_or_tab::{
     space_or_tab_min_max, space_or_tab_with_options, Options as SpaceOrTabOptions,
 };
 use crate::construct::{blank_line, task_list_item_check, thematic_break};

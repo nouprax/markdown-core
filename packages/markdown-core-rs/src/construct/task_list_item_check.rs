@@ -34,7 +34,7 @@
 //!
 //! [list_item]: crate::construct::list_item
 
-use crate::construct::partial_space_or_tab::space_or_tab;
+use crate::construct::parts::space_or_tab::space_or_tab;
 use crate::event::Name;
 use crate::state::{Name as StateName, State};
 use crate::tokenizer::Tokenizer;

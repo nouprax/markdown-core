@@ -25,16 +25,16 @@
 //! * [Label end][crate::construct::label_end]
 //!
 //! > 👉 **Note**: for performance reasons, hard break (trailing) is formed by
-//! > [whitespace][crate::construct::partial_whitespace].
+//! > [whitespace][crate::construct::parts::whitespace].
 
 use crate::choice::{self, Choice, Entry, List};
 use crate::construct::autolink_literal::resolve as resolve_autolink_literal;
-use crate::construct::partial_whitespace::resolve_whitespace;
+use crate::construct::parts::whitespace::resolve_whitespace;
 use crate::construct::{
     attention, autolink, autolink_literal, character_escape, character_reference, citation,
     comment, cross_link, directive_text, formula, hard_break_escape, html_text, label_end,
-    label_start_footnote, label_start_image, label_start_link, label_start_note, partial_data,
-    raw_text, topic,
+    label_start_footnote, label_start_image, label_start_link, label_start_note, parts, raw_text,
+    topic,
 };
 use crate::resolve::Name as ResolveName;
 use crate::state::{Name as StateName, State};
@@ -155,7 +155,7 @@ fn before(tokenizer: &mut Tokenizer) -> State {
 /// ```
 fn before_data(tokenizer: &mut Tokenizer) -> State {
     tokenizer.attempt(State::Next(StateName::Text(Step::Before)), State::Nok);
-    State::Redo(StateName::Data(partial_data::Step::Start {
+    State::Redo(StateName::Data(parts::data::Step::Start {
         list: List::Text,
     }))
 }

@@ -758,7 +758,7 @@ pub enum Name {
     ///   [`LineEnding`][Name::LineEnding],
     ///   [`SpaceOrTab`][Name::SpaceOrTab]
     /// * **Construct**:
-    ///   [`partial_attributes`][crate::construct::partial_attributes]
+    ///   [`parts::attributes`][crate::construct::parts::attributes]
     ///
     /// ## Example
     ///
@@ -776,7 +776,7 @@ pub enum Name {
     /// * **Content model**:
     ///   void
     /// * **Construct**:
-    ///   [`partial_attributes`][crate::construct::partial_attributes]
+    ///   [`parts::attributes`][crate::construct::parts::attributes]
     ///
     /// ## Example
     ///
@@ -794,7 +794,7 @@ pub enum Name {
     /// * **Content model**:
     ///   void
     /// * **Construct**:
-    ///   [`partial_attributes`][crate::construct::partial_attributes]
+    ///   [`parts::attributes`][crate::construct::parts::attributes]
     ///
     /// ## Example
     ///
@@ -812,7 +812,7 @@ pub enum Name {
     /// * **Content model**:
     ///   void
     /// * **Construct**:
-    ///   [`partial_attributes`][crate::construct::partial_attributes]
+    ///   [`parts::attributes`][crate::construct::parts::attributes]
     ///
     /// ## Example
     ///
@@ -832,7 +832,7 @@ pub enum Name {
     ///   [`AttributeEquals`][Name::AttributeEquals],
     ///   [`AttributeValue`][Name::AttributeValue]
     /// * **Construct**:
-    ///   [`partial_attributes`][crate::construct::partial_attributes]
+    ///   [`parts::attributes`][crate::construct::parts::attributes]
     ///
     /// ## Example
     ///
@@ -850,7 +850,7 @@ pub enum Name {
     /// * **Content model**:
     ///   void
     /// * **Construct**:
-    ///   [`partial_attributes`][crate::construct::partial_attributes]
+    ///   [`parts::attributes`][crate::construct::parts::attributes]
     ///
     /// ## Example
     ///
@@ -868,7 +868,7 @@ pub enum Name {
     /// * **Content model**:
     ///   void
     /// * **Construct**:
-    ///   [`partial_attributes`][crate::construct::partial_attributes]
+    ///   [`parts::attributes`][crate::construct::parts::attributes]
     ///
     /// ## Example
     ///
@@ -888,7 +888,7 @@ pub enum Name {
     ///   [`AttributeValueText`][Name::AttributeValueText],
     ///   [`LineEnding`][Name::LineEnding]
     /// * **Construct**:
-    ///   [`partial_attributes`][crate::construct::partial_attributes]
+    ///   [`parts::attributes`][crate::construct::parts::attributes]
     ///
     /// ## Example
     ///
@@ -906,7 +906,7 @@ pub enum Name {
     /// * **Content model**:
     ///   void
     /// * **Construct**:
-    ///   [`partial_attributes`][crate::construct::partial_attributes]
+    ///   [`parts::attributes`][crate::construct::parts::attributes]
     ///
     /// ## Example
     ///
@@ -924,7 +924,7 @@ pub enum Name {
     /// * **Content model**:
     ///   void
     /// * **Construct**:
-    ///   [`partial_attributes`][crate::construct::partial_attributes]
+    ///   [`parts::attributes`][crate::construct::parts::attributes]
     ///
     /// ## Example
     ///
@@ -1523,7 +1523,7 @@ pub enum Name {
     /// * **Content model**:
     ///   void
     /// * **Construct**:
-    ///   [`data`][crate::construct::partial_data]
+    ///   [`data`][crate::construct::parts::data]
     ///
     /// ## Example
     ///
@@ -1565,7 +1565,7 @@ pub enum Name {
     ///   [`DefinitionDestinationLiteral`][Name::DefinitionDestinationLiteral],
     ///   [`DefinitionDestinationRaw`][Name::DefinitionDestinationRaw]
     /// * **Construct**:
-    ///   [`destination`][crate::construct::partial_destination]
+    ///   [`destination`][crate::construct::parts::destination]
     ///
     /// ## Example
     ///
@@ -1586,7 +1586,7 @@ pub enum Name {
     ///   [`DefinitionDestinationLiteralMarker`][Name::DefinitionDestinationLiteralMarker],
     ///   [`DefinitionDestinationText`][Name::DefinitionDestinationText]
     /// * **Construct**:
-    ///   [`destination`][crate::construct::partial_destination]
+    ///   [`destination`][crate::construct::parts::destination]
     ///
     /// ## Example
     ///
@@ -1604,7 +1604,7 @@ pub enum Name {
     /// * **Content model**:
     ///   void
     /// * **Construct**:
-    ///   [`destination`][crate::construct::partial_destination]
+    ///   [`destination`][crate::construct::parts::destination]
     ///
     /// ## Example
     ///
@@ -1622,7 +1622,7 @@ pub enum Name {
     /// * **Content model**:
     ///   [`DefinitionDestinationText`][Name::DefinitionDestinationText]
     /// * **Construct**:
-    ///   [`destination`][crate::construct::partial_destination]
+    ///   [`destination`][crate::construct::parts::destination]
     ///
     /// ## Example
     ///
@@ -1641,7 +1641,7 @@ pub enum Name {
     /// * **Content model**:
     ///   [string content][crate::construct::string]
     /// * **Construct**:
-    ///   [`destination`][crate::construct::partial_destination]
+    ///   [`destination`][crate::construct::parts::destination]
     ///
     /// ## Example
     ///
@@ -1664,7 +1664,7 @@ pub enum Name {
     ///   [`LineEnding`][Name::LineEnding],
     ///   [`SpaceOrTab`][Name::SpaceOrTab]
     /// * **Construct**:
-    ///   [`label`][crate::construct::partial_label]
+    ///   [`label`][crate::construct::parts::label]
     ///
     /// ## Example
     ///
@@ -1682,7 +1682,7 @@ pub enum Name {
     /// * **Content model**:
     ///   void
     /// * **Construct**:
-    ///   [`label`][crate::construct::partial_label]
+    ///   [`label`][crate::construct::parts::label]
     ///
     /// ## Example
     ///
@@ -1700,7 +1700,7 @@ pub enum Name {
     /// * **Content model**:
     ///   [string content][crate::construct::string]
     /// * **Construct**:
-    ///   [`label`][crate::construct::partial_label]
+    ///   [`label`][crate::construct::parts::label]
     ///
     /// ## Example
     ///
@@ -1740,7 +1740,7 @@ pub enum Name {
     ///   [`LineEnding`][Name::LineEnding],
     ///   [`SpaceOrTab`][Name::SpaceOrTab]
     /// * **Construct**:
-    ///   [`title`][crate::construct::partial_title]
+    ///   [`title`][crate::construct::parts::title]
     ///
     /// ## Example
     ///
@@ -1758,7 +1758,7 @@ pub enum Name {
     /// * **Content model**:
     ///   void
     /// * **Construct**:
-    ///   [`title`][crate::construct::partial_title]
+    ///   [`title`][crate::construct::parts::title]
     ///
     /// ## Example
     ///
@@ -1776,7 +1776,7 @@ pub enum Name {
     /// * **Content model**:
     ///   [string content][crate::construct::string]
     /// * **Construct**:
-    ///   [`title`][crate::construct::partial_title]
+    ///   [`title`][crate::construct::parts::title]
     ///
     /// ## Example
     ///
@@ -2617,7 +2617,7 @@ pub enum Name {
     /// * **Content model**:
     ///   void
     /// * **Construct**:
-    ///   [`whitespace`][crate::construct::partial_whitespace]
+    ///   [`whitespace`][crate::construct::parts::whitespace]
     ///
     /// ## Example
     ///
@@ -3453,7 +3453,7 @@ pub enum Name {
     ///   [`ReferenceMarker`][Name::ReferenceMarker],
     ///   [`ReferenceText`][Name::ReferenceText]
     /// * **Construct**:
-    ///   [`label`][crate::construct::partial_label]
+    ///   [`label`][crate::construct::parts::label]
     ///
     /// ## Example
     ///
@@ -3471,7 +3471,7 @@ pub enum Name {
     /// * **Content model**:
     ///   void
     /// * **Construct**:
-    ///   [`label`][crate::construct::partial_label]
+    ///   [`label`][crate::construct::parts::label]
     ///
     /// ## Example
     ///
@@ -3489,7 +3489,7 @@ pub enum Name {
     /// * **Content model**:
     ///   [string content][crate::construct::string]
     /// * **Construct**:
-    ///   [`label`][crate::construct::partial_label]
+    ///   [`label`][crate::construct::parts::label]
     ///
     /// ## Example
     ///
@@ -3533,7 +3533,7 @@ pub enum Name {
     ///   [`ResourceDestinationLiteral`][Name::ResourceDestinationLiteral],
     ///   [`ResourceDestinationRaw`][Name::ResourceDestinationRaw]
     /// * **Construct**:
-    ///   [`destination`][crate::construct::partial_destination]
+    ///   [`destination`][crate::construct::parts::destination]
     ///
     /// ## Example
     ///
@@ -3552,7 +3552,7 @@ pub enum Name {
     ///   [`ResourceDestinationLiteralMarker`][Name::ResourceDestinationLiteralMarker],
     ///   [`ResourceDestinationText`][Name::ResourceDestinationText]
     /// * **Construct**:
-    ///   [`destination`][crate::construct::partial_destination]
+    ///   [`destination`][crate::construct::parts::destination]
     ///
     /// ## Example
     ///
@@ -3570,7 +3570,7 @@ pub enum Name {
     /// * **Content model**:
     ///   void
     /// * **Construct**:
-    ///   [`destination`][crate::construct::partial_destination]
+    ///   [`destination`][crate::construct::parts::destination]
     ///
     /// ## Example
     ///
@@ -3588,7 +3588,7 @@ pub enum Name {
     /// * **Content model**:
     ///   [`ResourceDestinationText`][Name::ResourceDestinationText]
     /// * **Construct**:
-    ///   [`destination`][crate::construct::partial_destination]
+    ///   [`destination`][crate::construct::parts::destination]
     ///
     /// ## Example
     ///
@@ -3607,7 +3607,7 @@ pub enum Name {
     /// * **Content model**:
     ///   [string content][crate::construct::string]
     /// * **Construct**:
-    ///   [`destination`][crate::construct::partial_destination]
+    ///   [`destination`][crate::construct::parts::destination]
     ///
     /// ## Example
     ///
@@ -3646,7 +3646,7 @@ pub enum Name {
     ///   [`ResourceTitleMarker`][Name::ResourceTitleMarker],
     ///   [`ResourceTitleText`][Name::ResourceTitleText]
     /// * **Construct**:
-    ///   [`title`][crate::construct::partial_title]
+    ///   [`title`][crate::construct::parts::title]
     ///
     /// ## Example
     ///
@@ -3664,7 +3664,7 @@ pub enum Name {
     /// * **Content model**:
     ///   void
     /// * **Construct**:
-    ///   [`title`][crate::construct::partial_title]
+    ///   [`title`][crate::construct::parts::title]
     ///
     /// ## Example
     ///
@@ -3682,7 +3682,7 @@ pub enum Name {
     /// * **Content model**:
     ///   [string content][crate::construct::string]
     /// * **Construct**:
-    ///   [`title`][crate::construct::partial_title]
+    ///   [`title`][crate::construct::parts::title]
     ///
     /// ## Example
     ///

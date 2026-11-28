@@ -63,8 +63,8 @@
 //! [atx]: http://www.aaronsw.com/2002/atx/
 
 use crate::choice::Starts;
-use crate::construct::partial_attributes;
-use crate::construct::partial_space_or_tab::{space_or_tab, space_or_tab_min_max};
+use crate::construct::parts;
+use crate::construct::parts::space_or_tab::{space_or_tab, space_or_tab_min_max};
 use crate::event::{Content, Event, Kind, Link, Name};
 use crate::resolve::Name as ResolveName;
 use crate::state::{Name as StateName, State};
@@ -159,7 +159,7 @@ fn at_break(tokenizer: &mut Tokenizer) -> State {
                 State::Next(StateName::HeadingAtx(Step::AtBreak)),
                 State::Next(StateName::HeadingAtx(Step::DataStart)),
             );
-            State::Redo(StateName::Attributes(partial_attributes::Step::Tail))
+            State::Redo(StateName::Attributes(parts::attributes::Step::Tail))
         }
         Some(_) => State::Redo(StateName::HeadingAtx(Step::DataStart)),
     }

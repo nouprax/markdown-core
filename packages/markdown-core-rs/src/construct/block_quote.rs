@@ -46,7 +46,7 @@
 //! [html-blockquote]: https://html.spec.whatwg.org/multipage/grouping-content.html#the-blockquote-element
 //! [commonmark-block]: https://spec.commonmark.org/0.31/#phase-1-block-structure
 
-use crate::construct::partial_space_or_tab::space_or_tab_min_max;
+use crate::construct::parts::space_or_tab::space_or_tab_min_max;
 use crate::event::Name;
 use crate::state::{Name as StateName, State};
 use crate::tokenizer::Tokenizer;

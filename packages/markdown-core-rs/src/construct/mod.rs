@@ -17,7 +17,7 @@
 //! there’s something left.
 //! In document, that is [flow][].
 //! In flow, that is [content][].
-//! In string and text, that is [data][partial_data].
+//! In string and text, that is [data][parts::data].
 //!
 //! ## Construct
 //!
@@ -59,7 +59,7 @@
 //! * [thematic break][thematic_break]
 //!
 //! > 👉 **Note**: for performance reasons, hard break (trailing) is formed by
-//! > [whitespace][partial_whitespace].
+//! > [whitespace][parts::whitespace].
 //!
 //! The following constructs are extensions found in markdown:
 //!
@@ -78,15 +78,15 @@
 //!
 //! There are also several small subroutines typically used in different places:
 //!
-//! * [attributes][partial_attributes]
-//! * [data][partial_data]
-//! * [destination][partial_destination]
-//! * [label][partial_label]
-//! * [non lazy continuation][partial_non_lazy_continuation]
-//! * [space or tab][partial_space_or_tab]
-//! * [space or tab, eol][partial_space_or_tab_eol]
-//! * [title][partial_title]
-//! * [whitespace][partial_whitespace]
+//! * [attributes][parts::attributes]
+//! * [data][parts::data]
+//! * [destination][parts::destination]
+//! * [label][parts::label]
+//! * [non lazy continuation][parts::non_lazy_continuation]
+//! * [space or tab][parts::space_or_tab]
+//! * [space or tab, eol][parts::space_or_tab_eol]
+//! * [title][parts::title]
+//! * [whitespace][parts::whitespace]
 //!
 //! ## Grammar
 //!
@@ -186,16 +186,7 @@ pub mod label_start_link;
 pub mod label_start_note;
 pub mod list_item;
 pub mod paragraph;
-pub mod partial_attributes;
-pub mod partial_data;
-pub mod partial_destination;
-pub mod partial_directive;
-pub mod partial_label;
-pub mod partial_non_lazy_continuation;
-pub mod partial_space_or_tab;
-pub mod partial_space_or_tab_eol;
-pub mod partial_title;
-pub mod partial_whitespace;
+pub mod parts;
 pub mod raw_flow;
 pub mod raw_text;
 pub mod string;

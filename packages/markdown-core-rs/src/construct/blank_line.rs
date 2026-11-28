@@ -49,7 +49,7 @@
 //! [prose]: crate::construct::prose
 //! [flow]: crate::construct::flow
 
-use crate::construct::partial_space_or_tab::space_or_tab;
+use crate::construct::parts::space_or_tab::space_or_tab;
 use crate::state::{Name as StateName, State};
 use crate::tokenizer::Tokenizer;
 

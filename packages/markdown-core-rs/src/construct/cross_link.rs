@@ -23,7 +23,7 @@
 //! identifier.
 //! An embed whose label ends in dimensions (`100`, `100x200`) after its last
 //! separator has those dimensions.
-//! [Attributes][partial_attributes] right after the closing brackets are
+//! [Attributes][parts::attributes] right after the closing brackets are
 //! the node's.
 //!
 //! ## Tokens
@@ -35,10 +35,10 @@
 //! * [`CrossLinkLabel`][Name::CrossLinkLabel]
 //!
 //! [text]: crate::construct::text
-//! [partial_attributes]: crate::construct::partial_attributes
+//! [parts::attributes]: crate::construct::parts::attributes
 
 use crate::choice::Starts;
-use crate::construct::partial_attributes;
+use crate::construct::parts;
 use crate::event::Name;
 use crate::state::{Name as StateName, State};
 use crate::tokenizer::Tokenizer;
@@ -245,7 +245,7 @@ fn close_second(tokenizer: &mut Tokenizer) -> State {
     if tokenizer.current == Some(b']') {
         tokenizer.consume();
         tokenizer.exit(Name::CrossLinkMarker);
-        State::Next(StateName::Attributes(partial_attributes::Step::After(
+        State::Next(StateName::Attributes(parts::attributes::Step::After(
             Name::CrossLink,
         )))
     } else {

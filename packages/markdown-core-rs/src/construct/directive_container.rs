@@ -15,9 +15,9 @@
 //! sequence ::= 3*':'
 //! ```
 //!
-//! See [`partial_directive`][crate::construct::partial_directive] for the
+//! See [`parts::directive`][crate::construct::parts::directive] for the
 //! name and the label, and
-//! [`partial_attributes`][crate::construct::partial_attributes] for
+//! [`parts::attributes`][crate::construct::parts::attributes] for
 //! attributes, which are on the line.
 //! Every line up to the closing fence is the directive’s: there is no
 //! prefix, and no lazy line.
@@ -34,8 +34,8 @@
 //!
 //! [document]: crate::construct::document
 
-use crate::construct::partial_directive;
-use crate::construct::partial_space_or_tab::space_or_tab_min_max;
+use crate::construct::parts;
+use crate::construct::parts::space_or_tab::space_or_tab_min_max;
 use crate::event::Name;
 use crate::state::{Name as StateName, State};
 use crate::tokenizer::Tokenizer;
@@ -100,7 +100,7 @@ fn sequence(tokenizer: &mut Tokenizer, size: usize) -> State {
             State::Next(StateName::DirectiveContainer(Step::NameAfter)),
             State::Nok,
         );
-        State::Redo(StateName::Directive(partial_directive::Step::NameStart))
+        State::Redo(StateName::Directive(parts::directive::Step::NameStart))
     } else {
         State::Nok
     }
@@ -117,7 +117,7 @@ fn name_after(tokenizer: &mut Tokenizer) -> State {
         State::Next(StateName::DirectiveContainer(Step::FenceEnd)),
         State::Nok,
     );
-    State::Redo(StateName::Directive(partial_directive::Step::BlockRest))
+    State::Redo(StateName::Directive(parts::directive::Step::BlockRest))
 }
 
 /// At the end of the opening fence.
@@ -221,7 +221,7 @@ fn close_sequence(tokenizer: &mut Tokenizer, size: usize, count: usize) -> State
             State::Next(StateName::DirectiveContainer(Step::CloseEnd)),
             State::Nok,
         );
-        State::Redo(StateName::Directive(partial_directive::Step::BlockEnd))
+        State::Redo(StateName::Directive(parts::directive::Step::BlockEnd))
     } else {
         State::Nok
     }

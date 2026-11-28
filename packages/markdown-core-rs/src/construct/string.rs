@@ -13,8 +13,8 @@
 //! [text]: crate::construct::text
 
 use crate::choice::{self, Choice, Entry, List};
-use crate::construct::partial_whitespace::resolve_whitespace;
-use crate::construct::{character_escape, character_reference, partial_data};
+use crate::construct::parts::whitespace::resolve_whitespace;
+use crate::construct::{character_escape, character_reference, parts};
 use crate::resolve::Name as ResolveName;
 use crate::state::{Name as StateName, State};
 use crate::subtokenize::Subresult;
@@ -72,7 +72,7 @@ fn before(tokenizer: &mut Tokenizer) -> State {
 /// ````
 fn before_data(tokenizer: &mut Tokenizer) -> State {
     tokenizer.attempt(State::Next(StateName::String(Step::Before)), State::Nok);
-    State::Redo(StateName::Data(partial_data::Step::Start {
+    State::Redo(StateName::Data(parts::data::Step::Start {
         list: List::String,
     }))
 }

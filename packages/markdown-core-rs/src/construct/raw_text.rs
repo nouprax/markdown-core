@@ -88,7 +88,7 @@
 //! [html_code]: https://html.spec.whatwg.org/multipage/text-level-semantics.html#the-code-element
 
 use crate::choice::Starts;
-use crate::construct::partial_attributes;
+use crate::construct::parts;
 use crate::event::Name;
 use crate::state::{Name as StateName, State};
 use crate::tokenizer::Tokenizer;
@@ -195,7 +195,7 @@ fn sequence_close(tokenizer: &mut Tokenizer, size: usize, close: usize) -> State
     } else {
         tokenizer.exit(Name::CodeTextSequence);
         if size == close {
-            State::Redo(StateName::Attributes(partial_attributes::Step::After(
+            State::Redo(StateName::Attributes(parts::attributes::Step::After(
                 Name::CodeText,
             )))
         } else {

@@ -78,7 +78,7 @@ pub fn call(tokenizer: &mut Tokenizer, name: Name) -> Option<Subresult> {
         Name::ListItem => construct::list_item::resolve(tokenizer),
         Name::DefinitionList => construct::definition_body::resolve(tokenizer),
         Name::Content => Some(construct::content::resolve(tokenizer)),
-        Name::Data => construct::partial_data::resolve(tokenizer),
+        Name::Data => construct::parts::data::resolve(tokenizer),
         Name::String => construct::string::resolve(tokenizer),
         Name::Text => construct::text::resolve(tokenizer),
     }

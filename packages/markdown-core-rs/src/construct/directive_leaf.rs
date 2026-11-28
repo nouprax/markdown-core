@@ -9,9 +9,9 @@
 //! directive_leaf ::= 0*3space_or_tab '::' name [label] [attributes] *space_or_tab
 //! ```
 //!
-//! See [`partial_directive`][crate::construct::partial_directive] for the
+//! See [`parts::directive`][crate::construct::parts::directive] for the
 //! name and the label, and
-//! [`partial_attributes`][crate::construct::partial_attributes] for
+//! [`parts::attributes`][crate::construct::parts::attributes] for
 //! attributes, which are on the line.
 //! Three or more colons start a
 //! [directive (container)][crate::construct::directive_container].
@@ -28,8 +28,8 @@
 //! [flow]: crate::construct::flow
 
 use crate::choice::Starts;
-use crate::construct::partial_directive;
-use crate::construct::partial_space_or_tab::space_or_tab_min_max;
+use crate::construct::parts;
+use crate::construct::parts::space_or_tab::space_or_tab_min_max;
 use crate::event::Name;
 use crate::state::{Name as StateName, State};
 use crate::tokenizer::Tokenizer;
@@ -88,7 +88,7 @@ fn sequence(tokenizer: &mut Tokenizer, size: usize) -> State {
             State::Next(StateName::DirectiveLeaf(Step::NameAfter)),
             State::Nok,
         );
-        State::Redo(StateName::Directive(partial_directive::Step::NameStart))
+        State::Redo(StateName::Directive(parts::directive::Step::NameStart))
     } else {
         State::Nok
     }
@@ -105,7 +105,7 @@ fn name_after(tokenizer: &mut Tokenizer) -> State {
         State::Next(StateName::DirectiveLeaf(Step::After)),
         State::Nok,
     );
-    State::Redo(StateName::Directive(partial_directive::Step::BlockRest))
+    State::Redo(StateName::Directive(parts::directive::Step::BlockRest))
 }
 
 /// At the end of the line.

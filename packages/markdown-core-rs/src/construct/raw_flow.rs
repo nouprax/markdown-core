@@ -112,8 +112,8 @@
 //! [html_pre]: https://html.spec.whatwg.org/multipage/grouping-content.html#the-pre-element
 
 use crate::choice::Starts;
-use crate::construct::partial_space_or_tab::{space_or_tab, space_or_tab_min_max};
-use crate::construct::{partial_attributes, partial_non_lazy_continuation};
+use crate::construct::parts;
+use crate::construct::parts::space_or_tab::{space_or_tab, space_or_tab_min_max};
 use crate::event::{Content, Link, Name};
 use crate::state::{Name as StateName, State};
 use crate::tokenizer::Tokenizer;
@@ -242,7 +242,7 @@ fn info_before(tokenizer: &mut Tokenizer, fence: Fence) -> State {
                 State::Next(StateName::RawFlow(Step::After)),
             );
             State::Redo(StateName::NonLazyContinuation(
-                partial_non_lazy_continuation::Step::Start,
+                parts::non_lazy_continuation::Step::Start,
             ))
         }
         // Attributes that end the line, or info.
@@ -251,7 +251,7 @@ fn info_before(tokenizer: &mut Tokenizer, fence: Fence) -> State {
                 State::Next(StateName::RawFlow(Step::InfoBefore { fence })),
                 State::Next(StateName::RawFlow(Step::FieldOpen { fence, meta: false })),
             );
-            State::Redo(StateName::Attributes(partial_attributes::Step::Tail))
+            State::Redo(StateName::Attributes(parts::attributes::Step::Tail))
         }
         _ => {
             tokenizer.enter(Name::CodeFencedFenceInfo);
@@ -298,7 +298,7 @@ fn info(tokenizer: &mut Tokenizer, fence: Fence) -> State {
                 State::Next(StateName::RawFlow(Step::FieldClose { fence, meta: false })),
                 State::Next(StateName::RawFlow(Step::FieldByte { fence, meta: false })),
             );
-            State::Redo(StateName::Attributes(partial_attributes::Step::Tail))
+            State::Redo(StateName::Attributes(parts::attributes::Step::Tail))
         }
         Some(b'\\') => {
             tokenizer.consume();
@@ -335,7 +335,7 @@ fn meta_before(tokenizer: &mut Tokenizer, fence: Fence) -> State {
                 State::Next(StateName::RawFlow(Step::InfoBefore { fence })),
                 State::Next(StateName::RawFlow(Step::FieldOpen { fence, meta: true })),
             );
-            State::Redo(StateName::Attributes(partial_attributes::Step::Tail))
+            State::Redo(StateName::Attributes(parts::attributes::Step::Tail))
         }
         _ => {
             tokenizer.enter(Name::CodeFencedFenceMeta);
@@ -373,7 +373,7 @@ fn meta(tokenizer: &mut Tokenizer, fence: Fence) -> State {
                 State::Next(StateName::RawFlow(Step::FieldClose { fence, meta: true })),
                 State::Next(StateName::RawFlow(Step::FieldByte { fence, meta: true })),
             );
-            State::Redo(StateName::Attributes(partial_attributes::Step::Tail))
+            State::Redo(StateName::Attributes(parts::attributes::Step::Tail))
         }
         Some(b'\\') => {
             tokenizer.consume();
@@ -427,7 +427,7 @@ fn field_close(tokenizer: &mut Tokenizer, fence: Fence, meta: bool) -> State {
         State::Next(StateName::RawFlow(Step::InfoBefore { fence })),
         State::Nok,
     );
-    State::Redo(StateName::Attributes(partial_attributes::Step::Tail))
+    State::Redo(StateName::Attributes(parts::attributes::Step::Tail))
 }
 
 /// In info or meta, at a byte that is text.
@@ -636,7 +636,7 @@ fn before_content_chunk(tokenizer: &mut Tokenizer, fence: Fence) -> State {
                 State::Next(StateName::RawFlow(Step::After)),
             );
             State::Redo(StateName::NonLazyContinuation(
-                partial_non_lazy_continuation::Step::Start,
+                parts::non_lazy_continuation::Step::Start,
             ))
         }
         _ => {

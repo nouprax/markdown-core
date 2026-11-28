@@ -52,7 +52,7 @@
 //! [html_parsing]: https://html.spec.whatwg.org/multipage/parsing.html#parsing
 
 use crate::choice::Starts;
-use crate::construct::partial_space_or_tab::space_or_tab;
+use crate::construct::parts::space_or_tab::space_or_tab;
 use crate::event::Name;
 use crate::state::{Name as StateName, State};
 use crate::tokenizer::Tokenizer;

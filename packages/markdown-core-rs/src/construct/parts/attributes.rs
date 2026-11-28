@@ -56,7 +56,7 @@
 //! [cross_link]: crate::construct::cross_link
 //! [callout]: crate::construct::callout
 
-use crate::construct::partial_space_or_tab::space_or_tab;
+use crate::construct::parts::space_or_tab::space_or_tab;
 use crate::event::{Event, Name, Point};
 use crate::state::{Name as StateName, State};
 use crate::tokenizer::Tokenizer;

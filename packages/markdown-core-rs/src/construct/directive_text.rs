@@ -11,11 +11,11 @@
 //! ; Restriction: the `:` is not after another `:`.
 //! ```
 //!
-//! See [`partial_directive`][crate::construct::partial_directive] for the
+//! See [`parts::directive`][crate::construct::parts::directive] for the
 //! name and the label.
 //! A name alone is text, so the colon in `12:30` stays text: a label or
 //! attributes must follow.
-//! See [`partial_attributes`][crate::construct::partial_attributes] for
+//! See [`parts::attributes`][crate::construct::parts::attributes] for
 //! attributes.
 //!
 //! ## Tokens
@@ -31,7 +31,7 @@
 //! [text]: crate::construct::text
 
 use crate::choice::Starts;
-use crate::construct::{partial_attributes, partial_directive};
+use crate::construct::parts;
 use crate::event::Name;
 use crate::state::{Name as StateName, State};
 use crate::tokenizer::Tokenizer;
@@ -58,7 +58,7 @@ fn start(tokenizer: &mut Tokenizer) -> State {
         State::Next(StateName::DirectiveText(Step::NameAfter)),
         State::Nok,
     );
-    State::Next(StateName::Directive(partial_directive::Step::NameStart))
+    State::Next(StateName::Directive(parts::directive::Step::NameStart))
 }
 
 /// After the name: a label or attributes must follow.
@@ -71,23 +71,23 @@ fn name_after(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         Some(b'[') => {
             tokenizer.attempt(
-                State::Next(StateName::Attributes(partial_attributes::Step::After(
+                State::Next(StateName::Attributes(parts::attributes::Step::After(
                     Name::DirectiveText,
                 ))),
                 State::Nok,
             );
-            State::Redo(StateName::Directive(partial_directive::Step::LabelStart {
+            State::Redo(StateName::Directive(parts::directive::Step::LabelStart {
                 line: false,
             }))
         }
         Some(b'{') => {
             tokenizer.attempt(
-                State::Next(StateName::Attributes(partial_attributes::Step::Close(
+                State::Next(StateName::Attributes(parts::attributes::Step::Close(
                     Name::DirectiveText,
                 ))),
                 State::Nok,
             );
-            State::Redo(StateName::Attributes(partial_attributes::Step::Start {
+            State::Redo(StateName::Attributes(parts::attributes::Step::Start {
                 line: false,
             }))
         }

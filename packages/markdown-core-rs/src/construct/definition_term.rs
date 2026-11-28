@@ -37,7 +37,7 @@
 use crate::ahead::ahead;
 use crate::choice::Starts;
 use crate::construct::definition_body::{blank_at, marks};
-use crate::construct::partial_space_or_tab::space_or_tab;
+use crate::construct::parts::space_or_tab::space_or_tab;
 use crate::construct::{blank_line, definition, definition_body, table};
 use crate::event::{Content, Link, Name};
 use crate::state::{Name as StateName, State};

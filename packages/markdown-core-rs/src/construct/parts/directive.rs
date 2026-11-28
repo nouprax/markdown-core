@@ -29,8 +29,8 @@
 //!
 //! * [`micromark-extension-directive`](https://github.com/micromark/micromark-extension-directive)
 
-use crate::construct::partial_attributes;
-use crate::construct::partial_space_or_tab::space_or_tab;
+use crate::construct::parts;
+use crate::construct::parts::space_or_tab::space_or_tab;
 use crate::event::{Content, Link, Name};
 use crate::state::{Name as StateName, State};
 use crate::subtokenize::link;
@@ -229,7 +229,7 @@ fn block_attributes(tokenizer: &mut Tokenizer) -> State {
             State::Next(StateName::Directive(Step::BlockEnd)),
             State::Nok,
         );
-        State::Redo(StateName::Attributes(partial_attributes::Step::Start {
+        State::Redo(StateName::Attributes(parts::attributes::Step::Start {
             line: true,
         }))
     } else {

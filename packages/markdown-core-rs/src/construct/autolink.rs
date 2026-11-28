@@ -121,7 +121,7 @@
 //! [html_a]: https://html.spec.whatwg.org/multipage/text-level-semantics.html#the-a-element
 
 use crate::choice::Starts;
-use crate::construct::partial_attributes;
+use crate::construct::parts;
 use crate::event::Name;
 use crate::state::{Name as StateName, State};
 use crate::tokenizer::Tokenizer;
@@ -232,7 +232,7 @@ fn url_inside(tokenizer: &mut Tokenizer) -> State {
             tokenizer.enter(Name::AutolinkMarker);
             tokenizer.consume();
             tokenizer.exit(Name::AutolinkMarker);
-            State::Next(StateName::Attributes(partial_attributes::Step::After(
+            State::Next(StateName::Attributes(parts::attributes::Step::After(
                 Name::Autolink,
             )))
         }
@@ -321,7 +321,7 @@ fn email_label(tokenizer: &mut Tokenizer, size: usize) -> State {
             tokenizer.enter(Name::AutolinkMarker);
             tokenizer.consume();
             tokenizer.exit(Name::AutolinkMarker);
-            State::Next(StateName::Attributes(partial_attributes::Step::After(
+            State::Next(StateName::Attributes(parts::attributes::Step::After(
                 Name::Autolink,
             )))
         }

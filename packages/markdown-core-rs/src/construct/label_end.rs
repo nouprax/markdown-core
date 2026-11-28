@@ -165,9 +165,9 @@
 //!
 //! [plain]: crate::construct::plain
 //! [text]: crate::construct::text
-//! [destination]: crate::construct::partial_destination
-//! [title]: crate::construct::partial_title
-//! [label]: crate::construct::partial_label
+//! [destination]: crate::construct::parts::destination
+//! [title]: crate::construct::parts::title
+//! [label]: crate::construct::parts::label
 //! [label_start_picture]: crate::construct::label_start_picture
 //! [label_start_link]: crate::construct::label_start_link
 //! [label_start_footnote]: crate::construct::label_start_footnote
@@ -179,10 +179,8 @@
 //! [html_sup]: https://html.spec.whatwg.org/multipage/text-level-semantics.html#the-sub-and-sup-elements
 
 use crate::choice::Starts;
-use crate::construct::partial_space_or_tab_eol::space_or_tab_eol;
-use crate::construct::{
-    citation, partial_attributes, partial_destination, partial_label, partial_title,
-};
+use crate::construct::parts::space_or_tab_eol::space_or_tab_eol;
+use crate::construct::{citation, parts};
 use crate::event::{Event, Kind, Name};
 use crate::resolve::Name as ResolveName;
 use crate::state::{Name as StateName, State};
@@ -270,7 +268,7 @@ fn after(tokenizer: &mut Tokenizer, end: usize) -> State {
             State::Next(StateName::LabelEnd(Step::Done { end })),
             State::Next(StateName::LabelEnd(Step::Unspan { end, kind })),
         );
-        return State::Redo(StateName::Attributes(partial_attributes::Step::Start {
+        return State::Redo(StateName::Attributes(parts::attributes::Step::Start {
             line: false,
         }));
     }
@@ -520,7 +518,7 @@ fn ok(tokenizer: &mut Tokenizer, end: usize) -> State {
             State::Next(StateName::LabelEnd(Step::Done { end })),
             State::Next(StateName::LabelEnd(Step::Done { end })),
         );
-        State::Redo(StateName::Attributes(partial_attributes::Step::Start {
+        State::Redo(StateName::Attributes(parts::attributes::Step::Start {
             line: false,
         }))
     } else {
@@ -644,9 +642,9 @@ fn resource_open(tokenizer: &mut Tokenizer) -> State {
             State::Next(StateName::LabelEnd(Step::ResourceDestinationAfter)),
             State::Nok,
         );
-        State::Redo(StateName::Destination(partial_destination::Step::Start(
-            partial_destination::Options {
-                names: partial_destination::Names {
+        State::Redo(StateName::Destination(parts::destination::Step::Start(
+            parts::destination::Options {
+                names: parts::destination::Names {
                     whole: Name::ResourceDestination,
                     literal: Name::ResourceDestinationLiteral,
                     marker: Name::ResourceDestinationLiteralMarker,
@@ -690,8 +688,8 @@ fn resource_between(tokenizer: &mut Tokenizer) -> State {
                 State::Next(StateName::LabelEnd(Step::ResourceTitleAfter)),
                 State::Nok,
             );
-            State::Redo(StateName::Title(partial_title::Step::Start(
-                partial_title::Names {
+            State::Redo(StateName::Title(parts::title::Step::Start(
+                parts::title::Names {
                     whole: Name::ResourceTitle,
                     marker: Name::ResourceTitleMarker,
                     text: Name::ResourceTitleText,
@@ -752,8 +750,8 @@ fn reference_full(tokenizer: &mut Tokenizer) -> State {
                 State::Next(StateName::LabelEnd(Step::ReferenceFullAfter)),
                 State::Nok,
             );
-            State::Redo(StateName::Label(partial_label::Step::Start(
-                partial_label::Names {
+            State::Redo(StateName::Label(parts::label::Step::Start(
+                parts::label::Names {
                     whole: Name::Reference,
                     marker: Name::ReferenceMarker,
                     text: Name::ReferenceText,

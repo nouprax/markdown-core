@@ -92,17 +92,17 @@
 //! [plain]: crate::construct::plain
 //! [character_escape]: crate::construct::character_escape
 //! [character_reference]: crate::construct::character_reference
-//! [destination]: crate::construct::partial_destination
-//! [label]: crate::construct::partial_label
+//! [destination]: crate::construct::parts::destination
+//! [label]: crate::construct::parts::label
 //! [label_end]: crate::construct::label_end
-//! [title]: crate::construct::partial_title
+//! [title]: crate::construct::parts::title
 //! [normalize_identifier]: crate::util::normalize_identifier
 //! [html_a]: https://html.spec.whatwg.org/multipage/text-level-semantics.html#the-a-element
 //! [html_img]: https://html.spec.whatwg.org/multipage/embedded-content.html#the-img-element
 
-use crate::construct::partial_space_or_tab::space_or_tab;
-use crate::construct::partial_space_or_tab_eol::space_or_tab_eol;
-use crate::construct::{partial_attributes, partial_destination, partial_label, partial_title};
+use crate::construct::parts;
+use crate::construct::parts::space_or_tab::space_or_tab;
+use crate::construct::parts::space_or_tab_eol::space_or_tab_eol;
 use crate::event::Name;
 use crate::state::{Name as StateName, State};
 use crate::tokenizer::Tokenizer;
@@ -157,8 +157,8 @@ fn before(tokenizer: &mut Tokenizer) -> State {
                 State::Next(StateName::Definition(Step::LabelAfter)),
                 State::Nok,
             );
-            State::Redo(StateName::Label(partial_label::Step::Start(
-                partial_label::Names {
+            State::Redo(StateName::Label(parts::label::Step::Start(
+                parts::label::Names {
                     whole: Name::DefinitionLabel,
                     marker: Name::DefinitionLabelMarker,
                     text: Name::DefinitionLabelText,
@@ -218,9 +218,9 @@ fn destination_before(tokenizer: &mut Tokenizer, end: usize) -> State {
         State::Next(StateName::Definition(Step::DestinationAfter { end })),
         State::Nok,
     );
-    State::Redo(StateName::Destination(partial_destination::Step::Start(
-        partial_destination::Options {
-            names: partial_destination::Names {
+    State::Redo(StateName::Destination(parts::destination::Step::Start(
+        parts::destination::Options {
+            names: parts::destination::Names {
                 whole: Name::DefinitionDestination,
                 literal: Name::DefinitionDestinationLiteral,
                 marker: Name::DefinitionDestinationLiteralMarker,
@@ -347,8 +347,8 @@ fn title_before_marker(tokenizer: &mut Tokenizer) -> State {
         State::Next(StateName::Definition(Step::TitleAfter)),
         State::Nok,
     );
-    State::Redo(StateName::Title(partial_title::Step::Start(
-        partial_title::Names {
+    State::Redo(StateName::Title(parts::title::Step::Start(
+        parts::title::Names {
             whole: Name::DefinitionTitle,
             marker: Name::DefinitionTitleMarker,
             text: Name::DefinitionTitleText,
@@ -433,7 +433,7 @@ fn attributes_open(tokenizer: &mut Tokenizer) -> State {
         State::Next(StateName::Definition(Step::TitleAfterSpace)),
         State::Nok,
     );
-    State::Redo(StateName::Attributes(partial_attributes::Step::Start {
+    State::Redo(StateName::Attributes(parts::attributes::Step::Start {
         line: false,
     }))
 }

@@ -41,7 +41,7 @@
 //! [text]: crate::construct::text
 //! [character_escape]: crate::construct::character_escape
 //! [character_reference]: crate::construct::character_reference
-//! [hard_break_tail]: crate::construct::partial_whitespace
+//! [hard_break_tail]: crate::construct::parts::whitespace
 //! [html]: https://html.spec.whatwg.org/multipage/text-level-semantics.html#the-br-element
 
 use crate::choice::Starts;

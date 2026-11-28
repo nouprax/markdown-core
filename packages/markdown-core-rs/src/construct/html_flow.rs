@@ -99,10 +99,10 @@
 //! [html_parsing]: https://html.spec.whatwg.org/multipage/parsing.html#parsing
 
 use crate::choice::Starts;
-use crate::construct::partial_space_or_tab::{
+use crate::construct::parts::space_or_tab::{
     space_or_tab_with_options, Options as SpaceOrTabOptions,
 };
-use crate::construct::{blank_line, partial_non_lazy_continuation};
+use crate::construct::{blank_line, parts};
 use crate::event::Name;
 use crate::state::{Name as StateName, State};
 use crate::tokenizer::Tokenizer;
@@ -648,7 +648,7 @@ fn continuation_start(tokenizer: &mut Tokenizer, kind: u8) -> State {
         State::Next(StateName::HtmlFlow(Step::ContinuationAfter)),
     );
     State::Redo(StateName::NonLazyContinuation(
-        partial_non_lazy_continuation::Step::Start,
+        parts::non_lazy_continuation::Step::Start,
     ))
 }
 

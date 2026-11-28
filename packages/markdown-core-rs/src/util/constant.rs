@@ -77,7 +77,7 @@ pub const FRONTMATTER_SEQUENCE_SIZE: usize = 3;
 /// The number of preceding spaces needed for a [hard break
 /// (trailing)][whitespace] to form.
 ///
-/// [whitespace]: crate::construct::partial_whitespace
+/// [whitespace]: crate::construct::parts::whitespace
 pub const HARD_BREAK_PREFIX_SIZE_MIN: usize = 2;
 
 /// The max number of markers allowed to form a [heading (atx)][heading_atx].
