@@ -1674,7 +1674,10 @@ impl<'a> Compiler<'a> {
                         {
                             at -= 1;
                         }
-                        if at < end && at > self.start(text) && matches!(self.bytes[at - 1], b'\n' | b'\r') {
+                        if at < end
+                            && at > self.start(text)
+                            && matches!(self.bytes[at - 1], b'\n' | b'\r')
+                        {
                             end = at;
                         }
                         (self.label_content(text), self.runs(self.start(text), end))

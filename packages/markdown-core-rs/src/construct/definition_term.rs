@@ -89,7 +89,12 @@ fn line_end(bytes: &[u8], index: usize) -> usize {
 /// or on the one after a blank line, so that the line may be a term.
 pub fn near(bytes: &[u8], index: usize) -> bool {
     let eol = line_end(bytes, index);
-    let next = eol + if bytes[eol..].starts_with(b"\r\n") { 2 } else { 1 };
+    let next = eol
+        + if bytes[eol..].starts_with(b"\r\n") {
+            2
+        } else {
+            1
+        };
     next < bytes.len()
         && (marks(bytes, next) || blank_at(bytes, next).is_some_and(|after| marks(bytes, after)))
 }

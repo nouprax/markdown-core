@@ -174,7 +174,10 @@ fn sequence_ends(tokenizer: &Tokenizer) -> bool {
     while bytes.get(index) == Some(&b'#') {
         index += 1;
     }
-    matches!(bytes.get(index), None | Some(b'\t' | b'\n' | b'\r' | b' ' | b'{'))
+    matches!(
+        bytes.get(index),
+        None | Some(b'\t' | b'\n' | b'\r' | b' ' | b'{')
+    )
 }
 
 /// At text, which is not attributes that end the line.
