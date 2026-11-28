@@ -46,6 +46,7 @@
         "check:ins-parity": "node --test scripts/correctness/tests/ins-oracle.test.mjs && node scripts/correctness/check-ins-parity.mjs",
         "check:kotlin-consumers": "scripts/conformance/check-kotlin-consumers.sh",
         "check:mdast-parity": "node --test scripts/correctness/tests/mdast-oracle.test.mjs && node scripts/correctness/check-mdast-parity.mjs",
+        "check:rust-recursion": "node scripts/tools/check-rust-recursion.mjs",
         "check:obsidian-parity": "node scripts/correctness/check-obsidian-parity.mjs",
         "check:oracle-parity": "pnpm run check:commonmark-parity && pnpm run check:gfm-parity && pnpm run check:mdast-parity && pnpm run check:obsidian-parity && pnpm run check:ins-parity && pnpm run check:pandoc-parity",
         "clean:kotlin-android-emulator": "scripts/tools/run-gradle.sh :packages:kotlin-markdown-core:cleanManagedDevices",

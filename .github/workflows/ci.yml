@@ -238,6 +238,8 @@ jobs:
               run: scripts/tools/format-rust.sh --check
             - name: Lint Rust
               run: scripts/tools/lint-rust.sh
+            - name: Check Rust call cycles
+              run: node scripts/tools/check-rust-recursion.mjs
 
     health-checks-ready:
         name: Health Checks - Ready

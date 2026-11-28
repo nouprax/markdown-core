@@ -1,0 +1,68 @@
+{
+    "note": "Every call cycle of the Rust core, which scripts/tools/check-rust-recursion.mjs checks. A bounded cycle says why its depth is bounded. A pending one grows with the input: it moves onto the explicit stack, and its entry goes with it.",
+    "cycles": [
+        {
+            "id": "tokenizer",
+            "status": "pending",
+            "why": "Container nesting and content re-tokenized inside content: push, the construct steps, flush, the resolvers, subtokenize and ahead call each other once per level.",
+            "functions": ["markdown_core::subtokenize::subtokenize", "markdown_core::tokenizer::push_impl"]
+        },
+        {
+            "id": "ast-blocks",
+            "status": "pending",
+            "why": "Building a block calls building the blocks it holds.",
+            "functions": ["<markdown_core::to_ast::Compiler>::block"]
+        },
+        {
+            "id": "ast-inlines",
+            "status": "pending",
+            "why": "Building an inline calls building the inlines it holds.",
+            "functions": ["<markdown_core::to_ast::Compiler>::inline"]
+        },
+        {
+            "id": "ast-drop",
+            "status": "pending",
+            "why": "The drop glue of Node drops its children, one call per level of the tree.",
+            "functions": ["core::ptr::drop_glue::<markdown_core::ast::Node>"]
+        },
+        {
+            "id": "dump",
+            "status": "pending",
+            "why": "Printing a node prints its children.",
+            "functions": ["<markdown_core::dump::Out>::node"]
+        },
+        {
+            "id": "properties",
+            "status": "pending",
+            "why": "A nested value in the properties envelope is read by the reader of its parent.",
+            "functions": [
+                "<markdown_core::util::properties::reader::Reader>::block",
+                "<markdown_core::util::properties::reader::Reader>::flow"
+            ]
+        },
+        {
+            "id": "tokenizer-drop",
+            "status": "bounded",
+            "why": "Only the document tokenizer owns a child tokenizer, which reads flow and owns none: two levels.",
+            "functions": ["core::ptr::drop_glue::<markdown_core::tokenizer::Tokenizer>"]
+        },
+        {
+            "id": "skip",
+            "status": "bounded",
+            "why": "move_one recurses only at a line ending, to the container prefix of the next line, which holds none.",
+            "functions": ["<markdown_core::tokenizer::Tokenizer>::move_to"]
+        },
+        {
+            "id": "dest",
+            "status": "bounded",
+            "why": "A destination, then its text: two levels.",
+            "functions": ["<markdown_core::to_ast::Compiler>::dest"]
+        },
+        {
+            "id": "sort",
+            "status": "bounded",
+            "why": "The standard library's sorts recurse to a depth logarithmic in the length.",
+            "functions": ["core::slice::sort::"]
+        }
+    ]
+}
