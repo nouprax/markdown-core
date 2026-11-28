@@ -1,0 +1,8 @@
+# The toolchain that builds, formats and lints the Rust core.
+# Keep the channel equal to RUST_VERSION in scripts/tools/setup-environment.sh;
+# scripts/audit/check-toolchain-versions.sh enforces it. The crate itself
+# still supports rust-version (Cargo.toml).
+[toolchain]
+channel = "1.97.0"
+components = ["clippy", "rustfmt"]
+profile = "minimal"

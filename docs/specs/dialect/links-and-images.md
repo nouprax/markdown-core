@@ -40,8 +40,8 @@ wins when labels repeat. Each link keeps the scope of its own occurrence.
 
 An undefined reference remains bracket text. A definition is recognized only
 where the block grammar permits it. A footnote definition beginning `[^label]:`
-is not a link definition. Headings can also supply
-[implicit references](anchors.md#implicit-heading-references).
+is not a link definition. A heading declares no label; link to it by its
+[anchor](anchors.md#linking-to-a-heading).
 
 ## Automatic links
 
@@ -78,7 +78,7 @@ Add `!` before a link or reference image:
 [photo]: /sunrise.png
 ```
 
-Each image becomes `Embedded`. Its content is parsed alt text, its destination is
+Each image becomes `Embed`. Its content is parsed alt text, its destination is
 a URL value, and its title is optional. The parser does not infer a media type
 from the filename or load the resource. Internal `![[...]]` embeds use the
 separate [cross-embed syntax](cross-links.md).

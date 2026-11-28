@@ -3,66 +3,66 @@
     "contract": "Every syntax feature and registered element has generated grammar-certified inputs; every specification section explicitly names its source-grammar certificates or explains why it introduces no grammar obligation. Parser correctness is owned by parity and regression suites. Whole-language proofs apply only to the declared grammars; local boundaries do not certify their residual host grammar.",
     "guide": {
         "file": "docs/specs/dialect.md",
-        "sha256": "13d3f81463e1d33552f240d2da5d914a11dade6ae0a017eff3733bca296cab6e"
+        "sha256": "eed393a0758568a60da1a669b1c2a71cd039bc418a4ebd8eb18084f94ecb49bd"
     },
     "features": [
         {
             "feature": "anchors",
             "specification": "docs/specs/dialect/anchors.md",
-            "sha256": "dc374ac81abcdb865195322a61bf56c8d873ecedcbe2debad441e8d26419cda9",
+            "sha256": "f6ad7cbc8528fe6e46ef25fb45ae60a54eed6adb56213d55b8ff27e9790360cf",
             "sections": [
                 {
                     "title": "Anchors",
                     "line": 1,
                     "level": 1,
-                    "sha256": "d3a9a86e5e0b999f0298dbb818bcacd53b3670a1b46f6d21c957ed10cfa01e9e",
-                    "disposition": {
-                        "kind": "grammar",
-                        "certificates": ["heading-explicit-id", "anchor-last-empty", "common-anchor-generation"]
-                    }
-                },
-                {
-                    "title": "Explicit anchors",
-                    "line": 18,
-                    "level": 2,
-                    "sha256": "e913648d39df90b1985102f214c1ceb0e29e0778f5729906be56fd7840b4f46c",
+                    "sha256": "346d9148672a9d41c18d7942aeeaa19646a06a279961305a1a0bae58dcbf21d9",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["heading-explicit-id", "anchor-last-empty"]
                     }
                 },
                 {
-                    "title": "Automatic anchors",
-                    "line": 32,
+                    "title": "Explicit anchors",
+                    "line": 19,
                     "level": 2,
-                    "sha256": "617249f1db0bcb3fa82894d8e5c5dc191e02da6677ac65b8e3f3750a637d7284",
+                    "sha256": "a3d6ff1a4144e3807a80f7b9fade9e13ab80fcffe8cd5f167344fb9a6d2e12b7",
                     "disposition": {
-                        "kind": "context",
-                        "reason": "Automatic IDs are derived output, with no additional authored grammar. The heading source workload is common-anchor-generation; correctness of normalization/collision allocation belongs to regression and parity."
+                        "kind": "grammar",
+                        "certificates": ["heading-explicit-id", "anchor-last-empty"]
                     }
                 },
                 {
-                    "title": "Implicit heading references",
-                    "line": 68,
+                    "title": "Headings without one",
+                    "line": 28,
                     "level": 2,
-                    "sha256": "fd61397ac9a428ca5e8708e80975ce194ee52f99444229be3d21991b38bfb45a",
+                    "sha256": "487e31eca10e2e8960b6572a3863eb82d92eb880d2f3153420c46ee3fb71c7f8",
                     "disposition": {
-                        "kind": "grammar",
-                        "certificates": ["heading-reference"]
+                        "kind": "context",
+                        "reason": "A heading that declares no anchor is plain heading grammar, which the headings certificates cover; the parser derives no anchor from it."
+                    }
+                },
+                {
+                    "title": "Linking to a heading",
+                    "line": 39,
+                    "level": 2,
+                    "sha256": "1ad93131043865e36f61b8956b7ca91e567b3d4566eddac2e7bf1f376305acb2",
+                    "disposition": {
+                        "kind": "context",
+                        "reason": "A link to a heading is an ordinary inline link whose destination is the anchor; links-and-images certificates cover that form."
                     }
                 },
                 {
                     "title": "Anchor ownership",
-                    "line": 90,
+                    "line": 46,
                     "level": 2,
-                    "sha256": "ec1c2cbd1daffbd35360623fd3817a9c31adcba60fc983db7bf7369bdc64c7b9",
+                    "sha256": "f21022423a7dead62cbabe16eaebda08271df63392652570accf3356a832b823",
                     "disposition": {
                         "kind": "context",
-                        "reason": "Anchor ownership and application matching are output/resolution contracts. Authored forms are covered by explicit/implicit anchor sections and attribute-reference."
+                        "reason": "Anchor ownership and application matching are output/resolution contracts. Authored forms are covered by the explicit anchor sections and attribute-reference."
                     }
                 }
             ],
-            "elements": ["ANCHOR"],
+            "elements": [],
             "certificates": [
                 {
                     "id": "anchor-last-empty",
@@ -71,29 +71,17 @@
                     "facets": ["last-id", "empty-id-clears"]
                 },
                 {
-                    "id": "common-anchor-generation",
-                    "scope": "paired-document-grammar",
-                    "identity": true,
-                    "facets": ["unicode-lowercase", "collisions", "empty-base"]
-                },
-                {
                     "id": "heading-explicit-id",
                     "scope": "paired-document-grammar",
                     "identity": false,
                     "facets": ["explicit-anchor", "attribute-override"]
-                },
-                {
-                    "id": "heading-reference",
-                    "scope": "paired-document-grammar",
-                    "identity": false,
-                    "facets": ["implicit-references", "forward-resolution"]
                 }
             ]
         },
         {
             "feature": "attributes",
             "specification": "docs/specs/dialect/attributes.md",
-            "sha256": "b124350ef60951c0e5a891d1d92012ee20d0e8d0418b48b2382d9e4b7a4bdbe6",
+            "sha256": "c5f0717fd08e3c29a888425b29654a78246c4664298a65ebb1e9e69fd63aa2ae",
             "sections": [
                 {
                     "title": "Attributes",
@@ -109,7 +97,7 @@
                     "title": "Write attribute members",
                     "line": 16,
                     "level": 2,
-                    "sha256": "825083ff33992642697eaf93743bb823f08f30753b40f92706da31d4edf86ae3",
+                    "sha256": "4e009af9c262d85dbe4bf6a4bc400c53e09b2a480ae94c10469aab3ac817f4cf",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["record-span", "class-span", "attribute-bare", "attribute-order"]
@@ -117,9 +105,9 @@
                 },
                 {
                     "title": "Values and spacing",
-                    "line": 52,
+                    "line": 51,
                     "level": 2,
-                    "sha256": "38557e5017b67b2cc34abd34eb832736a1758ec2d8838ca1ce84ab10a75845dc",
+                    "sha256": "22d10c9bf398f799f538d55388eead92c2bfdca52d2eaccf697cc3994f7f5a5c",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": [
@@ -134,9 +122,9 @@
                 },
                 {
                     "title": "Attachment sites",
-                    "line": 78,
+                    "line": 79,
                     "level": 2,
-                    "sha256": "ab56ff010d4f8b0e94320eab776454f343235251fa82764c02b5a7dcee1ea54c",
+                    "sha256": "ab71b05f8f8ff06a1d74268592cc2e89ca45d9d1c169c23cf0a2d20c806527fd",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": [
@@ -146,13 +134,15 @@
                             "attribute-link",
                             "attribute-image",
                             "attribute-autolink",
-                            "attribute-reference"
+                            "attribute-reference",
+                            "attribute-cross-link",
+                            "attribute-callout"
                         ]
                     }
                 },
                 {
                     "title": "Inline code",
-                    "line": 97,
+                    "line": 99,
                     "level": 3,
                     "sha256": "f05d16b8f45e5f9e39d3afa428aa54421994e55193138e2d75b59aecca2bc910",
                     "disposition": {
@@ -162,7 +152,7 @@
                 },
                 {
                     "title": "Headings",
-                    "line": 106,
+                    "line": 108,
                     "level": 3,
                     "sha256": "c7a0f6101803682370dd3493414734c6c81fb73f59c0df2a9275745fb5fc3cc6",
                     "disposition": {
@@ -171,8 +161,18 @@
                     }
                 },
                 {
+                    "title": "Callouts",
+                    "line": 122,
+                    "level": 3,
+                    "sha256": "e1ed898c7f4403a9df303a71e786493bce1e39ce81d006faedd9df735ca6835b",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["attribute-callout"]
+                    }
+                },
+                {
                     "title": "Fenced code",
-                    "line": 120,
+                    "line": 135,
                     "level": 3,
                     "sha256": "98bfe640027c99bc53ee70c798cdab4ac835e50db9b62c1e154d335e758947c0",
                     "disposition": {
@@ -182,9 +182,9 @@
                 },
                 {
                     "title": "Links, images, and reference definitions",
-                    "line": 133,
+                    "line": 148,
                     "level": 3,
-                    "sha256": "f950183b8b78fcbc5a57ae278bf506dec25188fe981216987900436c5175a966",
+                    "sha256": "7fc303d979a7b18f44465aefb64540aae9c9ffc308f071fa57547ca6b86bd2cb",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": [
@@ -197,7 +197,7 @@
                 },
                 {
                     "title": "Invalid containers",
-                    "line": 155,
+                    "line": 171,
                     "level": 2,
                     "sha256": "2cdacae499d86370f96a4168c5746c97d1ce5affa7e68bc60dd8dbd7fb31fac4",
                     "disposition": {
@@ -218,13 +218,25 @@
                     "id": "attribute-bare",
                     "scope": "paired-document-grammar",
                     "identity": false,
-                    "facets": ["bare-names", "boolean-record", "unnumbered"]
+                    "facets": ["bare-names", "boolean-record"]
+                },
+                {
+                    "id": "attribute-callout",
+                    "scope": "paired-document-grammar",
+                    "identity": false,
+                    "facets": ["callout-site", "title-cut"]
                 },
                 {
                     "id": "attribute-code",
                     "scope": "paired-document-grammar",
                     "identity": false,
                     "facets": ["code-site"]
+                },
+                {
+                    "id": "attribute-cross-link",
+                    "scope": "paired-document-grammar",
+                    "identity": false,
+                    "facets": ["cross-link-site", "cross-embed-site"]
                 },
                 {
                     "id": "attribute-double",
@@ -594,7 +606,7 @@
         {
             "feature": "callouts",
             "specification": "docs/specs/dialect/callouts.md",
-            "sha256": "5781fb3982c1c127e56dbe5170e5963ef245f949935f7b6ae56cb38341126bf5",
+            "sha256": "7a2611e67ac6d9507e759d1632bb432f271c63298d2361f7188dd1770a4e2873",
             "sections": [
                 {
                     "title": "Quotes and callouts",
@@ -617,8 +629,18 @@
                     }
                 },
                 {
-                    "title": "Fold state",
+                    "title": "Attributes",
                     "line": 37,
+                    "level": 2,
+                    "sha256": "471a97ed6db2f7518bcae98bad183e25b1bc4bdcd4f11e11df83bdf628009681",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["attribute-callout"]
+                    }
+                },
+                {
+                    "title": "Fold state",
+                    "line": 56,
                     "level": 2,
                     "sha256": "29968094b4670cd775001c4e6906a5fd398d6589bb7c69b2b18f4cee12a7f4e9",
                     "disposition": {
@@ -628,7 +650,7 @@
                 },
                 {
                     "title": "Metadata boundaries",
-                    "line": 53,
+                    "line": 72,
                     "level": 2,
                     "sha256": "cde1c30ed5af316bd31bec2fd2a141b267512c3d2ca58cd6b3ee16d697c585d2",
                     "disposition": {
@@ -656,7 +678,7 @@
         {
             "feature": "citations",
             "specification": "docs/specs/dialect/citations.md",
-            "sha256": "ccd2e72c3d7257581fd5a19de09acb2573ecb326d6b41d3bf8a3b185bcbd1aa6",
+            "sha256": "a0dddd4f44b81dabf9aae7cac741ee7b124a7125dc3d86119bcb549eb4340164",
             "sections": [
                 {
                     "title": "Citations",
@@ -702,7 +724,7 @@
                     "title": "Boundaries and fallback",
                     "line": 84,
                     "level": 2,
-                    "sha256": "6bd0131937fc7429ab8472bf150a538d74da86526c05df2e15c64529b2d2a51f",
+                    "sha256": "00e3d319438deffc85f89a314de4d7415b66020e02e366c2b7cab85ee905895f",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["fallback-citation"]
@@ -918,7 +940,7 @@
         {
             "feature": "conflicts",
             "specification": "docs/specs/dialect/conflicts.md",
-            "sha256": "fdcf9647b9525062241284fb292652048e5d9f306aed7fe0d763607edacb74fa",
+            "sha256": "aecd0151c53d17c2b8ae28708af5cf3354b13caa4be97709232ddbfcee301a37",
             "sections": [
                 {
                     "title": "Compatibility and precedence",
@@ -934,7 +956,7 @@
                     "title": "Differences to know",
                     "line": 10,
                     "level": 2,
-                    "sha256": "9fa04cdec6112775c703af38afc19fe07b440826154fd9e82afade9fed86edb3",
+                    "sha256": "7826ccdfadb751fd43f96b40fbaa86426d8fc65734026186545453f149385e5e",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": [
@@ -948,7 +970,7 @@
                             "attribute-bare",
                             "named-container",
                             "formula-parenthesis",
-                            "task-unicode",
+                            "task-cancelled",
                             "common-html-comment",
                             "common-inline-html",
                             "decimal-list",
@@ -961,7 +983,7 @@
                     "title": "Block recognition",
                     "line": 37,
                     "level": 2,
-                    "sha256": "df1a417d25cb4c309c9b0bc3b9e4e66f97db0a4152b40e6b78f71436bc783bd4",
+                    "sha256": "09a323b809da09fc530f31ea4d1763b32f5b7457c5864d088f8ed6be35514670",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": [
@@ -976,7 +998,7 @@
                     "title": "Inline recognition",
                     "line": 68,
                     "level": 2,
-                    "sha256": "8e9bd4560a73b2d7510302064e0ca1635d4c8e9b9f1b299bcd5dc8f67ad03ac0",
+                    "sha256": "bffb678d364e5c356263f29284f04dc1d865cfa0962a9b608914e6dbc296f5bb",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": [
@@ -1023,7 +1045,7 @@
         {
             "feature": "cross-links",
             "specification": "docs/specs/dialect/cross-links.md",
-            "sha256": "aa23f3ea9de2f3dc9d703c37e1b3b784ce5232b57d3bcadc2ce885762eb1ece3",
+            "sha256": "5d157ec775dc9a0f3a73bb20077cd8abe9e34146b52043f21434be11a2d78798",
             "sections": [
                 {
                     "title": "Cross links and embeds",
@@ -1039,7 +1061,7 @@
                     "title": "Headings and blocks",
                     "line": 19,
                     "level": 2,
-                    "sha256": "aef112bbce9142726a62bea3af8f2ca63a79b6bfb03b014b5c51fef15e1f1b57",
+                    "sha256": "27e4ea3cf7c3cb5466e6e1d0356fe5947b8611b0c76a7eb639ed2bdef4278f3c",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["cross-anchor", "cross-local", "cross-block-anchor"]
@@ -1049,15 +1071,25 @@
                     "title": "Embeds",
                     "line": 50,
                     "level": 2,
-                    "sha256": "2bb0193bb76bb5d9b572412d11650294bcaebc6bfb929b762e09bbafd335e40a",
+                    "sha256": "ec2da10e3145beb0a08d4b829053eff92c86c416171d7ad1c1fc6b81e4ef0740",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["cross-embed", "cross-embed-absent", "cross-embed-empty"]
                     }
                 },
                 {
-                    "title": "Dimensions",
+                    "title": "Attributes",
                     "line": 64,
+                    "level": 2,
+                    "sha256": "aa05765c85834d96f5022df46b091fb00f57d16e1eefc897f2c20891a7abe754",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["attribute-cross-link"]
+                    }
+                },
+                {
+                    "title": "Dimensions",
+                    "line": 77,
                     "level": 2,
                     "sha256": "2c6ad041dfb7097a176827071802634ad627fe8e7641f369bd67b8a5749375eb",
                     "disposition": {
@@ -1067,7 +1099,7 @@
                 },
                 {
                     "title": "Pipes and tables",
-                    "line": 76,
+                    "line": 89,
                     "level": 2,
                     "sha256": "dab1ab625cf2b13c677a601b0c491979da8234332572c2e1407e08b08fc39afb",
                     "disposition": {
@@ -1077,9 +1109,9 @@
                 },
                 {
                     "title": "Incomplete targets",
-                    "line": 91,
+                    "line": 104,
                     "level": 2,
-                    "sha256": "41aa5be5def0701b7676c05dd95a649c063f810565de71593de66a1ed513dc80",
+                    "sha256": "b304c8f9eab4b2201c2ba543e07873063203fa42afa05e6ebb6a0150090d3f80",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["fallback-cross-link"]
@@ -1177,13 +1209,13 @@
         {
             "feature": "definition-lists",
             "specification": "docs/specs/dialect/definition-lists.md",
-            "sha256": "5053c7544909500bc74a7528a2c60e3b0fc0115174aa2aa9b503d66ce7537135",
+            "sha256": "43695acbfa1fd33b8fd08e21dd211adce213b6fc3fba90707d689014d8a70877",
             "sections": [
                 {
                     "title": "Definition lists",
                     "line": 1,
                     "level": 1,
-                    "sha256": "beb7316975152c880375631971314329de728d017d7949b36704df7e657c0390",
+                    "sha256": "a58cebaf8c6775ba7a963e7a6e826c5d5914bbf8dc2bc52613d5545741ea9a38",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["loose-definition", "mixed-definitions"]
@@ -1191,7 +1223,7 @@
                 },
                 {
                     "title": "Multiple definitions and terms",
-                    "line": 16,
+                    "line": 17,
                     "level": 2,
                     "sha256": "4e9bbf8be9cc50b55c1677581738012ea65fba0704961dfa5a8f2fcb32c5f0b0",
                     "disposition": {
@@ -1201,7 +1233,7 @@
                 },
                 {
                     "title": "Block content",
-                    "line": 42,
+                    "line": 43,
                     "level": 2,
                     "sha256": "091aae2b57cfbda53b34308bba241a7d004ebfeb35582ef55b8904739d52809b",
                     "disposition": {
@@ -1211,7 +1243,7 @@
                 },
                 {
                     "title": "Recognition boundaries",
-                    "line": 59,
+                    "line": 60,
                     "level": 2,
                     "sha256": "bd0f3f78f6f6fb16b130f1f26ae4f8ad6103746c1996a57408289e4b880dd992",
                     "disposition": {
@@ -1245,7 +1277,7 @@
         {
             "feature": "directives",
             "specification": "docs/specs/dialect/directives.md",
-            "sha256": "98544340d95cc8bdf2c0291075c444f2e85f39fa4d04359b1ea14faae4952a75",
+            "sha256": "c401432c60de133316b5febd3467fa5d60810403748137bd3c6ef287af00dada",
             "sections": [
                 {
                     "title": "Directives",
@@ -1254,7 +1286,7 @@
                     "sha256": "5f191c0d39add8cb97b23e8120ae00d3f8225dcd404cbb788d6a966c8cf77d00",
                     "disposition": {
                         "kind": "grammar",
-                        "certificates": ["inline-directive", "leaf-directive", "named-container", "anonymous-container"]
+                        "certificates": ["inline-directive", "leaf-directive", "named-container"]
                     }
                 },
                 {
@@ -1287,25 +1319,15 @@
                     "title": "Container directives",
                     "line": 56,
                     "level": 2,
-                    "sha256": "87807751c995f3da7b7cbe575d872905cf18af86128ede5b6e3532e72bc22f42",
+                    "sha256": "f9a404cc41d11fbe1f0ce8dbcd3412d926b65ca2a6f8ab5aae187808ad10c05b",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["named-container", "directive-nested"]
                     }
                 },
                 {
-                    "title": "Nameless containers",
-                    "line": 88,
-                    "level": 2,
-                    "sha256": "f89c10b7a530b00a0bb5d5049b9d742111cc307b05c6f49855c1724dca2b916b",
-                    "disposition": {
-                        "kind": "grammar",
-                        "certificates": ["anonymous-container", "directive-unbraced"]
-                    }
-                },
-                {
                     "title": "Container boundaries",
-                    "line": 112,
+                    "line": 90,
                     "level": 2,
                     "sha256": "4ed1264483ecb64bb609baadf824a3cd92c6fa6ce2b86e362e43887084120fea",
                     "disposition": {
@@ -1316,12 +1338,6 @@
             ],
             "elements": ["DIRECTIVE"],
             "certificates": [
-                {
-                    "id": "anonymous-container",
-                    "scope": "paired-document-grammar",
-                    "identity": false,
-                    "facets": []
-                },
                 {
                     "id": "directive-attribute-only",
                     "scope": "paired-document-grammar",
@@ -1345,12 +1361,6 @@
                     "scope": "paired-document-grammar",
                     "identity": false,
                     "facets": ["nested-containers", "minimum-closer", "longer-closer"]
-                },
-                {
-                    "id": "directive-unbraced",
-                    "scope": "paired-document-grammar",
-                    "identity": false,
-                    "facets": ["nameless-unbraced", "trailing-colons"]
                 },
                 {
                     "id": "directive-unicode",
@@ -1547,7 +1557,7 @@
         {
             "feature": "formulas",
             "specification": "docs/specs/dialect/formulas.md",
-            "sha256": "3d80242c16fab71f6b9740b9c7e2b75eb015e1b2e67ad396fab52de067319a54",
+            "sha256": "060310a740d584fd3a30e370c6336c1fe42a2423576172666516c367f8509a8b",
             "sections": [
                 {
                     "title": "Formulas",
@@ -1563,7 +1573,7 @@
                     "title": "Inline forms",
                     "line": 15,
                     "level": 2,
-                    "sha256": "eb617154f769fdff7411bc3c6fffda5833d357fff2f73f913ce1b0cab7d0a033",
+                    "sha256": "1a288547a15995816c5be1ea1dd36b37dbe895344f62935b72cbe6e0d84b4842",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["opaque-formula", "formula-backtick", "formula-parenthesis", "formula-bracket"]
@@ -1661,13 +1671,13 @@
         {
             "feature": "headings",
             "specification": "docs/specs/dialect/headings.md",
-            "sha256": "7a2e3195418bee5222339b23cea04bab1d456dd4f53f45b443ca1e8e870caccc",
+            "sha256": "5a36cb16ed84431a1d9544b407ff5bee0c646426bfa64215d90c0c67a76ea066",
             "sections": [
                 {
                     "title": "Headings",
                     "line": 1,
                     "level": 1,
-                    "sha256": "5c1011ebec5c3a6cfc31f84377353f11e508eb4078e3f77622b656c68545832c",
+                    "sha256": "85959b196987a2caf364da07ac36003808d7f652463062e52a0e030db7f42cc0",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": [
@@ -1694,7 +1704,7 @@
                     "title": "Format a heading",
                     "line": 40,
                     "level": 2,
-                    "sha256": "95464d55987e9f36639f61691f38cb231de4b4f5a0bdfc72478c29ab24047b8c",
+                    "sha256": "8fa312a6bf610250abe08df4c6c415ac8e6fbad6a9c3119fb27c84f312fd60d7",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["common-atx-1", "attribute-heading"]
@@ -1962,7 +1972,7 @@
         {
             "feature": "links-and-images",
             "specification": "docs/specs/dialect/links-and-images.md",
-            "sha256": "7ca98eeb97e29134a7b2f06ed0a35689aa60dee76dd6a1523c565cc67c63afdd",
+            "sha256": "a9a53fa26ed42ca96d7d1c03f292d41dc9c08f2d50d66e9f20fb1c795d2dab49",
             "sections": [
                 {
                     "title": "Links and images",
@@ -1978,7 +1988,7 @@
                     "title": "Reference links",
                     "line": 24,
                     "level": 2,
-                    "sha256": "2e65950ee9e252beed11beca33642cb8e9a970fea4907b7a341f1751cefe85d9",
+                    "sha256": "bf9d2b591f8cb9e3cf7b7ce71026fb0b760c30b08a971e00a4c85937f4f17620",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": [
@@ -2004,7 +2014,7 @@
                     "title": "Images",
                     "line": 69,
                     "level": 2,
-                    "sha256": "f9623a4e7f25415d66a333eaefb375b84f6aaac17a43c65824d0b4b5979d7479",
+                    "sha256": "2f3457dee70974e4ff2fd6f0871e79876197d34db4074f58eca0773a6b23fb13",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["common-image"]
@@ -2046,7 +2056,7 @@
                     }
                 }
             ],
-            "elements": ["AUTOLINK", "LINK", "EMBEDDED"],
+            "elements": ["AUTOLINK", "LINK", "EMBED"],
             "certificates": [
                 {
                     "id": "common-angle-autolink",
@@ -2125,13 +2135,13 @@
         {
             "feature": "lists",
             "specification": "docs/specs/dialect/lists.md",
-            "sha256": "78c68635f4c43b9e2cf2eb7d9c8483ab35e079e1f8a887025ab281ecbcbca9c6",
+            "sha256": "79a84f335f356e42038e1e1d3b2f8ba077f04970eff1331978993a19bf6ea224",
             "sections": [
                 {
                     "title": "Lists",
                     "line": 1,
                     "level": 1,
-                    "sha256": "8aa6360e095d90bdb3fc29e967b9cb45580e64990799b50bbe9a055b1d9d5c7a",
+                    "sha256": "9321952d4a01c82f76784c614e46021ec8abbe296b5126585ab3f7a04a834a44",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["common-bullet-dash", "common-bullet-plus", "common-bullet-star"]
@@ -2139,39 +2149,19 @@
                 },
                 {
                     "title": "Numbered lists",
-                    "line": 21,
+                    "line": 20,
                     "level": 2,
-                    "sha256": "9fab2c2e4b04505dcf9a5f439b8f0afa6d5fc2f483503da2cb7efc073f081268",
+                    "sha256": "4dc60da730378b6bd28fb71fb941692390aefb2d185d183135e98e7be5a688a0",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["decimal-list", "common-list-parenthesis", "fallback-list-limit"]
                     }
                 },
                 {
-                    "title": "Alphabetic and Roman markers",
-                    "line": 38,
-                    "level": 2,
-                    "sha256": "4bbfd88e8295dcb1882c787f93d6bed69d4e686a2b2eb99e95c962a9a999c534",
-                    "disposition": {
-                        "kind": "grammar",
-                        "certificates": ["alpha-list", "upper-list", "roman-list", "upper-roman-list"]
-                    }
-                },
-                {
-                    "title": "Automatic markers",
-                    "line": 71,
-                    "level": 2,
-                    "sha256": "b90fb35bcb5eb3151f0b2975333cd8cfa05688dfc59f9c43cc221fdfda1c30b9",
-                    "disposition": {
-                        "kind": "grammar",
-                        "certificates": ["default-list", "enclosed-default-list"]
-                    }
-                },
-                {
                     "title": "Blank lines and starts",
-                    "line": 82,
+                    "line": 40,
                     "level": 2,
-                    "sha256": "4293ff2a9f81305e10b30cda4302f00876c1b3f335c5be75edd6132591cfd299",
+                    "sha256": "456684df9ef66ba14bb0039333aafd3f02fd391dcd6cbc5a46748a96d340fdd8",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["common-list-loose", "decimal-list"]
@@ -2180,12 +2170,6 @@
             ],
             "elements": ["LIST"],
             "certificates": [
-                {
-                    "id": "alpha-list",
-                    "scope": "paired-document-grammar",
-                    "identity": false,
-                    "facets": ["extended-ordered-markers", "variant-context", "canonical-numerals"]
-                },
                 {
                     "id": "common-bullet-dash",
                     "scope": "paired-document-grammar",
@@ -2223,40 +2207,10 @@
                     "facets": []
                 },
                 {
-                    "id": "default-list",
-                    "scope": "paired-document-grammar",
-                    "identity": false,
-                    "facets": ["automatic-markers", "fixed-start"]
-                },
-                {
-                    "id": "enclosed-default-list",
-                    "scope": "paired-document-grammar",
-                    "identity": false,
-                    "facets": ["automatic-markers", "fixed-start"]
-                },
-                {
                     "id": "fallback-list-limit",
                     "scope": "paired-document-grammar",
                     "identity": true,
                     "facets": ["fallback", "rejected-prefix"]
-                },
-                {
-                    "id": "roman-list",
-                    "scope": "paired-document-grammar",
-                    "identity": false,
-                    "facets": ["extended-ordered-markers", "variant-context", "canonical-numerals"]
-                },
-                {
-                    "id": "upper-list",
-                    "scope": "paired-document-grammar",
-                    "identity": false,
-                    "facets": ["extended-ordered-markers", "variant-context", "canonical-numerals"]
-                },
-                {
-                    "id": "upper-roman-list",
-                    "scope": "paired-document-grammar",
-                    "identity": false,
-                    "facets": ["extended-ordered-markers", "variant-context", "canonical-numerals"]
                 }
             ]
         },
@@ -2321,7 +2275,7 @@
         {
             "feature": "properties",
             "specification": "docs/specs/dialect/properties.md",
-            "sha256": "a22ec2488a779def0f6ed55d8a74ea923f2e770f931ce90db7b8c2ff56d46ef9",
+            "sha256": "21a51d3df41cff02bcf9ac643b750b01626209b8a938e592cf3b7f6207860d97",
             "sections": [
                 {
                     "title": "Properties",
@@ -2367,7 +2321,7 @@
                     "title": "Envelope and recovery",
                     "line": 122,
                     "level": 2,
-                    "sha256": "f137993c81f702e4c9c67f20dd014e4cabf5458f4c29905bbce60a004ff1e5c0",
+                    "sha256": "21d792f1fe1399207479862a4495edede9c9deccd57325ee90ddef943d703bc9",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["metadataempty", "metadata-types", "fallback-noninitial-metadata"]
@@ -2405,74 +2359,6 @@
                     "scope": "boundary-grammar",
                     "identity": false,
                     "facets": []
-                }
-            ]
-        },
-        {
-            "feature": "specimens",
-            "specification": "docs/specs/dialect/specimens.md",
-            "sha256": "46399c137b458110d3730dee041ad3fa2aae4a6243227550decc7c9377308fef",
-            "sections": [
-                {
-                    "title": "Specimens (numbered examples)",
-                    "line": 1,
-                    "level": 1,
-                    "sha256": "29ff09f38cbd5767934c9a4c5faf60e6c035c1a40ae6244c141050a6ec65c987",
-                    "disposition": {
-                        "kind": "grammar",
-                        "certificates": ["specimen-graph"]
-                    }
-                },
-                {
-                    "title": "Anonymous definitions and resets",
-                    "line": 21,
-                    "level": 2,
-                    "sha256": "54181096e68c84ffab27c8ab54ed9319b9467dde28ffe8b3d0998d557985afab",
-                    "disposition": {
-                        "kind": "grammar",
-                        "certificates": ["specimen-reset", "specimen-groups"]
-                    }
-                },
-                {
-                    "title": "Bodies and labels",
-                    "line": 43,
-                    "level": 2,
-                    "sha256": "ea13280615ea0f974588dee7e21e03a9530ac9db89e0a97c74eebcad66640ddc",
-                    "disposition": {
-                        "kind": "grammar",
-                        "certificates": ["specimen-graph", "specimen-groups"]
-                    }
-                },
-                {
-                    "title": "Reference forms",
-                    "line": 61,
-                    "level": 2,
-                    "sha256": "8af0d7a94b08419ce1934379774beb92edda362916a22a90aeff328b48738a55",
-                    "disposition": {
-                        "kind": "grammar",
-                        "certificates": ["specimen-graph"]
-                    }
-                }
-            ],
-            "elements": ["SPECIMEN"],
-            "certificates": [
-                {
-                    "id": "specimen-graph",
-                    "scope": "paired-document-grammar",
-                    "identity": false,
-                    "facets": ["labelled-definitions", "references", "binding"]
-                },
-                {
-                    "id": "specimen-groups",
-                    "scope": "paired-document-grammar",
-                    "identity": false,
-                    "facets": ["anonymous-definitions", "duplicate-definitions", "group-reset-suppression"]
-                },
-                {
-                    "id": "specimen-reset",
-                    "scope": "paired-document-grammar",
-                    "identity": false,
-                    "facets": ["explicit-reset", "positive-nine-digit-start", "binding"]
                 }
             ]
         },
@@ -2685,33 +2571,33 @@
         {
             "feature": "task-lists",
             "specification": "docs/specs/dialect/task-lists.md",
-            "sha256": "5a83f0898937ab47cb79fb4e39a64f83d5b91da8ca5b18b0728bb777e5dd5417",
+            "sha256": "b538a34c462db60b8c63ed669043c868a241849d250fde47f4eba828088b1b80",
             "sections": [
                 {
                     "title": "Task lists",
                     "line": 1,
                     "level": 1,
-                    "sha256": "e62a7bee107c78bfcf5ac4a99f22b669e2b2fa2b184820d40f39557d98a9d756",
+                    "sha256": "f0dd35250043e911243d41218bde7c4cee4d2e98a34897782ab3d0c827f41e95",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["gfm-task-open", "gfm-task-lower", "gfm-task-upper"]
                     }
                 },
                 {
-                    "title": "Custom markers and nesting",
-                    "line": 19,
+                    "title": "Nesting",
+                    "line": 28,
                     "level": 2,
-                    "sha256": "83e608e2845916e457f4f7d63af5d68b385f552a815e350fa03493aeaa11b88c",
+                    "sha256": "e15da89b60c289c1f6dc35a6964d1f9419b0d99ebc907b761cfaae605955a0d0",
                     "disposition": {
                         "kind": "grammar",
-                        "certificates": ["task-value", "task-unicode", "task-nested"]
+                        "certificates": ["task-value", "task-cancelled", "task-nested"]
                     }
                 },
                 {
                     "title": "Required separator",
-                    "line": 31,
+                    "line": 38,
                     "level": 2,
-                    "sha256": "bb35ff1477455d73b45630cf8d6ec64cd18ba9a267f526d5f05638e68d678422",
+                    "sha256": "edcb52ecf31bee986181f28c2855dadad8534dd573eba07e9728a8c48db5719d",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["fallback-task-separator", "task-heading"]
@@ -2745,6 +2631,12 @@
                     "facets": ["standard-markers", "opening-content"]
                 },
                 {
+                    "id": "task-cancelled",
+                    "scope": "paired-document-grammar",
+                    "identity": false,
+                    "facets": ["cancelled-marker", "authored-marker"]
+                },
+                {
                     "id": "task-heading",
                     "scope": "paired-document-grammar",
                     "identity": false,
@@ -2755,12 +2647,6 @@
                     "scope": "paired-document-grammar",
                     "identity": true,
                     "facets": ["nested-tasks", "ordered-task"]
-                },
-                {
-                    "id": "task-unicode",
-                    "scope": "paired-document-grammar",
-                    "identity": false,
-                    "facets": ["unicode-marker", "authored-marker"]
                 },
                 {
                     "id": "task-value",

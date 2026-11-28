@@ -92,7 +92,5 @@ A tail beginning with `^`, or followed immediately by `(`, `[`, or a valid
 attribute container, is left to its own bracket syntax. Ordinary link
 reference definitions are decided before citation parsing.
 
-A bare `@label` with no bibliography tail becomes a
-[specimen reference](specimens.md) if that label is declared anywhere in the
-document. `[@label]` remains a bibliography citation. Opaque code, comment,
-HTML, formula, cross-link, and automatic-link contents keep their own bytes.
+Opaque code, comment, HTML, formula, cross-link, and automatic-link contents
+keep their own bytes.

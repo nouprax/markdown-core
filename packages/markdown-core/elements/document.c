@@ -1,5 +1,4 @@
 #include "alloc.h"
-#include "parts.h"
 #include "document.h"
 #include "block_internal.h"
 #include "ast_internal.h"
@@ -12,23 +11,6 @@
 static void init_document(const markdown_core_element_instance *self, markdown_core_parser *parser) {
     (void)self;
     (void)parser;
-}
-/* AN EDIT REOPENS THE DOCUMENT (blocks.c, THE REOPEN): the published tree
- * keeps the children before `child`; what goes is matched against what the edit reads (ast.c,
- * A DOCUMENT REOPENED FOR AN EDIT). */
-static bool reopen_document(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                            markdown_core_node *root, uint32_t child, uint32_t start) {
-    (void)self;
-    return markdown_core_publish_reopen(parser, root, child, start);
-}
-/* THE EDIT TAKES THE OLD CHILDREN BACK (blocks.c, THE SPLICE): the
- * publish's records let the children go last, once nothing else can
- * fail. */
-static bool splice_document(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                            markdown_core_node *root, uint32_t child, uint32_t point) {
-    (void)self;
-    (void)root;
-    return markdown_core_publish_splice(parser, child, point);
 }
 static void publish_document(const markdown_core_element_instance *self, markdown_core_parser *parser) {
     (void)self;
@@ -94,16 +76,10 @@ static markdown_core_candidate_step feed_candidate(const markdown_core_element_i
     return MARKDOWN_CORE_CANDIDATE_CONTINUES;
 }
 
-static const markdown_core_edit_ops DOCUMENT_EDIT = {
-    .stops = markdown_core_properties_stops,
-};
-
 static const markdown_core_document_ops DOCUMENT_OPS = {
     .kind = MARKDOWN_CORE_NODE_DOCUMENT,
     .init = init_document,
     .read = read_document_prefix,
-    .reopen = reopen_document,
-    .splice = splice_document,
     .publish = publish_document,
     .candidate = publish_candidate,
 };
@@ -114,16 +90,9 @@ static const markdown_core_candidate_ops DOCUMENT_CANDIDATE = {
     .size = sizeof(document_call),
 };
 
-const markdown_core_facet MARKDOWN_CORE_DOCUMENT_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_METADATA, .parts = markdown_core_metadata_parts},
-    {.kind = MARKDOWN_CORE_KIND_NONE},
-};
-
 const markdown_core_element MARKDOWN_CORE_ELEMENT_DOCUMENT = {
-    .facets = MARKDOWN_CORE_DOCUMENT_FACETS,
     .state_size = sizeof(markdown_core_properties_work),
     .name = "document",
-    .edit = &DOCUMENT_EDIT,
     .document = &DOCUMENT_OPS,
     .candidate = &DOCUMENT_CANDIDATE,
 };
@@ -135,7 +104,7 @@ MARKDOWN_CORE_ATTRIBUTE((noinline)) void markdown_core_node_free_tables(markdown
     if (document->committed) {
         return;
     }
-    markdown_core_definitions *const tables[] = {&document->footnotes, &document->specimens, &document->references};
+    markdown_core_definitions *const tables[] = {&document->footnotes, &document->references};
     for (size_t i = 0; i < sizeof(tables) / sizeof(*tables); i++) {
         markdown_core_free((void *)tables[i]->all.nodes);
         markdown_core_free(tables[i]->all.places);

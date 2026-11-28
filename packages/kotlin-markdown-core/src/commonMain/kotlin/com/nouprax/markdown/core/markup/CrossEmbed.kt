@@ -1,0 +1,15 @@
+package com.nouprax.markdown.core
+
+/** A workspace transclusion. [label] is absent only when no separator was written. */
+public class CrossEmbed internal constructor(
+    public val dest: Destination,
+    /** Raw prefix after a valid size suffix. */
+    public val label: String?,
+    /** Authored dimensions, absent for an invalid or missing suffix. */
+    public val dimensions: Dimensions?,
+    override val id: MarkupID,
+    override val extent: Extent,
+    override val runs: kotlin.collections.List<Run>,
+    override val anchor: String?,
+    override val attributes: Attributes,
+) : Markup()

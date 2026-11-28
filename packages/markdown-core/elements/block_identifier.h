@@ -21,11 +21,6 @@ void markdown_core_block_attach_paragraph_identifier(markdown_core_block_identif
 bool markdown_core_block_attach_identifier_line(const markdown_core_element_instance *self,
                                                 markdown_core_parser *parser, markdown_core_node *parent,
                                                 markdown_core_reader *reader);
-/* Whether a line as written may be an identifier line, which names the
- * block before it (element.h, the follow's `writes`): one that holds a `#`,
- * whatever its prefixes. */
-bool markdown_core_block_identifier_writes(const markdown_core_element_instance *self, const unsigned char *line,
-                                           size_t length);
 /* The candidate of the identifier line (blocks.c, THE CANDIDATES), the
  * paragraph element's hooks (element.h). */
 markdown_core_candidate_step markdown_core_block_feed_identifier_line(const markdown_core_element_instance *self,

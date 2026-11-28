@@ -1,0 +1,417 @@
+//! Heading (setext) occurs in the [flow][] content type.
+//!
+//! ## Grammar
+//!
+//! Heading (setext) forms with the following BNF
+//! (<small>see [construct][crate::construct] for character groups</small>):
+//!
+//! ```bnf
+//! heading_setext ::= paragraph eol *space_or_tab (1*'-' | 1*'=') *space_or_tab
+//!
+//! ; See the `paragraph` construct for the BNF of that part.
+//! ```
+//!
+//! As this construct occurs in flow, like all flow constructs, it must be
+//! followed by an eol (line ending) or eof (end of file).
+//!
+//! See [`paragraph`][paragraph] for grammar, notes, and recommendations on
+//! that part.
+//!
+//! In markdown, it is also possible to create headings with a
+//! [heading (atx)][heading_atx] construct.
+//! The benefit of setext headings is that their text can include line endings,
+//! and by extensions also hard breaks (e.g., with
+//! [hard break (escape)][hard_break_escape]).
+//! However, their limit is that they cannot form `<h3>` through `<h6>`
+//! headings.
+//!
+//! [Thematic breaks][thematic_break] formed with dashes and without whitespace
+//! could be interpreted as a heading (setext).
+//! Which one forms depends on whether there is text directly in fron of the
+//! sequence.
+//!
+//! > 🏛 **Background**: the word *setext* originates from a small markup
+//! > language by Ian Feldman from 1991.
+//! > See [*§ Setext* on Wikipedia][wiki_setext] for more info.
+//! > The word *atx* originates from a tiny markup language by Aaron Swartz
+//! > from 2002.
+//! > See [*§ atx, the true structured text format* on `aaronsw.com`][atx] for
+//! > more info.
+//!
+//! ## HTML
+//!
+//! Heading (setext) in markdown relates to the `<h1>` and `<h2>` elements in
+//! HTML.
+//! See [*§ 4.3.6 The `h1`, `h2`, `h3`, `h4`, `h5`, and `h6` elements* in the
+//! HTML spec][html] for more info.
+//!
+//! ## Recommendation
+//!
+//! Always use heading (atx), never heading (setext).
+//!
+//! ## Tokens
+//!
+//! * [`HeadingSetext`][Name::HeadingSetext]
+//! * [`HeadingSetextText`][Name::HeadingSetextText]
+//! * [`HeadingSetextUnderline`][Name::HeadingSetextUnderline]
+//! * [`HeadingSetextUnderlineSequence`][Name::HeadingSetextUnderlineSequence]
+//!
+//! ## References
+//!
+//! * [`setext-underline.js` in `micromark`](https://github.com/micromark/micromark/blob/main/packages/micromark-core-commonmark/dev/lib/setext-underline.js)
+//! * [*§ 4.3 Setext headings* in `CommonMark`](https://spec.commonmark.org/0.31/#setext-headings)
+//!
+//! [flow]: crate::construct::flow
+//! [prose]: crate::construct::prose
+//! [header_atx]: crate::construct::header_atx
+//! [thematic_break]: crate::construct::thematic_break
+//! [hard_break_escape]: crate::construct::hard_break_escape
+//! [html]: https://html.spec.whatwg.org/multipage/sections.html#the-h1,-h2,-h3,-h4,-h5,-and-h6-elements
+//! [wiki_setext]: https://en.wikipedia.org/wiki/Setext
+//! [atx]: http://www.aaronsw.com/2002/atx/
+
+use crate::choice::Starts;
+use crate::construct::parts::space_or_tab::{space_or_tab, space_or_tab_min_max};
+use crate::construct::{block_identifier, parts};
+use crate::event::{Content, Event, Kind, Link, Name};
+use crate::resolve::Name as ResolveName;
+use crate::state::{Name as StateName, State};
+use crate::subtokenize::Subresult;
+use crate::tokenizer::Tokenizer;
+use crate::util::{constant::TAB_SIZE, skip, slice::advance};
+
+/// Bytes this construct can start at.
+pub const STARTS: Starts = Starts::Bytes(b"\t -=");
+
+/// At start of heading (setext) underline.
+///
+/// ```markdown
+///   | aa
+/// > | ==
+///     ^
+/// ```
+fn start(tokenizer: &mut Tokenizer) -> State {
+    let before = if tokenizer.events.is_empty() {
+        None
+    } else {
+        Some(
+            tokenizer.events[skip::opt_back(
+                &tokenizer.events,
+                tokenizer.events.len() - 1,
+                &[Name::LineEnding, Name::SpaceOrTab],
+            )]
+            .name,
+        )
+    };
+    if !tokenizer.lazy
+        && !tokenizer.pierce
+        // Require a paragraph before, or an underline, which this line
+        // does not continue when it is a thematic break.
+        && (before == Some(Name::Content)
+            || (before == Some(Name::HeadingSetextUnderline) && !rule(tokenizer)))
+    {
+        tokenizer.enter(Name::HeadingSetextUnderline);
+
+        if matches!(tokenizer.current, Some(b'\t' | b' ')) {
+            tokenizer.attempt(
+                State::Next(StateName::HeadingSetext(Step::Before)),
+                State::Nok,
+            );
+            State::Redo(space_or_tab_min_max(0, TAB_SIZE - 1))
+        } else {
+            State::Redo(StateName::HeadingSetext(Step::Before))
+        }
+    } else {
+        State::Nok
+    }
+}
+
+/// Whether the line from here is three or more `-` and the spaces or tabs
+/// after them: a thematic break, which only a paragraph's underline is.
+fn rule(tokenizer: &Tokenizer) -> bool {
+    let bytes = tokenizer.parse_state.bytes;
+    let mut index = tokenizer.point.index;
+    while matches!(bytes.get(index), Some(b' ' | b'\t')) {
+        index += 1;
+    }
+    let start = index;
+    while bytes.get(index) == Some(&b'-') {
+        index += 1;
+    }
+    let dashes = index - start;
+    while matches!(bytes.get(index), Some(b' ' | b'\t')) {
+        index += 1;
+    }
+    dashes >= 3 && matches!(bytes.get(index), None | Some(b'\n' | b'\r'))
+}
+
+/// After optional whitespace, at `-` or `=`.
+///
+/// ```markdown
+///   | aa
+/// > | ==
+///     ^
+/// ```
+fn before(tokenizer: &mut Tokenizer) -> State {
+    match tokenizer.current {
+        Some(b'-' | b'=') => {
+            tokenizer.enter(Name::HeadingSetextUnderlineSequence);
+            State::Redo(StateName::HeadingSetext(Step::Inside {
+                marker: tokenizer.current.unwrap(),
+            }))
+        }
+        _ => State::Nok,
+    }
+}
+
+/// In sequence.
+///
+/// ```markdown
+///   | aa
+/// > | ==
+///     ^
+/// ```
+fn inside(tokenizer: &mut Tokenizer, marker: u8) -> State {
+    if tokenizer.current == Some(marker) {
+        tokenizer.consume();
+        State::Next(StateName::HeadingSetext(Step::Inside { marker }))
+    } else {
+        tokenizer.exit(Name::HeadingSetextUnderlineSequence);
+
+        if matches!(tokenizer.current, Some(b'\t' | b' ')) {
+            tokenizer.attempt(
+                State::Next(StateName::HeadingSetext(Step::After)),
+                State::Nok,
+            );
+            State::Redo(space_or_tab())
+        } else {
+            State::Redo(StateName::HeadingSetext(Step::After))
+        }
+    }
+}
+
+/// After sequence, after optional whitespace.
+///
+/// ```markdown
+///   | aa
+/// > | ==
+///       ^
+/// ```
+fn after(tokenizer: &mut Tokenizer) -> State {
+    match tokenizer.current {
+        None | Some(b'\n') => {
+            // Feel free to interrupt.
+            tokenizer.interrupt = false;
+            tokenizer.register_resolver(ResolveName::HeadingSetext);
+            tokenizer.exit(Name::HeadingSetextUnderline);
+            State::Ok
+        }
+        _ => State::Nok,
+    }
+}
+
+/// Resolve heading (setext).
+pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
+    let mut enter = skip::to(&tokenizer.events, 0, &[Name::HeadingSetextUnderline]);
+    // A paragraph an underline was moved into opens where the underline did:
+    // its old enter, which the map removes, and its new one.
+    let mut moved: Option<(usize, usize)> = None;
+
+    while enter < tokenizer.events.len() {
+        let exit = skip::to(
+            &tokenizer.events,
+            enter + 1,
+            &[Name::HeadingSetextUnderline],
+        );
+
+        // Find paragraph before
+        let paragraph_exit_before = skip::opt_back(
+            &tokenizer.events,
+            enter - 1,
+            &[
+                Name::SpaceOrTab,
+                Name::ContainerIndent,
+                Name::LineEnding,
+                Name::BlockQuotePrefix,
+            ],
+        );
+
+        // There’s a paragraph before: this is a setext heading.
+        if tokenizer.events[paragraph_exit_before].name == Name::Paragraph {
+            let mut paragraph_enter = skip::to_back(
+                &tokenizer.events,
+                paragraph_exit_before - 1,
+                &[Name::Paragraph],
+            );
+            if let Some((old, new)) = moved {
+                if paragraph_enter == old {
+                    paragraph_enter = new;
+                }
+            }
+
+            // A heading has no block identifier.
+            block_identifier::restore(tokenizer, paragraph_enter, paragraph_exit_before);
+            // Change types of Enter:Paragraph, Exit:Paragraph.
+            tokenizer.events[paragraph_enter].name = Name::HeadingSetextText;
+            tokenizer.events[paragraph_exit_before].name = Name::HeadingSetextText;
+
+            // Add Enter:HeadingSetext, Exit:HeadingSetext.
+            let mut heading_enter = tokenizer.events[paragraph_enter].clone();
+            heading_enter.name = Name::HeadingSetext;
+            tokenizer.map.add(paragraph_enter, 0, vec![heading_enter]);
+            let mut heading_exit = tokenizer.events[exit].clone();
+            heading_exit.name = Name::HeadingSetext;
+            tokenizer.map.add(exit + 1, 0, vec![heading_exit]);
+            tail(tokenizer, paragraph_exit_before);
+        } else {
+            // There’s a following paragraph, move this underline inside it.
+            if exit + 3 < tokenizer.events.len()
+                && tokenizer.events[exit + 1].name == Name::LineEnding
+                && tokenizer.events[exit + 3].name == Name::Paragraph
+            {
+                // Swap type, HeadingSetextUnderline:Enter -> Paragraph:Enter.
+                tokenizer.events[enter].name = Name::Paragraph;
+                // Swap type, LineEnding -> Data.
+                tokenizer.events[exit + 1].name = Name::Data;
+                tokenizer.events[exit + 2].name = Name::Data;
+                // Move new data (was line ending) back to include whole line,
+                // and link data together.
+                tokenizer.events[exit + 1].point = tokenizer.events[enter].point.clone();
+                tokenizer.events[exit + 1].link = Some(Link {
+                    previous: None,
+                    next: Some(exit + 4),
+                    content: Content::Text,
+                });
+                tokenizer.events[exit + 4].link.as_mut().unwrap().previous = Some(exit + 1);
+                // Remove *including* HeadingSetextUnderline:Exit, until the line ending.
+                tokenizer.map.add(enter + 1, exit - enter, vec![]);
+                // Remove old Paragraph:Enter.
+                tokenizer.map.add(exit + 3, 1, vec![]);
+                moved = Some((exit + 3, enter));
+            } else {
+                // Swap type.
+                tokenizer.events[enter].name = Name::Paragraph;
+                tokenizer.events[exit].name = Name::Paragraph;
+                // Replace what’s inside the underline (whitespace, sequence).
+                tokenizer.map.add(
+                    enter + 1,
+                    exit - enter - 1,
+                    vec![
+                        Event {
+                            name: Name::Data,
+                            kind: Kind::Enter,
+                            point: tokenizer.events[enter].point.clone(),
+                            link: Some(Link {
+                                previous: None,
+                                next: None,
+                                content: Content::Text,
+                            }),
+                        },
+                        Event {
+                            name: Name::Data,
+                            kind: Kind::Exit,
+                            point: tokenizer.events[exit].point.clone(),
+                            link: None,
+                        },
+                    ],
+                );
+            }
+        }
+
+        enter = skip::to(&tokenizer.events, exit + 1, &[Name::HeadingSetextUnderline]);
+    }
+
+    tokenizer.map.consume(&mut tokenizer.events);
+    None
+}
+
+/// Steps of this construct.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Step {
+    Start,
+    Before,
+    Inside { marker: u8 },
+    After,
+}
+
+impl From<Step> for StateName {
+    fn from(step: Step) -> StateName {
+        StateName::HeadingSetext(step)
+    }
+}
+
+/// Run a step.
+pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
+    match step {
+        Step::Start => start(tokenizer),
+        Step::Before => before(tokenizer),
+        Step::Inside { marker } => inside(tokenizer, marker),
+        Step::After => after(tokenizer),
+    }
+}
+
+/// Take the attributes that end the last line of the heading text, whose
+/// exit is at `exit`, from its data.
+fn tail(tokenizer: &mut Tokenizer, exit: usize) {
+    let data = exit - 1;
+    if tokenizer.events[data].name != Name::Data || tokenizer.events[data - 1].name != Name::Data {
+        return;
+    }
+    let start = &tokenizer.events[data - 1].point;
+    let end = tokenizer.events[data].point.index;
+    // Only a chunk of the last line alone.
+    if tokenizer.parse_state.bytes[start.index..end]
+        .iter()
+        .any(|byte| matches!(byte, b'\n' | b'\r'))
+    {
+        return;
+    }
+    if let Some((cut, events)) = parts::attributes::line_tail(tokenizer, start, end) {
+        let enter = data - 1;
+        if cut.index > start.index {
+            tokenizer.events[data].point = cut.clone();
+            tokenizer.events[exit].point = cut;
+        } else if let Some(previous) = tokenizer.events[enter]
+            .link
+            .as_ref()
+            .and_then(|link| link.previous)
+        {
+            let bytes = tokenizer.parse_state.bytes;
+            let from = tokenizer.events[previous].point.index;
+            let mut to = tokenizer.events[previous + 1].point.index;
+            while to > from && matches!(bytes[to - 1], b'\n' | b'\r') {
+                to -= 1;
+            }
+            // After a hard break escape, the line is the text's.
+            let slashes = bytes[from..to]
+                .iter()
+                .rev()
+                .take_while(|byte| **byte == b'\\')
+                .count();
+            if slashes % 2 == 1 {
+                return;
+            }
+            while to > from && matches!(bytes[to - 1], b'\t' | b' ') {
+                to -= 1;
+            }
+            // A line of attributes alone: the text ends with the line before,
+            // without its line ending.
+            if let Some(link) = tokenizer.events[previous].link.as_mut() {
+                link.next = None;
+            }
+            let point = advance(bytes, &tokenizer.events[previous].point, to);
+            tokenizer.events[previous + 1].point = point.clone();
+            tokenizer.events[exit].point = point;
+            // What is between the lines (container prefixes) goes after the
+            // text, before the attributes.
+            let between = tokenizer.events[previous + 2..enter].to_vec();
+            tokenizer.map.add(previous + 2, data - previous - 1, vec![]);
+            tokenizer.map.add(exit + 1, 0, between);
+        } else {
+            // The heading's only line: it has no text.
+            tokenizer.events[exit].point = tokenizer.events[enter].point.clone();
+            tokenizer.map.add(enter, 2, vec![]);
+        }
+        tokenizer.map.add(exit + 1, 0, events);
+    }
+}

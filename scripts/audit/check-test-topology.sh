@@ -84,7 +84,6 @@ for target_spec in \
     docs/specs/dialect/insertion.md \
     docs/specs/dialect/links-and-images.md \
     docs/specs/dialect/lists.md \
-    docs/specs/dialect/specimens.md \
     docs/specs/dialect/marks.md \
     docs/specs/dialect/properties.md \
     docs/specs/dialect/strikethrough.md \
@@ -186,7 +185,7 @@ if [ -n "$BUILD_DIR" ]; then
         }
 
         tests_all=$(ctest_inventory -N | normalize_lines | sed -n 's/^  Test *#[0-9]*: //p')
-        for label in api facade conformance consumer spec elements regression pathological fuzz packaging incremental lsp; do
+        for label in api facade conformance consumer spec elements regression pathological fuzz packaging; do
             count=$(ctest_inventory -N -L "^${label}$" | normalize_lines | sed -n 's/^Total Tests: //p')
             if [ "${count:-0}" -lt 1 ]; then
                 fail "no CTest tests carry label '$label'"

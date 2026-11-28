@@ -46,7 +46,7 @@ const ORACLES = {
         binary(policy) {
             return `.tools/cmark/${policy.upstream.version}/build/src/cmark`;
         },
-        install: "scripts/tooling/setup-environment.sh --install oracle-cmark",
+        install: "scripts/tools/setup-environment.sh --install oracle-cmark",
         label: "cmark",
         extensions: []
     },
@@ -55,7 +55,7 @@ const ORACLES = {
         binary(policy) {
             return `.tools/cmark-gfm/${policy.upstream.version}/build/src/cmark-gfm`;
         },
-        install: "scripts/tooling/setup-environment.sh --install oracle-cmark-gfm",
+        install: "scripts/tools/setup-environment.sh --install oracle-cmark-gfm",
         label: "cmark-gfm",
         extensions: ["table", "strikethrough", "autolink", "tasklist", "footnotes"]
     }

@@ -251,8 +251,8 @@ cmake --preset tsan
 cmake --build --preset tsan --parallel
 ctest --preset correctness-tsan
 
-sh scripts/tooling/format-c.sh --check
-sh scripts/tooling/format-cmake.sh --check
+sh scripts/tools/format-c.sh --check
+sh scripts/tools/format-cmake.sh --check
 bash scripts/audit/check-public-surface.sh
 bash scripts/audit/check-package-contents.sh
 bash scripts/audit/check-test-topology.sh

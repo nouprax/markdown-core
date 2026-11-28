@@ -250,7 +250,7 @@ static int case_pattern_image_link(pc_context *context) {
         return -1;
     }
     if (pc_expect_count(context, MARKDOWN_CORE_KIND_LINK, 160000, "Link") != 0 ||
-        pc_expect_count(context, MARKDOWN_CORE_KIND_EMBEDDED, 0, "Embedded") != 0) {
+        pc_expect_count(context, MARKDOWN_CORE_KIND_EMBED, 0, "Embed") != 0) {
         return -1;
     }
     expected = ts_repeat("![", 160000, &expected_length);
@@ -348,7 +348,7 @@ static int case_cross_reference_kinds(pc_context *context) {
         return -1;
     }
     if (pc_expect_count(context, MARKDOWN_CORE_KIND_CROSS_LINK, repetitions, "CrossLink") != 0 ||
-        pc_expect_count(context, MARKDOWN_CORE_KIND_CROSS_EMBEDDED, 2 * repetitions, "CrossEmbedded") != 0) {
+        pc_expect_count(context, MARKDOWN_CORE_KIND_CROSS_EMBED, 2 * repetitions, "CrossEmbed") != 0) {
         return -1;
     }
     return 0;
@@ -382,49 +382,6 @@ static int case_deep_list_line(pc_context *context) {
         return -1;
     }
     return pc_expect_text(context, "ab", 2);
-}
-
-/* The same line in a session, which reads it unfinished, finished with no
- * line after it, and as the text's end. The table opener's call at each
- * marker asks to be a candidate, so the session reads on in the line from
- * every marker and decides every candidate there: the line is in hand once
- * for its visit, so the markers and the text after them cost their bytes
- * once. Taking the whole line in hand again at each marker took 6.3 seconds
- * at 50000 markers before 1 MiB of text in a debug build, so the text here
- * is sixteen times that. */
-static int case_deep_list_session(pc_context *context) {
-    const size_t depth = 50000, tail = (size_t)16 << 20;
-    markdown_core_session *session = NULL;
-    const markdown_core_document *document = NULL;
-    int result = -1;
-    char *suffix = (char *)malloc(tail + 4);
-    if (!suffix) {
-        return -1;
-    }
-    memset(suffix, 'a', tail);
-    memcpy(suffix + tail, "lea", 4);
-    const int built = pc_build(context, NULL, "- ", depth, suffix);
-    free(suffix);
-    if (built != 0 || markdown_core_session_new((const uint8_t *)context->input, context->input_length,
-                                                MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) != MARKDOWN_CORE_OK) {
-        return -1;
-    }
-    if (markdown_core_session_append(session, (const uint8_t *)"n\n", 2, &document) == MARKDOWN_CORE_OK &&
-        markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK &&
-        ts_ast_count_kinds(markdown_core_document_root(document), context->counts) == 0 &&
-        pc_expect_count(context, MARKDOWN_CORE_KIND_LIST, depth, "List") == 0 &&
-        pc_expect_count(context, MARKDOWN_CORE_KIND_LIST_ITEM, depth, "ListItem") == 0) {
-        size_t length = 0;
-        char *text = ts_ast_concat_text(markdown_core_document_root(document), &length);
-        size_t same = 0;
-        while (text && same < length && text[same] == 'a') {
-            same++;
-        }
-        result = text && length == tail + 4 && same == tail && memcmp(text + tail, "lean", 4) == 0 ? 0 : -1;
-        free(text);
-    }
-    markdown_core_session_close(session);
-    return result;
 }
 
 /* The canonical dump of a deep document, drawn on a deliberately small stack.
@@ -946,66 +903,6 @@ static int pc_uniform_text_visit(const markdown_core_node *node, ts_ast_range ra
     return 0;
 }
 
-/* An edit that reads again many definitions of one label. Each declaration
- * the reading makes joins its label's list from where the front's last
- * stands, past none of the old ones the edit put in the back; and each old
- * definition the edit lets go hands the label on from where it stood, past
- * none of the reading's own. Walking past either for each of them took 3
- * seconds at 16000 definitions in a release build, so the count here is
- * three times that. */
-static int case_duplicate_definitions_edit(pc_context *context) {
-    enum { DEFINITIONS = 50000 };
-    if (pc_build(context, NULL, "[x]: /a\n", DEFINITIONS, "\n[x]\n") != 0) {
-        return -1;
-    }
-    markdown_core_session *session = NULL;
-    const markdown_core_document *document = NULL;
-    if (markdown_core_session_new((const uint8_t *)context->input, context->input_length, MARKDOWN_CORE_TEXT_UNIT_UTF8,
-                                  &session) != MARKDOWN_CORE_OK) {
-        return -1;
-    }
-    const markdown_core_position start = {1, 1}, end = {DEFINITIONS + 3, 1};
-    int result = -1;
-    if (markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK &&
-        markdown_core_session_edit(session, start, end, (const uint8_t *)context->input, context->input_length,
-                                   &document) == MARKDOWN_CORE_OK &&
-        ts_ast_count_kinds(markdown_core_document_root(document), context->counts) == 0 &&
-        pc_expect_count(context, MARKDOWN_CORE_KIND_REFERENCE, DEFINITIONS, "Reference") == 0 &&
-        pc_expect_count(context, MARKDOWN_CORE_KIND_LINK, 1, "Link") == 0) {
-        result = 0;
-    }
-    markdown_core_session_close(session);
-    return result;
-}
-
-/* A definition that comes after many roots that looked its label up and
- * that share one anchor: the finalize completes every root anew, which
- * withdraws its anchor and reserves it again, in the order of the text.
- * Each search of the anchor's declarations begins beside the last one the
- * search touched. Beginning at the list's end took 12.5 seconds at 64000
- * roots in a release build. */
-static int case_shared_anchor_completions(pc_context *context) {
-    enum { ROOTS = 64000 };
-    if (pc_build(context, NULL, "[text][x]{#a}\n\n", ROOTS, NULL) != 0) {
-        return -1;
-    }
-    markdown_core_session *session = NULL;
-    const markdown_core_document *document = NULL;
-    if (markdown_core_session_new((const uint8_t *)context->input, context->input_length, MARKDOWN_CORE_TEXT_UNIT_UTF8,
-                                  &session) != MARKDOWN_CORE_OK) {
-        return -1;
-    }
-    int result = -1;
-    if (markdown_core_session_append(session, (const uint8_t *)"[x]: /u\n", 8, &document) == MARKDOWN_CORE_OK &&
-        markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK &&
-        ts_ast_count_kinds(markdown_core_document_root(document), context->counts) == 0 &&
-        pc_expect_count(context, MARKDOWN_CORE_KIND_LINK, ROOTS, "Link") == 0) {
-        result = 0;
-    }
-    markdown_core_session_close(session);
-    return result;
-}
-
 static int case_reference_collisions(pc_context *context) {
     enum { COLLISIONS = 50000 };
     char bad_key[32] = "";
@@ -1085,8 +982,7 @@ typedef struct pc_reference_payload {
 } pc_reference_payload;
 
 static size_t pc_attribute_bytes(const markdown_core_attribute_value *attributes) {
-    markdown_core_optional_string anchor = {0};
-    TS_OK(markdown_core_attribute_value_anchor(attributes, &anchor));
+    const markdown_core_optional_string anchor = markdown_core_attribute_value_anchor(attributes);
     size_t bytes = anchor.value.length;
     for (size_t i = 0; i < markdown_core_attribute_value_class_count(attributes); i++) {
         markdown_core_string value;
@@ -1108,8 +1004,7 @@ static int pc_reference_payload_visit(const markdown_core_node *node, ts_ast_ran
     markdown_core_node_kind kind = markdown_core_node_get_kind(node);
     (void)range;
     total->bytes += pc_attribute_bytes(markdown_core_node_attributes(node));
-    if (kind == MARKDOWN_CORE_KIND_LINK || kind == MARKDOWN_CORE_KIND_EMBEDDED ||
-        kind == MARKDOWN_CORE_KIND_REFERENCE) {
+    if (kind == MARKDOWN_CORE_KIND_LINK || kind == MARKDOWN_CORE_KIND_EMBED || kind == MARKDOWN_CORE_KIND_REFERENCE) {
         TS_OK(markdown_core_node_destination(node, &dest));
         TS_OK(markdown_core_node_title(node, &title));
         total->occurrences += dest.kind == MARKDOWN_CORE_DESTINATION_REFERENCE;
@@ -1274,7 +1169,7 @@ static int case_directive_long_label(pc_context *context) {
     const markdown_core_node *directive;
     const markdown_core_node *label;
     const markdown_core_node *label_child;
-    markdown_core_optional_string name;
+    markdown_core_string name;
     markdown_core_string literal;
     char *expected = NULL;
 
@@ -1293,7 +1188,7 @@ static int case_directive_long_label(pc_context *context) {
         return -1;
     }
     TS_OK(markdown_core_node_directive_properties(directive, &name));
-    if (!name.has_value || name.value.length != 4 || memcmp(name.value.data, "long", 4) != 0 ||
+    if (name.length != 4 || memcmp(name.data, "long", 4) != 0 ||
         markdown_core_node_attribute_record_count(directive) != 0) {
         fprintf(stderr, "directive name/attribute properties are wrong\n");
         return -1;
@@ -1326,7 +1221,7 @@ static int case_directive_long_label(pc_context *context) {
 
 static int case_directive_long_attributes(pc_context *context) {
     const markdown_core_node *directive;
-    markdown_core_optional_string name;
+    markdown_core_string name;
     markdown_core_string attribute_name;
     markdown_core_string attribute_value;
     char *value;
@@ -1343,7 +1238,7 @@ static int case_directive_long_attributes(pc_context *context) {
     }
     directive = pc_first_directive(context);
     TS_OK(markdown_core_node_directive_properties(directive, &name));
-    if (!name.has_value || name.value.length != 4 || memcmp(name.value.data, "long", 4) != 0 ||
+    if (name.length != 4 || memcmp(name.data, "long", 4) != 0 ||
         markdown_core_node_attribute_record_count(directive) != 1) {
         fprintf(stderr, "directive name/attribute properties are wrong\n");
         return -1;
@@ -1459,7 +1354,7 @@ static int case_formula_backslash_nested(pc_context *context) {
     return result;
 }
 
-/* A malformed task prefix may inspect only its candidate scalar, regardless
+/* A malformed task prefix may inspect only its candidate byte, regardless
  * of the bracket run or scalar run that follows. Size doubling checks exact
  * fallback and a constant output-node count for both kinds of adversary. */
 static int case_task_marker_runs(pc_context *unused) {
@@ -1474,9 +1369,10 @@ static int case_task_marker_runs(pc_context *unused) {
             if (result == 0) {
                 const markdown_core_node *item =
                     ts_child(ts_child(markdown_core_document_root(context.document), 0), 0);
-                markdown_core_optional_string marker;
-                TS_OK(markdown_core_node_list_item_marker(item, &marker));
-                if (marker.has_value || pc_expect_count(&context, MARKDOWN_CORE_KIND_LIST_ITEM, 1, "ListItem") != 0 ||
+                markdown_core_task_status status;
+                TS_OK(markdown_core_node_list_item_status(item, &status));
+                if (status != MARKDOWN_CORE_TASK_STATUS_NONE ||
+                    pc_expect_count(&context, MARKDOWN_CORE_KIND_LIST_ITEM, 1, "ListItem") != 0 ||
                     pc_expect_count(&context, MARKDOWN_CORE_KIND_TEXT, 1, "Text") != 0 ||
                     pc_expect_text(&context, context.input + 2, context.input_length - 3) != 0) {
                     result = -1;
@@ -1527,7 +1423,6 @@ static const pc_case_entry PC_CASES[] = {
     {"cross_reference_kinds", case_cross_reference_kinds},
     {"nested_block_quotes", case_nested_block_quotes},
     {"deep_list_line", case_deep_list_line},
-    {"deep_list_session", case_deep_list_session},
     {"deeply_nested_lists", case_deeply_nested_lists},
     {"empty_lines_in_deeply_nested_lists", case_empty_lines_in_deeply_nested_lists},
     {"empty_lines_in_deep_list_blockquote", case_empty_lines_in_deep_list_blockquote},
@@ -1547,8 +1442,6 @@ static const pc_case_entry PC_CASES[] = {
     {"comment_nested_item_blank_runs", case_comment_nested_item_blank_runs},
     {"tables", case_tables},
     {"reference_collisions", case_reference_collisions},
-    {"duplicate_definitions_edit", case_duplicate_definitions_edit},
-    {"shared_anchor_completions", case_shared_anchor_completions},
     {"reference_expansion_bound", case_reference_expansion_bound},
     {"dump_deep_nesting", case_dump_deep_nesting},
     {"dump_wide_siblings", case_dump_wide_siblings},

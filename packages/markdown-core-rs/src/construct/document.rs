@@ -1,0 +1,743 @@
+//! The document content type.
+//!
+//! **Document** represents the containers, such as block quotes, list items,
+//! or GFM footnotes, which structure the document and contain other sections.
+//!
+//! The constructs found in flow are:
+//!
+//! * [Block quote][crate::construct::block_quote]
+//! * [List item][crate::construct::list_item]
+//! * [GFM: Footnote definition][crate::construct::footnote_definition]
+
+use crate::construct::{
+    block_quote, definition_body, directive_container, flow, footnote_definition, frontmatter,
+    list_item,
+};
+use crate::event::{Content, Event, Kind, Link, Name};
+use crate::state::{Name as StateName, State};
+use crate::subtokenize::divide_events;
+use crate::tokenizer::{Container, ContainerState, Tokenizer};
+use crate::util::skip;
+
+/// Containers, in the order a new one is tried.
+const CONTAINERS: [Container; 5] = [
+    Container::BlockQuote,
+    Container::ListItem,
+    Container::FootnoteDefinition,
+    Container::Directive,
+    Container::DefinitionBody,
+];
+
+impl Container {
+    /// State that starts a new container of this kind.
+    fn start(self) -> StateName {
+        match self {
+            Container::BlockQuote => StateName::BlockQuote(block_quote::Step::Start),
+            Container::Directive => StateName::DirectiveContainer(directive_container::Step::Start),
+            Container::ListItem => StateName::ListItem(list_item::Step::Start),
+            Container::DefinitionBody => StateName::DefinitionBody(definition_body::Step::Start),
+            Container::FootnoteDefinition => {
+                StateName::FootnoteDefinition(footnote_definition::Step::Start)
+            }
+        }
+    }
+
+    /// State that continues an open container of this kind.
+    pub fn cont(self) -> StateName {
+        match self {
+            Container::BlockQuote => StateName::BlockQuote(block_quote::Step::ContStart),
+            Container::Directive => {
+                StateName::DirectiveContainer(directive_container::Step::ContStart)
+            }
+            Container::ListItem => StateName::ListItem(list_item::Step::ContStart),
+            Container::DefinitionBody => {
+                StateName::DefinitionBody(definition_body::Step::ContStart)
+            }
+            Container::FootnoteDefinition => {
+                StateName::FootnoteDefinition(footnote_definition::Step::ContStart)
+            }
+        }
+    }
+
+    /// Event name of a container of this kind.
+    fn name(self) -> Name {
+        match self {
+            Container::BlockQuote => Name::BlockQuote,
+            Container::Directive => Name::DirectiveContainer,
+            Container::ListItem => Name::ListItem,
+            Container::DefinitionBody => Name::DefinitionBody,
+            Container::FootnoteDefinition => Name::FootnoteDefinition,
+        }
+    }
+}
+
+/// Phases where we can exit containers.
+#[derive(Debug, PartialEq)]
+enum Phase {
+    /// After parsing a line of lazy flow which resulted in something that
+    /// exits containers before the line.
+    ///
+    /// ```markdown
+    ///   | * a
+    /// > | ```js
+    ///          ^
+    ///   | b
+    ///   | ```
+    /// ```
+    After,
+    /// When a new container replaces an existing container.
+    ///
+    /// ```markdown
+    ///   | * a
+    /// > | > b
+    ///     ^
+    /// ```
+    Prefix,
+    /// After everything.
+    ///
+    /// ```markdown
+    /// > | * a
+    ///        ^
+    /// ```
+    Eof,
+}
+
+/// Start of document.
+///
+/// A byte order mark is text, as the dialect parses text as written.
+///
+/// ```markdown
+/// > | a
+///     ^
+/// ```
+fn start(tokenizer: &mut Tokenizer) -> State {
+    tokenizer.document.child = Some(Box::new(Tokenizer::new(
+        tokenizer.point.clone(),
+        tokenizer.parse_state,
+    )));
+
+    State::Redo(StateName::Document(Step::BeforeFrontmatter))
+}
+
+/// At optional frontmatter.
+///
+/// ```markdown
+/// > | ---
+///     ^
+///   | title: Venus
+///   | ---
+/// ```
+fn before_frontmatter(tokenizer: &mut Tokenizer) -> State {
+    tokenizer.attempt(
+        State::Next(StateName::Document(Step::ContainerNewBefore)),
+        State::Next(StateName::Document(Step::ContainerNewBefore)),
+    );
+    State::Redo(StateName::Frontmatter(frontmatter::Step::Start))
+}
+
+/// At optional existing containers.
+//
+/// ```markdown
+///   | * a
+/// > | > b
+///     ^
+/// ```
+fn container_old_before(tokenizer: &mut Tokenizer) -> State {
+    // If there are more existing containers, check whether the next one continues.
+    if tokenizer.document.continued < tokenizer.document.stack.len() {
+        let container = &tokenizer.document.stack[tokenizer.document.continued];
+
+        let name = container.kind.cont();
+
+        tokenizer.attempt(
+            State::Next(StateName::Document(Step::ContainerOldAfter)),
+            State::Next(StateName::Document(Step::ContainerNewBefore)),
+        );
+
+        State::Redo(name)
+    }
+    // Otherwise, check new containers.
+    else {
+        State::Redo(StateName::Document(Step::ContainerNewBefore))
+    }
+}
+
+/// After continued existing container.
+//
+/// ```markdown
+///   | * a
+/// > |   b
+///       ^
+/// ```
+fn container_old_after(tokenizer: &mut Tokenizer) -> State {
+    tokenizer.document.continued += 1;
+    State::Redo(StateName::Document(Step::ContainerOldBefore))
+}
+
+/// At new containers.
+//
+/// ```markdown
+/// > | * a
+///     ^
+/// > | > b
+///     ^
+/// ```
+fn container_new_before(tokenizer: &mut Tokenizer) -> State {
+    // If we have completely continued, restore the flow’s past `interrupt`
+    // status, unless a new container already pierced the flow on this line:
+    // the flow then ends before it, as micromark closes it, and the new
+    // container interrupts nothing.
+    if tokenizer.document.continued == tokenizer.document.stack.len()
+        && !tokenizer.document.child.as_ref().unwrap().pierce
+    {
+        let child = tokenizer.document.child.as_ref().unwrap();
+
+        tokenizer.interrupt = child.interrupt;
+
+        // …and if we’re in a concrete construct, new containers can’t “pierce”
+        // into them.
+        if child.concrete {
+            return State::Redo(StateName::Document(Step::ContainersAfter));
+        }
+    }
+
+    // A closing fence of the deepest container that went on, a directive,
+    // ends it: the containers inside it that did not go on close first.
+    if let Some(index) = tokenizer.document.closer.take() {
+        if index + 1 == tokenizer.document.continued {
+            if tokenizer.document.continued != tokenizer.document.stack.len() {
+                exit_containers(tokenizer, &Phase::Prefix);
+            }
+            let size = tokenizer.document.stack[index].size;
+            tokenizer.attempt(
+                State::Next(StateName::Document(Step::CloserAfter)),
+                State::Next(StateName::Document(Step::ContainerNewBefore)),
+            );
+            return State::Redo(StateName::DirectiveContainer(
+                directive_container::Step::CloseStart { size },
+            ));
+        }
+    }
+
+    // Add a placeholder for a new container at the end of the stack, and
+    // swap it with the first existing container that did not continue.
+    let tail = tokenizer.document.stack.len();
+    tokenizer.document.stack.push(ContainerState {
+        kind: CONTAINERS[0],
+        blank_initial: false,
+        size: 0,
+        closed: false,
+    });
+    tokenizer
+        .document
+        .stack
+        .swap(tokenizer.document.continued, tail);
+    State::Redo(StateName::Document(Step::ContainerNew { index: 0 }))
+}
+
+/// After the closing fence of a directive (container), which ends after
+/// this line.
+///
+/// ```markdown
+///   | :::a
+/// > | :::
+///        ^
+/// ```
+fn closer_after(tokenizer: &mut Tokenizer) -> State {
+    let index = tokenizer.document.continued - 1;
+    tokenizer.document.stack[index].closed = true;
+    State::Redo(StateName::Document(Step::ContainersAfter))
+}
+
+/// At new container `index` of [`CONTAINERS`][], or a later one.
+//
+/// ```markdown
+/// > | * a
+///     ^
+/// ```
+fn container_new(tokenizer: &mut Tokenizer, index: usize) -> State {
+    if index == CONTAINERS.len() {
+        // It wasn’t a new container.
+        // Swap the placeholder (in the middle) with the existing one (at the
+        // end), and drop the placeholder.
+        tokenizer
+            .document
+            .stack
+            .swap_remove(tokenizer.document.continued);
+        State::Redo(StateName::Document(Step::ContainersAfter))
+    } else {
+        let kind = CONTAINERS[index];
+        tokenizer.document.stack[tokenizer.document.continued] = ContainerState {
+            kind,
+            blank_initial: false,
+            size: 0,
+            closed: false,
+        };
+        tokenizer.attempt(
+            State::Next(StateName::Document(Step::ContainerNewAfter)),
+            State::Next(StateName::Document(Step::ContainerNew { index: index + 1 })),
+        );
+        State::Redo(kind.start())
+    }
+}
+
+/// After new container.
+///
+/// ```markdown
+/// > | * a
+///       ^
+/// > | > b
+///       ^
+/// ```
+fn container_new_after(tokenizer: &mut Tokenizer) -> State {
+    // It was a new block quote, list item, or footnote definition.
+    // Swap the new container (in the middle) with the existing one (at the end).
+    // Take the new container.
+    let container = tokenizer
+        .document
+        .stack
+        .swap_remove(tokenizer.document.continued);
+
+    // If we did not continue all existing containers, and there is a new one,
+    // close the flow and those containers.
+    if tokenizer.document.continued != tokenizer.document.stack.len() {
+        exit_containers(tokenizer, &Phase::Prefix);
+    }
+
+    // We are “piercing” into the flow with a new container.
+    let child = tokenizer.document.child.as_mut().unwrap();
+    child.pierce = true;
+
+    tokenizer.document.stack.push(container);
+    tokenizer.document.continued += 1;
+    tokenizer.interrupt = false;
+    State::Redo(StateName::Document(Step::ContainerNewBefore))
+}
+
+/// After containers, at flow.
+//
+/// ```markdown
+/// > | * a
+///       ^
+/// > | > b
+///       ^
+/// ```
+fn containers_after(tokenizer: &mut Tokenizer) -> State {
+    let child = tokenizer.document.child.as_mut().unwrap();
+
+    child.lazy = tokenizer.document.continued != tokenizer.document.stack.len();
+    child.closing = tokenizer
+        .document
+        .stack
+        .iter()
+        .any(|container| container.closed);
+    // A lax line after flow that takes one (a paragraph, a callout header)
+    // is read as if it interrupts that flow.
+    if child.lazy && tokenizer.document.open {
+        child.interrupt = true;
+    }
+    child.define_skip(tokenizer.point.clone());
+
+    if tokenizer.current.is_none() {
+        State::Redo(StateName::Document(Step::FlowEnd))
+    } else {
+        let current = tokenizer.events.len();
+        let previous = tokenizer.document.data;
+        if let Some(previous) = previous {
+            tokenizer.events[previous].link.as_mut().unwrap().next = Some(current);
+        }
+        tokenizer.document.data = Some(current);
+        tokenizer.enter_link(
+            Name::Data,
+            Link {
+                previous,
+                next: None,
+                content: Content::Flow,
+            },
+        );
+        State::Redo(StateName::Document(Step::FlowInside))
+    }
+}
+
+/// In flow.
+//
+/// ```markdown
+/// > | * ab
+///       ^
+/// ```
+fn flow_inside(tokenizer: &mut Tokenizer) -> State {
+    match tokenizer.current {
+        None => {
+            tokenizer.exit(Name::Data);
+            State::Redo(StateName::Document(Step::FlowEnd))
+        }
+        // Note: EOL is part of data.
+        Some(b'\n') => {
+            tokenizer.consume();
+            tokenizer.exit(Name::Data);
+            State::Next(StateName::Document(Step::FlowEnd))
+        }
+        Some(_) => {
+            tokenizer.consume();
+            State::Next(StateName::Document(Step::FlowInside))
+        }
+    }
+}
+
+/// After flow (after eol or at eof).
+//
+/// ```markdown
+///   | * a
+/// > | > b
+///     ^  ^
+/// ```
+fn flow_end(tokenizer: &mut Tokenizer) -> State {
+    let child = tokenizer.document.child.as_mut().unwrap();
+    let state = tokenizer
+        .document
+        .state
+        .take()
+        .unwrap_or(State::Next(StateName::Flow(flow::Step::Start)));
+
+    tokenizer.document.exits.push(None);
+
+    // The containers of this line, which a lookahead continues: a lax line
+    // that does not continue a paragraph closes the ones that did not
+    // continue.
+    let count = if child.lazy {
+        tokenizer.document.continued
+    } else {
+        tokenizer.document.stack.len()
+    };
+    child.ahead.stack.clear();
+    child
+        .ahead
+        .stack
+        .extend_from_slice(&tokenizer.document.stack[..count]);
+
+    let mut state = child.push(
+        (child.point.index, child.point.vs),
+        (tokenizer.point.index, tokenizer.point.vs),
+        state,
+    );
+
+    // The last line: the flow ends with it, so what its constructs are is
+    // known before the line is taken as lazy or not.
+    if tokenizer.current.is_none() {
+        let mut result = child.flush(state, false);
+        child.definitions.append(&mut result.definitions);
+        state = State::Ok;
+    }
+
+    tokenizer.document.state = Some(state);
+
+    // If we’re in a lazy line, and the previous (lazy or not) line is something
+    // that can be lazy, and this line is that too, allow it.
+    //
+    // Accept:
+    //
+    // ```markdown
+    //   | * a
+    // > | b
+    //     ^
+    //   | ```
+    // ```
+    //
+    // Do not accept:
+    //
+    // ```markdown
+    //   | * # a
+    // > | b
+    //     ^
+    //   | ```
+    // ```
+    //
+    // Do not accept:
+    //
+    // ```markdown
+    //   | * a
+    // > | # b
+    //     ^
+    //   | ```
+    // ```
+    let mut document_lazy_continuation_current = false;
+    let mut stack_index = child.stack.len();
+    // A last line with prefixes and no flow after them is blank: it
+    // continues nothing. The end after a last line ending is no line.
+    let blank = tokenizer.current.is_none()
+        && tokenizer.point.column > 1
+        && tokenizer
+            .document
+            .data
+            .is_none_or(|data| tokenizer.events[data].point.line < tokenizer.point.line);
+    if blank {
+        stack_index = 0;
+    }
+
+    // Use two algo’s: one for when we’re suspended or in multiline things
+    // like definitions, another for when we fed the line ending and closed.
+    while !document_lazy_continuation_current && stack_index > 0 {
+        stack_index -= 1;
+        let name = &child.stack[stack_index];
+        // An identifier line waits for the line after, which it is content
+        // with when that line is lazy.
+        if matches!(
+            name,
+            Name::Content | Name::TableHead | Name::BlockIdentifierLine
+        ) {
+            document_lazy_continuation_current = true;
+        }
+    }
+
+    // …another because we parse each “rest” line as a paragraph, and we passed
+    // a EOL already.
+    if !blank && !document_lazy_continuation_current && !child.events.is_empty() {
+        let before = skip::opt_back(&child.events, child.events.len() - 1, &[Name::LineEnding]);
+        let name = &child.events[before].name;
+        // A callout header takes a lax line as the start of its body. An
+        // underline is a paragraph’s line, which a lax line continues, unless
+        // it underlines the paragraph before it: that is a heading, closed.
+        if name == &Name::Content
+            || name == &Name::Callout
+            || (name == &Name::HeadingSetextUnderline && !underlines(&child.events, before))
+        {
+            document_lazy_continuation_current = true;
+        }
+    }
+
+    // Reset “piercing”.
+    child.pierce = false;
+
+    if child.lazy && tokenizer.document.open && document_lazy_continuation_current {
+        tokenizer.document.continued = tokenizer.document.stack.len();
+    }
+
+    if tokenizer.document.continued != tokenizer.document.stack.len() {
+        // `Phase::After` doesn’t deal with flow: it only generates exits for
+        // containers.
+        exit_containers(tokenizer, &Phase::After);
+    }
+
+    if tokenizer.current.is_none() {
+        tokenizer.document.continued = 0;
+        exit_containers(tokenizer, &Phase::Eof);
+        resolve(tokenizer);
+        State::Ok
+    } else {
+        tokenizer.document.continued = 0;
+        tokenizer.document.closer = None;
+        tokenizer.document.open = document_lazy_continuation_current;
+        // Containers would only be interrupting if we’ve continued.
+        tokenizer.interrupt = false;
+        State::Redo(StateName::Document(Step::ContainerOldBefore))
+    }
+}
+
+/// Whether the setext underline that exits at `exit` follows content, which
+/// it makes a heading of.
+fn underlines(events: &[Event], exit: usize) -> bool {
+    let enter = skip::to_back(events, exit - 1, &[Name::HeadingSetextUnderline]);
+    enter > 0
+        && events[skip::opt_back(events, enter - 1, &[Name::LineEnding, Name::SpaceOrTab])].name
+            == Name::Content
+}
+
+/// Close containers (and flow if needed).
+fn exit_containers(tokenizer: &mut Tokenizer, phase: &Phase) {
+    let mut stack_close = tokenizer
+        .document
+        .stack
+        .split_off(tokenizer.document.continued);
+
+    let child = tokenizer.document.child.as_mut().unwrap();
+
+    // Flush if needed. Before a new container, the line after is no part of
+    // the flow, as a lazy line is not; at the end, the last line is what it
+    // was.
+    if *phase != Phase::After {
+        if *phase == Phase::Prefix {
+            child.lazy = true;
+        }
+        let state = tokenizer
+            .document
+            .state
+            .take()
+            .unwrap_or(State::Next(StateName::Flow(flow::Step::Start)));
+
+        child.flush(state, false);
+    }
+
+    if !stack_close.is_empty() {
+        let index = tokenizer.document.exits.len() - (if *phase == Phase::After { 2 } else { 1 });
+        let mut exits = Vec::with_capacity(stack_close.len());
+
+        while let Some(container) = stack_close.pop() {
+            let name = container.kind.name();
+
+            exits.push(Event {
+                kind: Kind::Exit,
+                name,
+                point: tokenizer.point.clone(),
+                link: None,
+            });
+
+            let mut stack_index = tokenizer.stack.len();
+            let mut found = false;
+
+            while stack_index > 0 {
+                stack_index -= 1;
+
+                if tokenizer.stack[stack_index] == name {
+                    tokenizer.stack.remove(stack_index);
+                    found = true;
+                    break;
+                }
+            }
+
+            debug_assert!(found, "expected to find container event to exit");
+        }
+
+        debug_assert!(
+            tokenizer.document.exits[index].is_none(),
+            "expected no exits yet"
+        );
+        tokenizer.document.exits[index] = Some(exits);
+    }
+
+    // After the flow of a line, the line's flow says whether it takes an
+    // interrupt: `>\na\n0)` keeps the paragraph `a` open to the `0)`.
+    if *phase != Phase::After {
+        child.interrupt = false;
+    }
+}
+
+// Inject everything together.
+pub fn resolve(tokenizer: &mut Tokenizer) {
+    let child = tokenizer.document.child.as_mut().unwrap();
+
+    // First, add the container exits into `child`.
+    let mut child_index = 0;
+    let mut line = 0;
+
+    while child_index < child.events.len() {
+        if child.events[child_index].kind == Kind::Exit
+            && matches!(
+                child.events[child_index].name,
+                Name::LineEnding | Name::BlankLineEnding
+            )
+        {
+            // Inject before `Enter:LineEnding`.
+            let mut insert_index = child_index - 1;
+            let mut point = &child.events[insert_index].point;
+
+            while child_index + 1 < child.events.len()
+                && child.events[child_index + 1].kind == Kind::Exit
+            {
+                child_index += 1;
+                point = &child.events[child_index].point;
+                // Inject after `Exit:*`.
+                insert_index = child_index + 1;
+            }
+
+            if line < tokenizer.document.exits.len() {
+                if let Some(mut exits) = tokenizer.document.exits[line].take() {
+                    let mut exit_index = 0;
+                    while exit_index < exits.len() {
+                        exits[exit_index].point = point.clone();
+                        exit_index += 1;
+                    }
+
+                    child.map.add(insert_index, 0, exits);
+                }
+            }
+
+            line += 1;
+        }
+
+        child_index += 1;
+    }
+
+    child.map.consume(&mut child.events);
+
+    let mut flow_index = skip::to(&tokenizer.events, 0, &[Name::Data]);
+    while flow_index < tokenizer.events.len()
+        // To do: use `!is_some_and()` when that’s stable.
+        && (tokenizer.events[flow_index].link.is_none()
+            || tokenizer.events[flow_index].link.as_ref().unwrap().content != Content::Flow)
+    {
+        flow_index = skip::to(&tokenizer.events, flow_index + 1, &[Name::Data]);
+    }
+
+    // Now, add all child events into our parent document tokenizer.
+    divide_events(
+        &mut tokenizer.map,
+        &tokenizer.events,
+        flow_index,
+        &mut child.events,
+        (0, 0),
+    );
+
+    // Replace the flow data with actual events.
+    tokenizer.map.consume(&mut tokenizer.events);
+
+    // Now, add some final container exits due to the EOF.
+    // We can’t inject them into the child earlier, as they are “outside” its
+    // linked data.
+    if line < tokenizer.document.exits.len() {
+        if let Some(mut exits) = tokenizer.document.exits[line].take() {
+            let mut exit_index = 0;
+            while exit_index < exits.len() {
+                exits[exit_index].point = tokenizer.point.clone();
+                exit_index += 1;
+            }
+
+            tokenizer.events.append(&mut exits);
+        }
+    }
+
+    // Add the resolvers from child.
+    tokenizer
+        .resolvers
+        .append(&mut child.resolvers.split_off(0));
+
+    tokenizer.definitions.append(&mut child.definitions);
+}
+
+/// Steps of this construct.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Step {
+    Start,
+    BeforeFrontmatter,
+    ContainerOldBefore,
+    ContainerOldAfter,
+    ContainerNewBefore,
+    ContainerNew { index: usize },
+    ContainerNewAfter,
+    CloserAfter,
+    ContainersAfter,
+    FlowEnd,
+    FlowInside,
+}
+
+impl From<Step> for StateName {
+    fn from(step: Step) -> StateName {
+        StateName::Document(step)
+    }
+}
+
+/// Run a step.
+pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
+    match step {
+        Step::Start => start(tokenizer),
+        Step::BeforeFrontmatter => before_frontmatter(tokenizer),
+        Step::ContainerOldBefore => container_old_before(tokenizer),
+        Step::ContainerOldAfter => container_old_after(tokenizer),
+        Step::ContainerNewBefore => container_new_before(tokenizer),
+        Step::ContainerNew { index } => container_new(tokenizer, index),
+        Step::ContainerNewAfter => container_new_after(tokenizer),
+        Step::CloserAfter => closer_after(tokenizer),
+        Step::ContainersAfter => containers_after(tokenizer),
+        Step::FlowEnd => flow_end(tokenizer),
+        Step::FlowInside => flow_inside(tokenizer),
+    }
+}

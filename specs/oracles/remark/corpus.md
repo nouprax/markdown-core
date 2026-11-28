@@ -170,7 +170,7 @@ An image reference resolves to an image.
 .
 Document scope=1:1..3:13 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..1:11 anchor=null attributes={} children=1
-    └── Embedded scope=1:1..1:11 anchor=null attributes={} dest=url("/p") title="P" dimensions=null children=1
+    └── Embed scope=1:1..1:11 anchor=null attributes={} dest=url("/p") title="P" dimensions=null children=1
         └── Text scope=1:3..1:5 anchor=null attributes={} literal="alt" children=0
 ````````````````````````````````
 
@@ -354,15 +354,15 @@ values, including the space that denotes an incomplete task.
    - [x] done
 .
 Document scope=1:1..3:13 anchor=null attributes={} children=1
-└── List scope=1:1..3:13 anchor=null attributes={} flavor=ordered start=1 variant=decimal delimiter=parenthesis(closed=false) tight=true children=1
-    └── ListItem scope=1:1..3:13 anchor=null attributes={} marker=null children=2
+└── List scope=1:1..3:13 anchor=null attributes={} flavor=ordered start=1 delimiter=parenthesis tight=true children=1
+    └── ListItem scope=1:1..3:13 anchor=null attributes={} status=null children=2
         ├── Paragraph scope=1:4..1:8 anchor=null attributes={} children=1
         │   └── Text scope=1:4..1:8 anchor=null attributes={} literal="outer" children=0
-        └── List scope=2:4..3:13 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=2
-            ├── ListItem scope=2:4..2:13 anchor=null attributes={} marker=" " children=1
+        └── List scope=2:4..3:13 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=2
+            ├── ListItem scope=2:4..2:13 anchor=null attributes={} status=open children=1
             │   └── Paragraph scope=2:10..2:13 anchor=null attributes={} children=1
             │       └── Text scope=2:10..2:13 anchor=null attributes={} literal="open" children=0
-            └── ListItem scope=3:4..3:13 anchor=null attributes={} marker="x" children=1
+            └── ListItem scope=3:4..3:13 anchor=null attributes={} status=done children=1
                 └── Paragraph scope=3:10..3:13 anchor=null attributes={} children=1
                     └── Text scope=3:10..3:13 anchor=null attributes={} literal="done" children=0
 ````````````````````````````````
@@ -432,14 +432,26 @@ afte
 Document scope=1:1..5:8 anchor=null attributes={} children=2
 ├── Paragraph scope=1:1..1:4 anchor=null attributes={} children=1
 │   └── Text scope=1:1..1:4 anchor=null attributes={} literal="afte" children=0
-└── List scope=2:1..5:8 anchor=null attributes={} flavor=ordered start=1 variant=decimal delimiter=parenthesis(closed=false) tight=false children=1
-    └── ListItem scope=2:1..5:8 anchor=null attributes={} marker=null children=2
+└── List scope=2:1..5:8 anchor=null attributes={} flavor=ordered start=1 delimiter=parenthesis tight=false children=1
+    └── ListItem scope=2:1..5:8 anchor=null attributes={} status=null children=2
         ├── Paragraph scope=2:4..2:8 anchor=null attributes={} children=1
         │   └── Text scope=2:4..2:8 anchor=null attributes={} literal="outer" children=0
-        └── List scope=4:4..5:8 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
-            └── ListItem scope=4:4..5:8 anchor=null attributes={} marker=" " children=1
+        └── List scope=4:4..5:8 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=1
+            └── ListItem scope=4:4..5:8 anchor=null attributes={} status=open children=1
                 └── Paragraph scope=4:10..5:8 anchor=null attributes={} children=3
                     ├── Text scope=4:10..4:13 anchor=null attributes={} literal="open" children=0
                     ├── SoftBreak scope=4:14..5:0 anchor=null attributes={} children=0
                     └── Text scope=5:1..5:8 anchor=null attributes={} literal="| expr |" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+a
+> -
+.
+Document scope=1:1..2:3 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:1 anchor=null attributes={} children=1
+│   └── Text scope=1:1..1:1 anchor=null attributes={} literal="a" children=0
+└── Callout scope=2:1..2:3 anchor=null attributes={} variant=null collapsed=null children=1
+    └── List scope=2:3..2:3 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=1
+        └── ListItem scope=2:3..2:3 anchor=null attributes={} status=null children=0
 ````````````````````````````````

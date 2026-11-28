@@ -31,7 +31,6 @@
 #include "markdown-core-elements.h"
 #include "document.h"
 #include "../../elements/attributes.h"
-#include "sink.h"
 #include "block_identifier.h"
 #include "link.h"
 #include "callout.h"
@@ -39,13 +38,11 @@
 #include "comment.h"
 #include "cross_link.h"
 #include "definition_list.h"
-#include "embedded.h"
+#include "embed.h"
 #include "footnote.h"
-#include "heading_state.h"
 #include "heading.h"
 #include "list.h"
 #include "properties.h"
-#include "specimen.h"
 #include "text.h"
 #include "escape.h"
 
@@ -245,7 +242,7 @@ FACADE_ANSWER(markdown_core_string, facade_literal, markdown_core_node_literal)
 FACADE_ANSWER(markdown_core_destination, facade_destination, markdown_core_node_destination)
 FACADE_ANSWER(markdown_core_optional_string, facade_title, markdown_core_node_title)
 FACADE_ANSWER(markdown_core_optional_string, facade_cross_label, markdown_core_node_cross_label)
-FACADE_ANSWER(markdown_core_optional_string, facade_list_item_marker, markdown_core_node_list_item_marker)
+FACADE_ANSWER(markdown_core_task_status, facade_list_item_status, markdown_core_node_list_item_status)
 FACADE_ANSWER(markdown_core_optional_string, facade_footnote_label, markdown_core_footnote_label)
 FACADE_ANSWER(markdown_core_referent, facade_referent, markdown_core_citation_referent)
 FACADE_ANSWER(int32_t, facade_heading_level, markdown_core_node_heading_level)
@@ -285,12 +282,6 @@ static markdown_core_string facade_class_at(const markdown_core_node *node, size
 static const markdown_core_node *facade_footnote_at(const markdown_core_document *document, size_t index) {
     const markdown_core_node *node;
     EXPECT_OK(markdown_core_document_footnote_at(document, index, &node));
-    return node;
-}
-
-static const markdown_core_node *facade_specimen_at(const markdown_core_document *document, size_t index) {
-    const markdown_core_node *node;
-    EXPECT_OK(markdown_core_document_specimen_at(document, index, &node));
     return node;
 }
 
@@ -524,8 +515,6 @@ static size_t payload_releases;
 static int payload_counting;
 static int payload_fill_fresh;
 static int strbuf_refuse_next;
-static void *marker_to_free;
-static int marker_free_count;
 
 /* Counts calls, for the tests that assert a speculative probe allocated
  * nothing it would throw away. */
@@ -698,10 +687,6 @@ void *markdown_core_realloc(void *pointer, size_t size) {
 }
 
 void markdown_core_free(void *pointer) {
-    if (pointer != NULL && pointer == marker_to_free) {
-        marker_free_count++;
-        marker_to_free = NULL;
-    }
     if (properties_counting) {
         if (pointer) {
             properties_allocation *allocation = (properties_allocation *)pointer - 1;
@@ -785,11 +770,11 @@ static const markdown_core_node_type node_types[] = {
     MARKDOWN_CORE_NODE_THEMATIC_BREAK, MARKDOWN_CORE_NODE_TEXT,       MARKDOWN_CORE_NODE_SOFT_BREAK,
     MARKDOWN_CORE_NODE_LINE_BREAK,     MARKDOWN_CORE_NODE_CODE,       MARKDOWN_CORE_NODE_HTML,
     MARKDOWN_CORE_NODE_COMMENT,        MARKDOWN_CORE_NODE_EMPHASIS,   MARKDOWN_CORE_NODE_STRONG,
-    MARKDOWN_CORE_NODE_LINK,           MARKDOWN_CORE_NODE_EMBEDDED};
+    MARKDOWN_CORE_NODE_LINK,           MARKDOWN_CORE_NODE_EMBED};
 static const char *const node_type_names[] = {
     "document",  "callout", "list",           "list_item", "code_block", "html_block", "comment_block",
     "paragraph", "heading", "thematic_break", "text",      "soft_break", "line_break", "code",
-    "html",      "comment", "emphasis",       "strong",    "link",       "embedded"};
+    "html",      "comment", "emphasis",       "strong",    "link",       "embed"};
 static const int num_node_types = sizeof(node_types) / sizeof(*node_types);
 
 static void test_md_paragraph_text(test_batch_runner *runner, const char *markdown, const char *expected_text,
@@ -819,16 +804,16 @@ static void node_type_values(test_batch_runner *runner) {
         MARKDOWN_CORE_NODE_TABLE_CELL,   MARKDOWN_CORE_NODE_FORMULA_BLOCK, MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK,
         MARKDOWN_CORE_NODE_COMMENT_BLOCK};
     static const markdown_core_node_type inline_types[] = {
-        MARKDOWN_CORE_NODE_TEXT,           MARKDOWN_CORE_NODE_SOFT_BREAK,
-        MARKDOWN_CORE_NODE_LINE_BREAK,     MARKDOWN_CORE_NODE_CODE,
-        MARKDOWN_CORE_NODE_HTML,           MARKDOWN_CORE_NODE_EMPHASIS,
-        MARKDOWN_CORE_NODE_STRONG,         MARKDOWN_CORE_NODE_LINK,
-        MARKDOWN_CORE_NODE_EMBEDDED,       MARKDOWN_CORE_NODE_CITE,
-        MARKDOWN_CORE_NODE_STRIKETHROUGH,  MARKDOWN_CORE_NODE_FORMULA,
-        MARKDOWN_CORE_NODE_DIRECTIVE,      MARKDOWN_CORE_NODE_DIRECTIVE_LABEL,
-        MARKDOWN_CORE_NODE_COMMENT,        MARKDOWN_CORE_NODE_CITATION,
-        MARKDOWN_CORE_NODE_CROSS_LINK,     MARKDOWN_CORE_NODE_MARK,
-        MARKDOWN_CORE_NODE_CROSS_EMBEDDED, MARKDOWN_CORE_NODE_INSERTION};
+        MARKDOWN_CORE_NODE_TEXT,          MARKDOWN_CORE_NODE_SOFT_BREAK,
+        MARKDOWN_CORE_NODE_LINE_BREAK,    MARKDOWN_CORE_NODE_CODE,
+        MARKDOWN_CORE_NODE_HTML,          MARKDOWN_CORE_NODE_EMPHASIS,
+        MARKDOWN_CORE_NODE_STRONG,        MARKDOWN_CORE_NODE_LINK,
+        MARKDOWN_CORE_NODE_EMBED,         MARKDOWN_CORE_NODE_CITE,
+        MARKDOWN_CORE_NODE_STRIKETHROUGH, MARKDOWN_CORE_NODE_FORMULA,
+        MARKDOWN_CORE_NODE_DIRECTIVE,     MARKDOWN_CORE_NODE_DIRECTIVE_LABEL,
+        MARKDOWN_CORE_NODE_COMMENT,       MARKDOWN_CORE_NODE_CITATION,
+        MARKDOWN_CORE_NODE_CROSS_LINK,    MARKDOWN_CORE_NODE_MARK,
+        MARKDOWN_CORE_NODE_CROSS_EMBED,   MARKDOWN_CORE_NODE_INSERTION};
 
     for (size_t i = 0; i < sizeof(block_types) / sizeof(*block_types); ++i) {
         INT_EQ(runner, block_types[i] & MARKDOWN_CORE_NODE_TYPE_MASK, MARKDOWN_CORE_NODE_TYPE_BLOCK,
@@ -894,7 +879,6 @@ static void accessors(test_batch_runner *runner) {
     markdown_core_node *doc = markdown_core_parse_document(markdown, sizeof(markdown) - 1);
     markdown_core_list_flavor flavor;
     markdown_core_optional_i64 start;
-    markdown_core_ordered_list_variant variant;
     markdown_core_ordered_list_delimiter delimiter;
     bool tight = false;
     markdown_core_optional_string info, language;
@@ -905,14 +889,14 @@ static void accessors(test_batch_runner *runner) {
     OK(runner, facade_heading_level(heading) == 2, "heading level");
 
     markdown_core_node *bullet_list = child_at(doc, 1);
-    EXPECT_OK(markdown_core_node_list_properties(bullet_list, &flavor, &start, &variant, &delimiter, &tight));
+    EXPECT_OK(markdown_core_node_list_properties(bullet_list, &flavor, &start, &delimiter, &tight));
     OK(runner, flavor == MARKDOWN_CORE_LIST_FLAVOR_BULLET && !start.has_value && tight, "tight bullet list");
 
     markdown_core_node *ordered_list = child_at(doc, 2);
-    EXPECT_OK(markdown_core_node_list_properties(ordered_list, &flavor, &start, &variant, &delimiter, &tight));
+    EXPECT_OK(markdown_core_node_list_properties(ordered_list, &flavor, &start, &delimiter, &tight));
     OK(runner,
        flavor == MARKDOWN_CORE_LIST_FLAVOR_ORDERED && start.has_value && start.value == 2 &&
-           delimiter.kind == MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD && !tight,
+           delimiter == MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD && !tight,
        "loose ordered list from 2 with a period");
 
     markdown_core_node *fenced_code = child_at(doc, 3);
@@ -1040,13 +1024,9 @@ static void attribute_eq(test_batch_runner *runner, markdown_core_node *node, si
        message);
 }
 
-/* The anchor `node` shows; none when it could not be read. */
+/* The anchor `node` shows. */
 static markdown_core_optional_string anchor_of(const markdown_core_node *node) {
-    markdown_core_optional_string anchor = {0};
-    if (markdown_core_node_anchor(node, &anchor) != MARKDOWN_CORE_OK) {
-        return (markdown_core_optional_string){0};
-    }
-    return anchor;
+    return markdown_core_node_anchor(node);
 }
 static void directive_element_accessors(test_batch_runner *runner) {
     /* `:-a[]` was the input here until Step 7, and it is not a directive: a
@@ -1262,7 +1242,7 @@ void hierarchy(test_batch_runner *runner) {
                                   MARKDOWN_CORE_NODE_EMPHASIS,
                                   MARKDOWN_CORE_NODE_STRONG,
                                   MARKDOWN_CORE_NODE_LINK,
-                                  MARKDOWN_CORE_NODE_EMBEDDED,
+                                  MARKDOWN_CORE_NODE_EMBED,
                                   0};
 
     test_content(runner, MARKDOWN_CORE_NODE_DOCUMENT, top_level_blocks);
@@ -1284,7 +1264,7 @@ void hierarchy(test_batch_runner *runner) {
     test_content(runner, MARKDOWN_CORE_NODE_EMPHASIS, all_inlines);
     test_content(runner, MARKDOWN_CORE_NODE_STRONG, all_inlines);
     test_content(runner, MARKDOWN_CORE_NODE_LINK, all_inlines);
-    test_content(runner, MARKDOWN_CORE_NODE_EMBEDDED, all_inlines);
+    test_content(runner, MARKDOWN_CORE_NODE_EMBED, all_inlines);
 }
 
 static void test_content(test_batch_runner *runner, markdown_core_node_type type, unsigned int *allowed_content) {
@@ -2172,7 +2152,7 @@ static bool sweep_finish_kind_sets(markdown_core_dialect_builder *builder, void 
                 /* Exactly one namespace must claim the kind. This is checkable
                  * only because the declaration keeps the KIND: block and
                  * inline values collide once masked -- masked 12 is a TableRow
-                 * and an Embedded alike -- so a bit set reconstructed from a
+                 * and an Embed alike -- so a bit set reconstructed from a
                  * stored mask would agree with whichever namespace the reader
                  * already assumed, and a Formula written where a block kind
                  * belongs would pass. */
@@ -2221,7 +2201,7 @@ static void block_gate_admits_every_opener(test_batch_runner *runner) {
     const char *first_bad_element = sweep.first_bad_element;
     markdown_core_node_free(probe_doc);
 
-    OK(runner, gated >= 12, "every scan and interrupt hook, and the gated openers, declare a gate: gated=%zu", gated);
+    OK(runner, gated >= 11, "every scan and interrupt hook, and the gated openers, declare a gate: gated=%zu", gated);
     OK(runner, violations == 0, "no gated opener claims a line its gate excludes");
     if (violations) {
         fprintf(stderr, "element %s opened a block on byte 0x%02x, which its gate excludes\n",
@@ -2330,87 +2310,6 @@ static void strbuf_growth_preserves_termination(test_batch_runner *runner) {
     }
 }
 
-/* A literal an edit leaves pending (node.h, A LITERAL, LAZY) joins on its
- * first read; a read whose join is refused storage writes none of its
- * answers, and the next read joins it. */
-static void lazy_literal_failure_writes_nothing(test_batch_runner *runner) {
-    static char text[400 * 9 + 16];
-    size_t size = (size_t)sprintf(text, "```\n");
-    for (int i = 0; i < 400; i++) {
-        size += (size_t)sprintf(text + size, "line %03d\n", i);
-    }
-    markdown_core_session *session;
-    const markdown_core_document *document;
-    EXPECT_OK(markdown_core_session_new((const uint8_t *)text, size, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session));
-    EXPECT_OK(markdown_core_session_flush(session, &document));
-    const markdown_core_position at = {200, 8}, end = {200, 9};
-    EXPECT_OK(markdown_core_session_edit(session, at, end, (const uint8_t *)"x", 1, &document));
-    const markdown_core_node *code = markdown_core_node_children(markdown_core_document_root(document)).items[0];
-    const markdown_core_string kept = {(const uint8_t *)"kept", 4};
-    const markdown_core_optional_string none = {true, kept};
-    markdown_core_optional_string info = none, language = none;
-    markdown_core_string literal = kept;
-    bool fenced = false, closed = false;
-    strbuf_refuse_next = 1;
-    INT_EQ(runner, markdown_core_node_code_block_properties(code, &info, &language, &literal, &fenced, &closed),
-           MARKDOWN_CORE_ALLOCATION_FAILED, "a refused join of a pending literal fails the read");
-    OK(runner,
-       literal.data == kept.data && info.value.data == kept.data && language.value.data == kept.data && !fenced &&
-           !closed,
-       "a failed read writes none of its answers");
-    EXPECT_OK(markdown_core_node_code_block_properties(code, &info, &language, &literal, &fenced, &closed));
-    OK(runner, literal.length == 400 * 9 && !memcmp(literal.data + 198 * 9, "line 19x\n", 9),
-       "the next read joins the literal as the edited text has it");
-    markdown_core_session_close(session);
-}
-
-/* An empty source anchors at its position (4.4): an indented code block
- * whose one line holds only a stray continuation byte has none of it, and
- * the fence an edit opens over its position continues it. */
-static void void_source_continues(test_batch_runner *runner) {
-    static const char text[] = "```\t`\n```\n```\n    \xa7\n`";
-    markdown_core_session *session;
-    const markdown_core_document *document;
-    EXPECT_OK(
-        markdown_core_session_new((const uint8_t *)text, sizeof(text) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session));
-    EXPECT_OK(markdown_core_session_flush(session, &document));
-    markdown_core_nodes children = markdown_core_node_children(markdown_core_document_root(document));
-    const markdown_core_extent empty =
-        children.count == 4 ? markdown_core_node_extent(children.items[2]) : (markdown_core_extent){0, 1};
-    const uint64_t id = children.count == 4 ? markdown_core_node_id(children.items[2]) : 0;
-    OK(runner, empty.span == 0, "the stray byte's code block has an empty source");
-    const markdown_core_position at = {1, 4}, end = {1, 6};
-    EXPECT_OK(markdown_core_session_edit(session, at, end, NULL, 0, &document));
-    children = markdown_core_node_children(markdown_core_document_root(document));
-    OK(runner, children.count == 2 && markdown_core_node_id(children.items[1]) == id,
-       "the fence over the empty source's position continues it");
-    markdown_core_session_close(session);
-}
-
-/* A column names a place the walk over a line's scalars stops at
- * (ast.c, markdown_core_column_offset): the line's first byte is one,
- * whatever it is, a stray continuation byte too, so an edit there inserts
- * before it, in either unit; a column inside a scalar names none. */
-static void stray_byte_columns(test_batch_runner *runner) {
-    static const char text[] = "\x80x\n\xc3\xa9";
-    const markdown_core_text_unit units[] = {MARKDOWN_CORE_TEXT_UNIT_UTF8, MARKDOWN_CORE_TEXT_UNIT_UTF16};
-    for (size_t i = 0; i < sizeof(units) / sizeof(units[0]); i++) {
-        markdown_core_session *session;
-        const markdown_core_document *document;
-        EXPECT_OK(markdown_core_session_new((const uint8_t *)text, sizeof(text) - 1, units[i], &session));
-        EXPECT_OK(markdown_core_session_flush(session, &document));
-        const markdown_core_position first = {1, 1};
-        INT_EQ(runner, markdown_core_session_edit(session, first, first, (const uint8_t *)"a", 1, &document),
-               MARKDOWN_CORE_OK, "an edit at a line's stray first byte inserts before it, unit %zu", i);
-        if (units[i] == MARKDOWN_CORE_TEXT_UNIT_UTF8) {
-            const markdown_core_position inside = {2, 2};
-            INT_EQ(runner, markdown_core_session_edit(session, inside, inside, (const uint8_t *)"a", 1, &document),
-                   MARKDOWN_CORE_OUT_OF_BOUNDS, "a byte column inside a scalar names no place");
-        }
-        markdown_core_session_close(session);
-    }
-}
-
 static void strbuf_failure_is_a_transaction(test_batch_runner *runner) {
     markdown_core_strbuf buf;
 
@@ -2496,7 +2395,7 @@ static void source_pos(test_batch_runner *runner) {
     test_facade_dump(
         runner, markdown,
         "Document scope=1:1..10:20 anchor=null attributes={} children=3\n"
-        "├── Heading scope=1:1..1:13 anchor=\"hi-there\" attributes={} level=1 children=3\n"
+        "├── Heading scope=1:1..1:13 anchor=null attributes={} level=1 children=3\n"
         "│   ├── Text scope=1:3..1:5 anchor=null attributes={} literal=\"Hi \" children=0\n"
         "│   ├── Emphasis scope=1:6..1:12 anchor=null attributes={} children=1\n"
         "│   │   └── Text scope=1:7..1:11 anchor=null attributes={} literal=\"there\" children=0\n"
@@ -2516,18 +2415,18 @@ static void source_pos(test_batch_runner *runner) {
         "│   │   └── Text scope=4:16..4:19 anchor=null attributes={} literal=\"okay\" children=0\n"
         "│   └── Text scope=4:42..4:42 anchor=null attributes={} literal=\".\" children=0\n"
         "└── Callout scope=6:1..10:20 anchor=null attributes={} variant=null collapsed=null children=1\n"
-        "    └── List scope=6:3..10:20 anchor=null attributes={} flavor=ordered start=1 variant=decimal "
+        "    └── List scope=6:3..10:20 anchor=null attributes={} flavor=ordered start=1 "
         "delimiter=period tight=false children=2\n"
-        "        ├── ListItem scope=6:3..8:1 anchor=null attributes={} marker=null children=1\n"
+        "        ├── ListItem scope=6:3..8:1 anchor=null attributes={} status=null children=1\n"
         "        │   └── Paragraph scope=6:6..7:0,7:6..7:10 anchor=null attributes={} children=3\n"
         "        │       ├── Text scope=6:6..6:10 anchor=null attributes={} literal=\"Okay.\" children=0\n"
         "        │       ├── SoftBreak scope=6:11..7:0 anchor=null attributes={} children=0\n"
         "        │       └── Text scope=7:6..7:10 anchor=null attributes={} literal=\"Sure.\" children=0\n"
-        "        └── ListItem scope=9:3..10:20 anchor=null attributes={} marker=null children=1\n"
+        "        └── ListItem scope=9:3..10:20 anchor=null attributes={} status=null children=1\n"
         "            └── Paragraph scope=9:6..10:0,10:6..10:20 anchor=null attributes={} children=3\n"
         "                ├── Text scope=9:6..9:15 anchor=null attributes={} literal=\"Yes, okay.\" children=0\n"
         "                ├── SoftBreak scope=9:16..10:0 anchor=null attributes={} children=0\n"
-        "                └── Embedded scope=10:6..10:20 anchor=null attributes={} dest=url(\"hi\") title=\"yes\" "
+        "                └── Embed scope=10:6..10:20 anchor=null attributes={} dest=url(\"hi\") title=\"yes\" "
         "dimensions=null "
         "children=1\n"
         "                    └── Text scope=10:8..10:9 anchor=null attributes={} literal=\"ok\" children=0\n",
@@ -2658,7 +2557,7 @@ static void link_resource_lifecycle(test_batch_runner *runner) {
      * another arm's bytes as a resource pointer. */
     markdown_core_node *paragraph = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
     markdown_core_node *link = markdown_core_node_new(MARKDOWN_CORE_NODE_LINK);
-    markdown_core_node *image = markdown_core_node_new(MARKDOWN_CORE_NODE_EMBEDDED);
+    markdown_core_node *image = markdown_core_node_new(MARKDOWN_CORE_NODE_EMBED);
     markdown_core_node *converted = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
 
     OK(runner, append_child(paragraph, link), "hand-built link joins a paragraph");
@@ -3025,37 +2924,21 @@ static const char *footnote_label_of(const markdown_core_node *note) {
     return note->as.footnote->label.has_value ? (const char *)note->as.footnote->label.value.data : NULL;
 }
 
-/* A REFERENCE OCCURRENCE A HEADING DECLARES names the heading's label, and
- * the document resolves the label to the heading; the heading owns its
- * computed anchor. */
-static void heading_reference_resolves_to_the_heading(test_batch_runner *runner) {
-    const char *source = "# Straße and more\n\n[STRASSE AND MORE] and [straße and more]\n\n# Untitled [x]\n";
+/* A BRACKET NAMING A HEADING'S TEXT is literal text: a heading declares no
+ * reference label. */
+static void heading_text_names_no_reference(test_batch_runner *runner) {
+    const char *source = "# Straße and more\n\n[STRASSE AND MORE] and [straße and more]\n";
     markdown_core_document *document = facade_parse((const uint8_t *)source, strlen(source));
-    OK(runner, document != NULL, "heading reference document parses");
+    OK(runner, document != NULL, "heading document parses");
     if (!document) {
         return;
     }
     markdown_core_node *heading = first_of_kind(document->root, MARKDOWN_CORE_NODE_HEADING);
     markdown_core_node *paragraph = child_at(document->root, 1);
-    markdown_core_node *links[] = {child_at(paragraph, 0), last_child_of(paragraph)};
-    for (int i = 0; i < 2; i++) {
-        markdown_core_destination destination = facade_destination(links[i]);
-        OK(runner,
-           destination.kind == MARKDOWN_CORE_DESTINATION_REFERENCE && destination.label.length == 16 &&
-               !memcmp(destination.label.data, "strasse and more", 16),
-           "occurrence %d names the case-folded label", i);
-        OK(runner, markdown_core_document_reference_for(document, destination.label) == heading,
-           "the label resolves to the heading");
-    }
-    const markdown_core_optional_string slug = anchor_of(heading);
-    OK(runner,
-       slug.has_value && slug.value.length == strlen("straße-and-more") &&
-           !memcmp(slug.value.data, "straße-and-more", slug.value.length),
-       "the anchor is the slug");
-    OK(runner, !heading->attributes.anchor.len && heading->as.heading->name.base.ptr == slug.value.data,
-       "the heading's anchor is its base, which it owns");
-    INT_EQ(runner, markdown_core_document_reference_label_count(document), 1,
-           "only the label a heading's text declares resolves");
+    OK(runner, paragraph->child_count == 1 && child_at(paragraph, 0)->kind == MARKDOWN_CORE_NODE_TEXT,
+       "the brackets stay text");
+    OK(runner, !anchor_of(heading).has_value, "a heading without `{#id}` has no anchor");
+    INT_EQ(runner, markdown_core_document_reference_label_count(document), 0, "no label resolves");
     markdown_core_document_free(document);
 }
 
@@ -3331,37 +3214,6 @@ static void unicode_classes_are_total(test_batch_runner *runner) {
        "an ASCII byte is alphanumeric exactly when it is a letter or digit, and an empty range is not");
 }
 
-/* AN ANCHOR IMAGES ONLY SCALARS. Bytes that are not a character, a lead cut
- * off by the end of the literal, every surrogate and every value past
- * U+10FFFF that four bytes can spell have no image, so an anchor is UTF-8
- * whatever its heading's bytes were. */
-static void anchor_images_only_scalars(test_batch_runner *runner) {
-    markdown_core_strbuf anchor = MARKDOWN_CORE_BUF_INIT();
-    int empty = 1;
-    for (int32_t scalar = 0xD800; scalar < 0xE000; scalar++) {
-        const uint8_t bytes[3] = {(uint8_t)(0xE0 | scalar >> 12), (uint8_t)(0x80 | ((scalar >> 6) & 0x3F)),
-                                  (uint8_t)(0x80 | (scalar & 0x3F))};
-        markdown_core_strbuf_clear(&anchor);
-        markdown_core_utf8proc_anchor(&anchor, bytes, 3);
-        empty &= anchor.size == 0;
-    }
-    OK(runner, empty, "no surrogate has an anchor image");
-    static const char *const others[] = {"\xF4\x90\x80\x80", "\xF7\xBF\xBF\xBF", "\xFF\xFF\xFF\xFF", "\x80",
-                                         "\xBF\xBF",         "\xE4\xB8",         "\xF0\x9F\x98"};
-    for (size_t i = 0; i < sizeof(others) / sizeof(*others); i++) {
-        markdown_core_strbuf_clear(&anchor);
-        markdown_core_utf8proc_anchor(&anchor, (const uint8_t *)others[i], (bufsize_t)strlen(others[i]));
-        INT_EQ(runner, (int)anchor.size, 0, "bytes %zu that are no scalar have no anchor image", i);
-    }
-    markdown_core_strbuf_clear(&anchor);
-    markdown_core_utf8proc_anchor(&anchor,
-                                  (const uint8_t *)"A\x80"
-                                                   "B\xE4",
-                                  4);
-    STR_EQ(runner, (const char *)anchor.ptr, "ab", "the characters around them keep theirs");
-    markdown_core_strbuf_free(&anchor);
-}
-
 /* WHITESPACE IS A SPACE, A TAB OR A LINE ENDING (docs/specs/dialect.md), and
  * no other byte: not vertical tab, form feed or another control, and no byte
  * of a multi-byte character, so no Unicode space. */
@@ -3409,9 +3261,9 @@ static void whitespace_is_space_tab_and_line_ending(test_batch_runner *runner) {
     }
 }
 
-/* Roster kinds for the roster's own tests: spaces past the engine's
- * ANCHOR, as a dialect numbers its elements' (dialect.h, `spaces`). */
-enum { ROSTER_TEST_KIND = MARKDOWN_CORE_ROSTER_ANCHOR + 1, ROSTER_TEST_KINDS = ROSTER_TEST_KIND + 3 };
+/* Roster kinds for the roster's own tests, numbered as a dialect numbers
+ * its elements' spaces (dialect.h, `spaces`). */
+enum { ROSTER_TEST_KIND = MARKDOWN_CORE_ROSTER_FIRST, ROSTER_TEST_KINDS = ROSTER_TEST_KIND + 4 };
 
 /* THE ROSTER'S RECORDS ARE CARVED FROM BLOCKS IT OWNS: a run of
  * declarations costs allocations logarithmic in its length -- the blocks, the
@@ -3466,8 +3318,7 @@ static markdown_core_key_entry key_of(const char *key) {
 
 static bool key_tree_before(const void *a, const void *b) { return markdown_core_key_before(a, b); }
 
-static const markdown_core_tree_ops key_tree_ops = {
-    sizeof(markdown_core_key_entry), NULL, key_tree_before, NULL, NULL, NULL};
+static const markdown_core_tree_ops key_tree_ops = {sizeof(markdown_core_key_entry), NULL, key_tree_before, NULL, NULL};
 
 /* The entry of `key`'s key in `tree`, a tree of keys, or NULL, and the rank
  * of that key into `*rank`. */
@@ -3610,7 +3461,7 @@ static void roster_kinds_and_starts(test_batch_runner *runner) {
     OK(runner, markdown_core_roster_declare(&roster, ROSTER_TEST_KIND, x, 1, 40), "a reference is declared");
     OK(runner, !markdown_core_roster_find(&roster, ROSTER_TEST_KIND + 1, x, 1, &failed),
        "a reference label is no footnote");
-    OK(runner, !markdown_core_roster_find(&roster, ROSTER_TEST_KIND + 2, x, 1, &failed), "nor a specimen");
+    OK(runner, !markdown_core_roster_find(&roster, ROSTER_TEST_KIND + 2, x, 1, &failed), "nor one of a third kind");
     const markdown_core_roster_record *record = markdown_core_roster_find(&roster, ROSTER_TEST_KIND, x, 1, &failed);
     OK(runner,
        record && !markdown_core_roster_starts_before(&roster, record, 40) &&
@@ -3678,8 +3529,7 @@ static size_t roster_model_withdrawn(const roster_model_key *key, uint32_t start
 }
 
 static void roster_rollback_matches_a_model(test_batch_runner *runner) {
-    /* The kinds: the engine's ANCHOR, filed under a measure, and three
-     * spaces after it. */
+    /* The kinds: four spaces. */
     enum { STEPS = 6000, KINDS = 4, SHARED = 23, MARKS = 16 };
     payload_probe_arm();
     markdown_core_roster roster;
@@ -3734,8 +3584,7 @@ static void roster_rollback_matches_a_model(test_batch_runner *runner) {
             record.withdraws = choice < 30 && key->count > 0;
             char text[16];
             roster_label_text(record.label, text, sizeof(text));
-            const markdown_core_roster_kind kind =
-                (markdown_core_roster_kind)(MARKDOWN_CORE_ROSTER_ANCHOR + record.kind);
+            const markdown_core_roster_kind kind = (markdown_core_roster_kind)(ROSTER_TEST_KIND + record.kind);
             agrees = record.withdraws ? markdown_core_roster_withdraw(&roster, kind, (const unsigned char *)text,
                                                                       (bufsize_t)strlen(text), record.start)
                                       : markdown_core_roster_declare(&roster, kind, (const unsigned char *)text,
@@ -3765,8 +3614,7 @@ static void roster_rollback_matches_a_model(test_batch_runner *runner) {
             if (!(compared & (1u << kind))) {
                 continue;
             }
-            const markdown_core_roster_kind compared_kind =
-                (markdown_core_roster_kind)(MARKDOWN_CORE_ROSTER_ANCHOR + kind);
+            const markdown_core_roster_kind compared_kind = (markdown_core_roster_kind)(ROSTER_TEST_KIND + kind);
             for (unsigned label = 0; label < fresh && agrees; label++) {
                 const roster_model_key *key = &keys[kind * (SHARED + STEPS) + label];
                 /* Only a label some step declared can answer; the rest are
@@ -3784,16 +3632,8 @@ static void roster_rollback_matches_a_model(test_batch_runner *runner) {
                 bool failed = false;
                 const markdown_core_roster_record *found = markdown_core_roster_find(
                     &roster, compared_kind, (const unsigned char *)text, (bufsize_t)strlen(text), &failed);
-                /* An anchor's key is filed under its measure (roster.c,
-                 * S_hash), any other's under its bytes. */
                 const markdown_core_key_index_slot *slot =
-                    !found ? NULL
-                    : found->key[0] == (unsigned char)MARKDOWN_CORE_ROSTER_ANCHOR
-                        ? markdown_core_key_index_find_hashed(&roster.index,
-                                                              markdown_core_key_index_hash(markdown_core_measure_of(
-                                                                  found->key, (size_t)found->key_len)),
-                                                              found->key, found->key_len)
-                        : markdown_core_key_index_find(&roster.index, found->key, found->key_len);
+                    found ? markdown_core_key_index_find(&roster.index, found->key, found->key_len) : NULL;
                 agrees =
                     !failed && (found != NULL) == (key->count > 0) &&
                     (!found || (found->start == earliest && !found->withdraws && slot && slot->extra == key->count));
@@ -3918,12 +3758,15 @@ static void node_payload_lifecycle(test_batch_runner *runner) {
     INT_EQ(runner, sizeof(markdown_core_node_data), sizeof(void *),
            "all payload arms share one pointer-sized node slot");
     static const markdown_core_node_type extra_types[] = {
-        MARKDOWN_CORE_NODE_METADATA,      MARKDOWN_CORE_NODE_INSERTION,       MARKDOWN_CORE_NODE_CROSS_EMBEDDED,
-        MARKDOWN_CORE_NODE_MARK,          MARKDOWN_CORE_NODE_CROSS_LINK,      MARKDOWN_CORE_NODE_CITE,
-        MARKDOWN_CORE_NODE_CITATION,      MARKDOWN_CORE_NODE_FOOTNOTE,        MARKDOWN_CORE_NODE_SPECIMEN,
-        MARKDOWN_CORE_NODE_TABLE,         MARKDOWN_CORE_NODE_TABLE_ROW,       MARKDOWN_CORE_NODE_TABLE_CELL,
-        MARKDOWN_CORE_NODE_STRIKETHROUGH, MARKDOWN_CORE_NODE_FORMULA,         MARKDOWN_CORE_NODE_FORMULA_BLOCK,
-        MARKDOWN_CORE_NODE_DIRECTIVE,     MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK, MARKDOWN_CORE_NODE_DIRECTIVE_LABEL,
+        MARKDOWN_CORE_NODE_METADATA,        MARKDOWN_CORE_NODE_INSERTION,
+        MARKDOWN_CORE_NODE_CROSS_EMBED,     MARKDOWN_CORE_NODE_MARK,
+        MARKDOWN_CORE_NODE_CROSS_LINK,      MARKDOWN_CORE_NODE_CITE,
+        MARKDOWN_CORE_NODE_CITATION,        MARKDOWN_CORE_NODE_FOOTNOTE,
+        MARKDOWN_CORE_NODE_TABLE,           MARKDOWN_CORE_NODE_TABLE_ROW,
+        MARKDOWN_CORE_NODE_TABLE_CELL,      MARKDOWN_CORE_NODE_STRIKETHROUGH,
+        MARKDOWN_CORE_NODE_FORMULA,         MARKDOWN_CORE_NODE_FORMULA_BLOCK,
+        MARKDOWN_CORE_NODE_DIRECTIVE,       MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK,
+        MARKDOWN_CORE_NODE_DIRECTIVE_LABEL,
     };
     size_t extra_count = sizeof(extra_types) / sizeof(*extra_types);
     for (size_t i = 0; i < (size_t)num_node_types + extra_count; i++) {
@@ -3968,7 +3811,7 @@ static void node_payload_lifecycle(test_batch_runner *runner) {
     INT_EQ(runner, markdown_core_node_set_kind(text, parent, MARKDOWN_CORE_NODE_TEXT), MARKDOWN_CORE_NODE_SET_KIND_OK,
            "setting the current kind preserves its data without allocation");
     INT_EQ(runner, payload_allocations + 1, payload_fail_at, "setting the current kind allocates nothing");
-    INT_EQ(runner, markdown_core_node_set_kind(text, parent, MARKDOWN_CORE_NODE_CROSS_EMBEDDED),
+    INT_EQ(runner, markdown_core_node_set_kind(text, parent, MARKDOWN_CORE_NODE_CROSS_EMBED),
            MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED, "conversion reports replacement allocation failure");
     OK(runner,
        text->kind == MARKDOWN_CORE_NODE_TEXT && text->as.literal == original_payload && child_at(parent, 0) == text,
@@ -4019,7 +3862,7 @@ static void node_payload_lifecycle(test_batch_runner *runner) {
     payload_fail_at = payload_allocations + 1;
     before = payload_live;
     OK(runner,
-       markdown_core_node_set_kind(cite, parent, MARKDOWN_CORE_NODE_CROSS_EMBEDDED) ==
+       markdown_core_node_set_kind(cite, parent, MARKDOWN_CORE_NODE_CROSS_EMBED) ==
                MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED &&
            child_at(cite, 0) == item && child_at(item->as.citation->prefix, 0) == prefix,
        "failed retyping preserves children and node-valued fields");
@@ -4052,25 +3895,25 @@ static void kind_conversion_reuses_cell_storage(test_batch_runner *runner) {
         OK(runner, node->as.data == cell_record && !node->node_data_allocation && !node->as.link->resource,
            "inline replacement reuses the original record address with new defaults");
         INT_EQ(runner, payload_allocations, attempts, "inline replacement makes no allocator call");
-        INT_EQ(runner, markdown_core_node_set_kind(node, parent, MARKDOWN_CORE_NODE_CROSS_EMBEDDED),
+        INT_EQ(runner, markdown_core_node_set_kind(node, parent, MARKDOWN_CORE_NODE_CROSS_EMBED),
                MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED, "external replacement can still fail atomically");
         OK(runner, node->kind == MARKDOWN_CORE_NODE_LINK && node->as.data == cell_record && child_at(parent, 0) == node,
            "failed external replacement retains the inline record and tree links");
 
         payload_fail_at = 0;
-        INT_EQ(runner, markdown_core_node_set_kind(node, parent, MARKDOWN_CORE_NODE_CROSS_EMBEDDED),
+        INT_EQ(runner, markdown_core_node_set_kind(node, parent, MARKDOWN_CORE_NODE_CROSS_EMBED),
                MARKDOWN_CORE_NODE_SET_KIND_OK, "a record exceeding capacity obtains external storage");
         void *external = node->node_data_allocation;
         OK(runner, external && node->as.data == external && external != cell_record,
            "external allocation ownership is explicit");
-        OK(runner, markdown_core_chunk_set_cstr(&node->as.cross_embedded->reference.path, "owned path"),
+        OK(runner, markdown_core_chunk_set_cstr(&node->as.cross_embed->reference.path, "owned path"),
            "the external record owns a string");
         attempts = payload_allocations;
         payload_fail_at = attempts + 1;
-        INT_EQ(runner, markdown_core_node_set_kind(node, parent, MARKDOWN_CORE_NODE_CROSS_EMBEDDED),
+        INT_EQ(runner, markdown_core_node_set_kind(node, parent, MARKDOWN_CORE_NODE_CROSS_EMBED),
                MARKDOWN_CORE_NODE_SET_KIND_OK, "the same external kind preserves its record without allocation");
         OK(runner, node->node_data_allocation == external, "no-op conversion preserves external ownership");
-        STR_EQ(runner, (char *)node->as.cross_embedded->reference.path.data, "owned path",
+        STR_EQ(runner, (char *)node->as.cross_embed->reference.path.data, "owned path",
                "no-op conversion preserves external fields");
 
         size_t releases = payload_releases;
@@ -4269,7 +4112,7 @@ static void kind_conversion_containment(test_batch_runner *runner) {
         {MARKDOWN_CORE_NODE_SPAN, MARKDOWN_CORE_NODE_PARAGRAPH, "![text]{}\n", "![text]{}", false},
         {MARKDOWN_CORE_NODE_LINK, MARKDOWN_CORE_NODE_PARAGRAPH, "! [text](u)\n", "! [text](u)", false},
         {MARKDOWN_CORE_NODE_LINK, MARKDOWN_CORE_NODE_PARAGRAPH, "! a@b.co\n", "! a@b.co", false},
-        {MARKDOWN_CORE_NODE_EMBEDDED, MARKDOWN_CORE_NODE_PARAGRAPH, "![text](u)\n", "![text](u)", false},
+        {MARKDOWN_CORE_NODE_EMBED, MARKDOWN_CORE_NODE_PARAGRAPH, "![text](u)\n", "![text](u)", false},
         {MARKDOWN_CORE_NODE_CITE, MARKDOWN_CORE_NODE_PARAGRAPH, "!^[text]\n", "!^[text]", false},
         {MARKDOWN_CORE_NODE_CITE, MARKDOWN_CORE_NODE_PARAGRAPH, "![^n]\n\n[^n]: text\n", "![^n]", true},
         {MARKDOWN_CORE_NODE_EMPHASIS, MARKDOWN_CORE_NODE_PARAGRAPH, "!*text*\n", "!*text*", false},
@@ -4352,163 +4195,32 @@ static void block_cursor_coordinates(test_batch_runner *runner) {
     }
 }
 
-/* All block facts except the authored marker and byte coordinates must be
- * invariant under replacing a single-scalar marker with another UTF-8 width.
- * The generated trees have bounded depth and contain only lists and leaves. */
-static bool task_block_facts_equal(markdown_core_node *a, markdown_core_node *b) {
-    if (!a || !b) {
-        return a == b;
-    }
-    if (a->kind != b->kind || a->child_count != b->child_count) {
-        return false;
-    }
-    markdown_core_string a_literal, b_literal;
-    bool a_has = literal_of(a, &a_literal), b_has = literal_of(b, &b_literal);
-    if (a_has != b_has || (a_has && !strings_equal(a_literal, b_literal))) {
-        return false;
-    }
-    if (a->kind == MARKDOWN_CORE_NODE_LIST &&
-        (a->as.list->flavor != b->as.list->flavor || a->as.list->start != b->as.list->start ||
-         a->as.list->delimiter.kind != b->as.list->delimiter.kind ||
-         a->as.list->delimiter.closed != b->as.list->delimiter.closed ||
-         a->as.list->variant.kind != b->as.list->variant.kind ||
-         a->as.list->variant.lowercased != b->as.list->variant.lowercased || a->as.list->tight != b->as.list->tight)) {
-        return false;
-    }
-    for (size_t i = 0; i < a->child_count; i++) {
-        if (!task_block_facts_equal(a->children[i], b->children[i])) {
-            return false;
-        }
-    }
-    return true;
-}
-
-static void task_marker_tab_structure(test_batch_runner *runner) {
-    const char *markers[] = {"é", "✓", "🚀", "́"};
-    const char *separators[] = {" ", "\t", " \t", "\t ", "  ", " \t \t"};
-    const char *padding[] = {" ", "\t", " \t", "\t ", " \t ", "\t\t"};
-    const char *lists[] = {"-", "1.", "1)"};
-    for (int indent = 0; indent < 4; indent++) {
-        for (size_t sep = 0; sep < sizeof(separators) / sizeof(separators[0]); sep++) {
-            for (size_t pad = 0; pad < sizeof(padding) / sizeof(padding[0]); pad++) {
-                for (size_t list = 0; list < sizeof(lists) / sizeof(lists[0]); list++) {
-                    char source[128];
-                    int length = snprintf(source, sizeof(source), "%*s- [?]%s%s%schild\n", indent, "", separators[sep],
-                                          lists[list], padding[pad]);
-                    markdown_core_node *baseline = markdown_core_parse_document(source, length);
-                    OK(runner, baseline != NULL, "ASCII task baseline parses");
-                    for (size_t m = 0; m < sizeof(markers) / sizeof(markers[0]); m++) {
-                        length = snprintf(source, sizeof(source), "%*s- [%s]%s%s%schild\n", indent, "", markers[m],
-                                          separators[sep], lists[list], padding[pad]);
-                        markdown_core_node *actual = markdown_core_parse_document(source, length);
-                        OK(runner, baseline && actual && task_block_facts_equal(baseline, actual),
-                           "task marker width cannot change block facts (indent=%d sep=%zu pad=%zu list=%zu marker=%s)",
-                           indent, sep, pad, list, markers[m]);
-                        markdown_core_node_free(actual);
-                    }
-                    markdown_core_node_free(baseline);
-                }
-            }
-        }
-    }
-}
-
-static void task_marker_ownership(test_batch_runner *runner) {
-    static const char original[] = "- [ ] open\n- [X] done\n- ordinary\n- [🚀] custom\n";
-    char source[sizeof(original)];
-    memcpy(source, original, sizeof(original));
+/* A check's five markers give their statuses, `x` and `X` alike; any other
+ * scalar between brackets leaves the item an ordinary one, its text kept. */
+static void task_status_values(test_batch_runner *runner) {
+    static const char source[] = "- [ ] a\n- [x] b\n- [X] c\n- [?] d\n- [-] e\n- [!] f\n- [\xc3\xa9] g\n- ordinary\n";
+    static const markdown_core_task_status expected[] = {
+        MARKDOWN_CORE_TASK_STATUS_OPEN,     MARKDOWN_CORE_TASK_STATUS_DONE,      MARKDOWN_CORE_TASK_STATUS_DONE,
+        MARKDOWN_CORE_TASK_STATUS_QUESTION, MARKDOWN_CORE_TASK_STATUS_CANCELLED, MARKDOWN_CORE_TASK_STATUS_NONE,
+        MARKDOWN_CORE_TASK_STATUS_NONE,     MARKDOWN_CORE_TASK_STATUS_NONE,
+    };
     markdown_core_document *document = facade_parse((const uint8_t *)source, strlen(source));
-    OK(runner, document != NULL, "task marker ownership document parses");
+    OK(runner, document != NULL, "task status document parses");
     if (!document) {
         return;
     }
-    memset(source, '?', sizeof(source) - 1);
-    markdown_core_node *item = child_at(child_at(document->root, 0), 0);
-    markdown_core_optional_string marker = facade_list_item_marker(item);
-    OK(runner, marker.has_value && marker.value.length == 1 && marker.value.data[0] == ' ',
-       "incomplete marker survives input reuse");
-    OK(runner, item->as.list->task_marker.value.alloc, "parsed task owns its marker bytes");
-    marker = facade_list_item_marker(child_at(child_at(document->root, 0), 1));
-    OK(runner, marker.has_value && marker.value.length == 1 && marker.value.data[0] == 'X',
-       "completed marker retains authored case");
-    marker = facade_list_item_marker(child_at(child_at(document->root, 0), 2));
-    OK(runner, !marker.has_value && marker.value.data == NULL && marker.value.length == 0,
-       "ordinary item has an absent marker");
-
-    marker = facade_list_item_marker(child_at(child_at(document->root, 0), 3));
-    OK(runner, marker.has_value && marker.value.length == 4 && memcmp(marker.value.data, "🚀", 4) == 0,
-       "parsed custom marker survives input reuse with its complete UTF-8 spelling");
+    for (size_t i = 0; i < sizeof(expected) / sizeof(expected[0]); i++) {
+        markdown_core_node *item = child_at(child_at(document->root, 0), i);
+        INT_EQ(runner, (int)facade_list_item_status(item), (int)expected[i], "item %zu has its task status", i);
+    }
     uint8_t *dump = NULL;
     size_t length = 0;
     OK(runner,
-       (markdown_core_document_dump(document, markdown_core_document_root(document), (const uint8_t *)original,
-                                    sizeof(original) - 1, &dump, &length) == MARKDOWN_CORE_OK),
-       "UTF-8 marker document dumps");
-    OK(runner, dump && strstr((const char *)dump, "marker=\"🚀\""), "dump preserves UTF-8 marker spelling");
-    markdown_core_dump_free(dump);
-    markdown_core_document_free(document);
-
-    item = markdown_core_node_new(MARKDOWN_CORE_NODE_LIST_ITEM);
-    markdown_core_chunk bytes = markdown_core_chunk_literal("🚀");
-    OK(runner, markdown_core_chunk_to_cstr(&bytes) != NULL, "custom marker allocates");
-    item->as.list->task_marker = markdown_core_optional_chunk_present(bytes);
-    marker_to_free = bytes.data;
-    marker_free_count = 0;
-    markdown_core_node_free(item);
-    INT_EQ(runner, marker_free_count, 1, "destroying an item frees its owned marker exactly once");
-}
-
-/* SPECIMEN VALUES. A definition is a block where it was written: it owns its
- * authored label and explicit reset and its block content, the document lists
- * every definition in source order, and a reference names one by label. */
-static void specimen_values(test_batch_runner *runner) {
-    static const char source[] = "(5@étude) Body.\n(@) Anonymous.\n\n@étude\n";
-    const size_t length = sizeof(source) - 1;
-    markdown_core_document *document = facade_parse((const uint8_t *)source, length);
-    markdown_core_optional_string label;
-    markdown_core_optional_i64 start;
-    OK(runner, document != NULL, "specimen document parses");
-    if (!document) {
-        return;
-    }
-    const markdown_core_node *root = markdown_core_document_root(document);
-    const markdown_core_node *value = facade_child(root, 0);
-    INT_EQ(runner, markdown_core_node_get_kind(value), MARKDOWN_CORE_KIND_SPECIMEN, "a definition is content");
-    EXPECT_OK(markdown_core_specimen_properties(value, &label, &start));
-    OK(runner, label.has_value && label.value.length == 6 && memcmp(label.value.data, "étude", 6) == 0,
-       "specimen label retains owned UTF-8 bytes");
-    OK(runner, start.has_value && start.value == 5, "specimen retains effective reset");
-    OK(runner,
-       markdown_core_node_get_kind(facade_nodes(value, markdown_core_specimen_content).items[0]) ==
-           MARKDOWN_CORE_KIND_PARAGRAPH,
-       "specimen retains its content relation");
-    const markdown_core_node *anonymous = facade_child(root, 1);
-    OK(runner, anonymous != NULL, "anonymous definition remains present");
-    EXPECT_OK(markdown_core_specimen_properties(anonymous, &label, &start));
-    OK(runner, !label.has_value && !start.has_value, "anonymous label and absent reset remain absent");
-    INT_EQ(runner, (int)markdown_core_document_specimen_count(document), 2, "the document lists both definitions");
-    OK(runner, facade_specimen_at(document, 0) == value && facade_specimen_at(document, 1) == anonymous,
-       "the list is in source order");
-    const markdown_core_node *citation =
-        facade_nodes(facade_child(facade_child(root, 2), 0), markdown_core_node_cite_citations).items[0];
-    markdown_core_referent referent = facade_referent(citation);
-    OK(runner,
-       referent.kind == MARKDOWN_CORE_REFERENT_SPECIMEN && referent.label.length == 6 && referent.key.data == NULL &&
-           referent.mode == 0 && referent.note == NULL,
-       "specimen reference uses only its own branch fields");
-    OK(runner, markdown_core_document_specimen_for(document, referent.label) == value,
-       "a reference's label finds its definition");
-    uint8_t *dump = NULL;
-    size_t dump_length = 0;
-    OK(runner,
-       (markdown_core_document_dump(document, markdown_core_document_root(document), (const uint8_t *)source, length,
-                                    &dump, &dump_length) == MARKDOWN_CORE_OK),
-       "specimen document dumps");
-    OK(runner,
-       dump && strstr((const char *)dump, "label=\"étude\" start=5 children=1") &&
-           strstr((const char *)dump, "label=null start=null children=1") &&
-           strstr((const char *)dump, "referent=specimen(label=\"étude\")"),
-       "dump carries only authored definition facts");
+       (markdown_core_document_dump(document, markdown_core_document_root(document), (const uint8_t *)source,
+                                    sizeof(source) - 1, &dump, &length) == MARKDOWN_CORE_OK),
+       "task status document dumps");
+    OK(runner, dump && strstr((const char *)dump, "status=question") && strstr((const char *)dump, "status=null"),
+       "dump names task statuses");
     markdown_core_dump_free(dump);
     markdown_core_document_free(document);
 }
@@ -4520,10 +4232,10 @@ static void definition_blank_continuation(test_batch_runner *runner) {
         const char *opening, *continuation, *blank;
     } containers[] = {
         {"", "", ""}, {"> ", "> ", ">"}, {"- ", "  ", "  "}, {"> - ", ">   ", ">"}, {"- > ", "  > ", "  >"}};
-    static const char *markers[] = {"(@a) ", "[^a]: "};
+    static const char *markers[] = {"[^a]: "};
     static const char *endings[] = {"\n", "\r\n", "\r"};
     static const char *whitespace[] = {"", " ", "   ", "\t"};
-    for (size_t family = 0; family < 2; family++) {
+    for (size_t family = 0; family < sizeof(markers) / sizeof(*markers); family++) {
         for (size_t shape = 0; shape < sizeof(containers) / sizeof(*containers); shape++) {
             for (size_t ending = 0; ending < 3; ending++) {
                 for (size_t blank = 0; blank < 4; blank++) {
@@ -4547,8 +4259,7 @@ static void definition_blank_continuation(test_batch_runner *runner) {
                         if (!root) {
                             continue;
                         }
-                        markdown_core_node *value =
-                            first_of_kind(root, family ? MARKDOWN_CORE_NODE_FOOTNOTE : MARKDOWN_CORE_NODE_SPECIMEN);
+                        markdown_core_node *value = first_of_kind(root, MARKDOWN_CORE_NODE_FOOTNOTE);
                         markdown_core_node *first = child_at(value, 0);
                         markdown_core_node *second = child_at(value, 1);
                         OK(runner, value && first && second && !child_at(value, 2),
@@ -5257,8 +4968,7 @@ typedef struct {
     size_t cross_link, opaque, delimiters, comment, lookahead, nonblank, block_identifier, callout, dimensions;
     size_t definition_lists, citation_brace_bytes;
     size_t physical_lines, physical_capacity, physical_facts, physical_fact_capacity, normalized_lines;
-    bool heading_collection_disposed;
-    size_t attributes, anchors, definitions, whitespace, brackets, citations, list_markers, specimens;
+    size_t attributes, definitions, whitespace, brackets, citations, list_markers;
     size_t inline_hooks;
     size_t properties_lines, physical_line_bytes, metadata_key_bytes, metadata_value_bytes;
     size_t delimiter_pushes;
@@ -5308,7 +5018,6 @@ static void record_work(const markdown_core_element_instance *self, markdown_cor
     work->citations = ELEMENT_STATE(parser, markdown_core_citation_work, MARKDOWN_CORE_ELEMENT_CITATION)->work;
     work->citation_brace_bytes =
         ELEMENT_STATE(parser, markdown_core_citation_work, MARKDOWN_CORE_ELEMENT_CITATION)->brace_bytes;
-    work->specimens = ELEMENT_STATE(parser, markdown_core_specimen_state, MARKDOWN_CORE_ELEMENT_SPECIMEN)->work;
     work->list_markers = ELEMENT_STATE(parser, markdown_core_list_work, MARKDOWN_CORE_ELEMENT_LIST)->markers;
     work->comment = ELEMENT_STATE(parser, markdown_core_comment_work, MARKDOWN_CORE_ELEMENT_COMMENT)->scan;
     work->lookahead = parser->block_lookahead_work;
@@ -5316,16 +5025,14 @@ static void record_work(const markdown_core_element_instance *self, markdown_cor
         ELEMENT_STATE(parser, markdown_core_block_identifier_work, MARKDOWN_CORE_ELEMENT_PARAGRAPH)->scan;
     work->callout = ELEMENT_STATE(parser, markdown_core_callout_work, MARKDOWN_CORE_ELEMENT_CALLOUT)->scan;
     work->dimensions =
-        ELEMENT_STATE(parser, markdown_core_embedded_work, MARKDOWN_CORE_ELEMENT_EMBEDDED)->dimensions +
+        ELEMENT_STATE(parser, markdown_core_embed_work, MARKDOWN_CORE_ELEMENT_EMBED)->dimensions +
         ELEMENT_STATE(parser, markdown_core_cross_link_work, MARKDOWN_CORE_ELEMENT_CROSS_LINK)->dimensions;
     work->attributes = ATTRIBUTE_WORK(parser);
-    work->anchors = parser->names.work;
     work->definitions = 0;
     for (size_t i = 0; i < parser->roster.count; i++) {
         work->definitions += parser->roster.records[i]->key[0] ==
                              markdown_core_dialect_space_kind(parser->dialect, &MARKDOWN_CORE_REFERENCE_SPACE);
     }
-    work->heading_collection_disposed = parser->names.entries.root == NULL && parser->names.count == 0;
     work->nonblank = parser->nonblank_work;
     work->definition_lists =
         ELEMENT_STATE(parser, markdown_core_definition_list_work, MARKDOWN_CORE_ELEMENT_DEFINITION_LIST)->work;
@@ -5371,7 +5078,7 @@ static void deep_inline_construction(test_batch_runner *runner) {
                         continue;
                     }
                     markdown_core_node *node = tree_iter_get_node(iter);
-                    containers += node->kind == (shape ? MARKDOWN_CORE_NODE_SPAN : MARKDOWN_CORE_NODE_EMBEDDED);
+                    containers += node->kind == (shape ? MARKDOWN_CORE_NODE_SPAN : MARKDOWN_CORE_NODE_EMBED);
                     links += node->kind == MARKDOWN_CORE_NODE_LINK;
                 }
                 INT_EQ(runner, containers, sizes[d], "all nesting survives construction");
@@ -5433,37 +5140,6 @@ static void autolink_domain_linear_work(test_batch_runner *runner) {
             markdown_core_strbuf_free(&source);
         }
     }
-}
-
-static void ordered_numeral_ceiling(test_batch_runner *runner) {
-    markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
-    for (size_t i = 0; i < 999999; i++) {
-        markdown_core_strbuf_putc(&source, 'M');
-    }
-    markdown_core_strbuf_puts(&source, "CMXCIX.  boundary\n");
-    inline_work work = {0};
-    markdown_core_node *root =
-        markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
-    OK(runner,
-       root && child_at(root, 0)->kind == MARKDOWN_CORE_NODE_LIST && child_at(root, 0)->as.list->start == 999999999,
-       "Roman numeral accepts the exact nine-digit ceiling");
-    OK(runner, work.list_markers <= 4 * (size_t)source.size, "ceiling accumulation inspects bounded source");
-    if (root) {
-        markdown_core_node_free(root);
-    }
-    static const char *const overflow[] = {"M", "CCCCCCCCCC", "CCCCCCCCCXXXXXXXXXX", "CCCCCCCCCXXXXXXXXXIIIIIIIIII"};
-    for (size_t i = 0; i < sizeof(overflow) / sizeof(*overflow); i++) {
-        markdown_core_strbuf_truncate(&source, 999999);
-        markdown_core_strbuf_puts(&source, overflow[i]);
-        markdown_core_strbuf_puts(&source, ".  overflow\n");
-        root = markdown_core_parse_document((char *)source.ptr, source.size);
-        OK(runner, root && child_at(root, 0)->kind == MARKDOWN_CORE_NODE_PARAGRAPH,
-           "Roman M/C/X/I accumulation rejects overflow without wrapping: case=%zu", i);
-        if (root) {
-            markdown_core_node_free(root);
-        }
-    }
-    markdown_core_strbuf_free(&source);
 }
 
 static void definition_list_linear_work(test_batch_runner *runner) {
@@ -5538,9 +5214,8 @@ static void citation_linear_work(test_batch_runner *runner) {
         {"", "@a [", "]", ""},    {"# [", "@a [", "]", "]\n"},
         {"", "[@a ", "]", ""},    {"[", "*pre* @a [@b [x]]; ", "", "@z]"},
         {"", "@{", "", " key}"},  {"", "@{a", "}", ""},
-        {"", "@a [x] ", "", ""},  {"", "(@label) body\n\n", "", "@label"},
-        {"", "M", "", ".  body"}, {"[", "@a [", "]", ";]"},
-        {"", "[@a;] ", "", ""},
+        {"", "@a [x] ", "", ""},  {"", "M", "", ".  body"},
+        {"[", "@a [", "]", ";]"}, {"", "[@a;] ", "", ""},
     };
     for (size_t c = 0; c < sizeof(cases) / sizeof(*cases); c++) {
         for (size_t count = 128; count <= 8192; count *= 2) {
@@ -5561,7 +5236,7 @@ static void citation_linear_work(test_batch_runner *runner) {
                "citation scans and resolutions are linear: case=%zu size=%d work=%zu", c, source.size, work.citations);
             OK(runner, work.brackets <= 4 * (size_t)source.size && work.delimiters <= 20 * (size_t)source.size,
                "citation ranges share bounded delimiter reduction: case=%zu count=%zu", c, count);
-            OK(runner, work.list_markers <= 20 * (size_t)source.size && work.specimens <= 20 * (size_t)source.size,
+            OK(runner, work.list_markers <= 20 * (size_t)source.size,
                "list marker scans are bounded: case=%zu count=%zu", c, count);
             markdown_core_node_free(root);
             markdown_core_strbuf_free(&source);
@@ -5858,8 +5533,7 @@ static void probe_directive_openers(const markdown_core_element_instance *self, 
     const markdown_core_element_instance *directive =
         markdown_core_parser_instance(parser, &MARKDOWN_CORE_ELEMENT_DIRECTIVE);
     text_counting = 1;
-    const char *directives[] = {"::: {.a k=1} junk\n", "::: {.a k=1}\n", "::: classname junk\n", "::: classname\n",
-                                "::: {.a k=1\n"};
+    const char *directives[] = {":::x{.a k=1} junk\n", ":::x{.a k=1}\n", ":::x junk\n", ":::x\n", ":::x{.a k=1\n"};
     /* The openers a line's tail refuses: the opener validates the complete
      * line before it opens anything. */
     for (size_t i = 0; i < sizeof(directives) / sizeof(*directives); i += 2) {
@@ -6224,12 +5898,8 @@ static void span_and_script_linear_work(test_batch_runner *runner) {
             markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
         OK(runner, root != NULL, "deep Span/script headings parse successfully");
         if (root) {
-            STR_EQ(runner, (const char *)anchor_of(child_at(root, 0)).value.data, "a-b-x-1",
-                   "heading projection includes script bodies and reserves the later Span anchor");
-            OK(runner,
-               work.anchors < 25 * (size_t)source.size && work.brackets <= 8 * (size_t)source.size &&
-                   work.delimiters <= 8 * (size_t)source.size,
-               "heading projection and mixed bracket/delimiter ownership stay linear");
+            OK(runner, work.brackets <= 8 * (size_t)source.size && work.delimiters <= 8 * (size_t)source.size,
+               "mixed bracket/delimiter ownership in a heading stays linear");
             markdown_core_node_free(root);
         }
         markdown_core_strbuf_free(&source);
@@ -6573,11 +6243,10 @@ static void cross_link_fields(test_batch_runner *runner) {
     label = facade_cross_label(node);
     OK(runner, label.has_value && label.value.length == 0, "an authored empty label remains present");
     node = facade_child(paragraph, 4);
-    OK(runner, markdown_core_node_get_kind(node) == MARKDOWN_CORE_KIND_CROSS_EMBEDDED, "transclusion has its own kind");
+    OK(runner, markdown_core_node_get_kind(node) == MARKDOWN_CORE_KIND_CROSS_EMBED, "transclusion has its own kind");
     OK(runner,
-       strcmp(facade_kind_name(MARKDOWN_CORE_KIND_CROSS_EMBEDDED), "CrossEmbedded") == 0 &&
-           facade_dimensions(node) == NULL,
-       "an unsized CrossEmbedded retains its kind");
+       strcmp(facade_kind_name(MARKDOWN_CORE_KIND_CROSS_EMBED), "CrossEmbed") == 0 && facade_dimensions(node) == NULL,
+       "an unsized CrossEmbed retains its kind");
     dest = facade_destination(node);
     OK(runner,
        dest.path.length == 0 && dest.anchor.has_value && dest.anchor.value.length == 5 &&
@@ -6715,45 +6384,6 @@ static void attribute_recognition_is_memoised(test_batch_runner *runner) {
     }
 }
 
-/* THE MEMBERS OF MANY BRACES ON ONE STRETCH, read with a shared memo, are
- * what each brace reads alone: the shapes are the ones whose walks share a
- * value's scan, an escaped `=`, a quoted lookahead, a run of members, or a
- * walk that ends where an earlier one passed. */
-static void open_members_are_memoised(test_batch_runner *runner) {
-    static const char *const units[] = {"{k=",      "{k=a{k=a", "{a\\=x", "{k=\"\\\"", "{k=x a ",  "{#a {.b ",
-                                        "{ - k=v ", "{k='",     "{k=x}{", "{a\n{b ",   "{k=\"x\" "};
-    static const char *const suffixes[] = {"", "x", " b c", "\"", "=", "}"};
-    for (size_t u = 0; u < sizeof(units) / sizeof(*units); u++) {
-        for (size_t f = 0; f < sizeof(suffixes) / sizeof(*suffixes); f++) {
-            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
-            for (size_t i = 0; i < 64; i++) {
-                markdown_core_strbuf_puts(&source, units[u]);
-            }
-            markdown_core_strbuf_puts(&source, suffixes[f]);
-            markdown_core_member_memo memo = {0};
-            size_t braces = 0, agreed = 0;
-            for (bufsize_t at = 0; at < source.size; at++) {
-                if (source.ptr[at] != '{') {
-                    continue;
-                }
-                braces++;
-                markdown_core_field alone = {0}, shared = {0};
-                const bool read = markdown_core_attributes_open_member(source.ptr, source.size, at, &alone, NULL);
-                const bool memoised = markdown_core_attributes_open_member(source.ptr, source.size, at, &shared, &memo);
-                agreed += read == memoised &&
-                          (!read || (alone.slot == shared.slot && alone.start == shared.start &&
-                                     alone.end == shared.end && alone.prefix_count == shared.prefix_count &&
-                                     !memcmp(alone.prefix, shared.prefix, sizeof(alone.prefix))));
-            }
-            INT_EQ(runner, (int)agreed, (int)braces, "a memoised brace reads its member as alone: unit=%zu suffix=%zu",
-                   u, f);
-            OK(runner, memo.count <= braces, "the memo holds a field per brace at most: unit=%zu suffix=%zu", u, f);
-            markdown_core_member_memo_free(&memo);
-            markdown_core_strbuf_free(&source);
-        }
-    }
-}
-
 /* A QUOTE-LED VALUE WITH NO CLOSER IS THE UNQUOTED VALUE THAT STARTS WITH
  * THE QUOTE, whatever the scratch holds when it is read. The reader decodes a
  * quote-led value as quoted and gives back what it staged when the container
@@ -6794,7 +6424,7 @@ static void attribute_unclosed_quote_is_unquoted(test_batch_runner *runner) {
 
 /* A REFUSED ALLOCATION FAILS THE READ, WHEREVER IT FALLS. A container is
  * staged into the scratch before it is laid out, and every path that stages
- * -- the `-` member, `#` and `.` runs, a bare name's `true`, a record's name,
+ * -- a lone `-` name, `#` and `.` runs, a bare name's `true`, a record's name,
  * a decoded value, a split class run, the member list, the value's block --
  * can be refused. Each is refused in turn, with a fresh scratch so the first
  * refusal falls on an empty buffer: the read fails with its loss reported,
@@ -7177,9 +6807,9 @@ static void placement_from_the_cursor_agrees_with_the_span(test_batch_runner *ru
 
 /* A LINE WHOSE FIRST BYTE NO SCAN OWNER DECLARED REACHES NONE OF THEM. The
  * projection reads the line's key and asks only the owners listed under it;
- * `!` leads nothing, so the list and specimen scanners, whose work counters
- * count every byte they look at and which nothing else drives on this
- * document, never see the line. */
+ * `!` leads nothing, so the list scanner, whose work counter counts every
+ * byte it looks at and which nothing else drives on this document, never
+ * sees the line. */
 static void an_undeclared_first_byte_reaches_no_gated_scanner(test_batch_runner *runner) {
     markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
     for (int i = 0; i < 512; i++) {
@@ -7190,20 +6820,15 @@ static void an_undeclared_first_byte_reaches_no_gated_scanner(test_batch_runner 
         markdown_core_parse_document_with_setup((const char *)source.ptr, source.size, measure_inline_work, &work);
     OK(runner, root != NULL, "the document parses");
     INT_EQ(runner, (int)work.list_markers, 0, "the list scanner is not asked about a line it cannot start");
-    INT_EQ(runner, (int)work.specimens, 0, "nor the specimen scanner");
     markdown_core_node_free(root);
     markdown_core_strbuf_free(&source);
 }
 
-/* THE LIST SCANNER READS A NUMERAL BY THE CLASS ITS FIRST BYTE NAMES. The
- * scan gate must admit letters and digits -- fancy lists start on them -- so
- * every prose line that begins with a word reaches the numeral scan, and a
- * scan that read the whole alphanumeric run paid the word's length on every
- * such line. The grammar accepts one letter, roman letters of one case, or
- * decimal digits (at most nine), so the scan reads that class and stops at
- * its boundary: a prose word ends the probe on its second byte, a long digit
- * string on its eleventh, and every marker the grammar accepted or refused is
- * accepted or refused as before. */
+/* THE LIST SCANNER READS A NUMERAL BY THE CLASS ITS FIRST BYTE NAMES. A
+ * marker is a bullet or one to nine decimal digits, so a prose line that
+ * begins with a word ends the probe on its first byte, and a long digit
+ * string on its tenth: every line pays a constant, never the word's length,
+ * and every marker the grammar accepts or refuses is accepted or refused. */
 static void the_list_scanner_reads_a_numeral_by_its_first_bytes_class(test_batch_runner *runner) {
     static const size_t lines = 256;
     static const struct {
@@ -7232,10 +6857,9 @@ static void the_list_scanner_reads_a_numeral_by_its_first_bytes_class(test_batch
     static const struct {
         const char *source;
         int lists;
-    } markers[] = {{"a. x\n", 1},          {"iv. x\n", 1},          {"MMXX. x\n", 1}, {"(c) x\n", 1},
-                   {"123456789. x\n", 1},  {"i. x\nii. x\n", 1},    {"mix. x\n", 1},  {"#. x\n", 1},
-                   {"x) y\n", 1},          {"3rd. x\n", 0},         {"ab. x\n", 0},   {"Iv. x\n", 0},
-                   {"1234567890. x\n", 0}, {"12345678901. x\n", 0}, {"H. x\n", 0},    {"cat. x\n", 0}};
+    } markers[] = {{"123456789. x\n", 1},  {"0) x\n", 1},           {"1. x\n2) y\n", 2}, {"a. x\n", 0},
+                   {"iv. x\n", 0},         {"(1) x\n", 0},          {"#. x\n", 0},       {"3rd. x\n", 0},
+                   {"1234567890. x\n", 0}, {"12345678901. x\n", 0}, {"H.  x\n", 0},      {"1.x\n", 0}};
     for (size_t m = 0; m < sizeof(markers) / sizeof(*markers); m++) {
         markdown_core_node *root = markdown_core_parse_document(markers[m].source, strlen(markers[m].source));
         OK(runner, root != NULL, "marker %zu parses", m);
@@ -7278,176 +6902,41 @@ static void attribute_attachment_linear_work(test_batch_runner *runner) {
     }
 }
 
-static void heading_completion_invariants(test_batch_runner *runner) {
-    static const struct {
-        const char *source, *anchor;
-    } cases[] = {
-        {"# x\n\n# T {#x}\n", "x-1"},
-        {"# x\n\n[r]: /u {#x}\n", "x-1"},
-        {"# x\n\n[r][]{#y}\n\n[r]: /u {#x}\n", "x-1"},
-        {"# x\n\n[^`a`{#x}]\n\n[^`a`{#x}]: note\n", "x"},
-        {"# x\n\n:d[`a`{#x}]\n", "x-1"},
-        {"# x\n\n:d[^[`a`{#x}]]\n", "x-1"},
-        {"# x\n\n> [!note] `a`{#x}\n", "x-1"},
-        {"# x\n\n[^n]: `a`{#x}\n", "x-1"},
-    };
-    for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); i++) {
-        markdown_core_node *root = parse(cases[i].source);
-        OK(runner, root != NULL, "completed inline ownership preserves anchor reservations");
-        if (root) {
-            STR_EQ(runner, (const char *)anchor_of(child_at(root, 0)).value.data, cases[i].anchor,
-                   "only final effective anchors on emitted nodes reserve names");
-        }
-        markdown_core_node_free(root);
-    }
-    size_t anchor_work = 0;
-    for (size_t count = 128; count <= 4096; count *= 2) {
-        for (int referenced = 0; referenced < 2; referenced++) {
-            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
-            for (size_t i = 0; i < count; i++) {
-                markdown_core_strbuf_puts(&source, "# Same\n\n");
-            }
-            if (referenced) {
-                markdown_core_strbuf_puts(&source, "[Same] ![Same] [Same][]\n");
-            }
-            inline_work work = {0};
-            markdown_core_node *root =
-                markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
-            OK(runner, root != NULL, "repeated heading declarations parse");
-            INT_EQ(runner, work.definitions, count, "each heading creates its own implicit reference definition");
-            markdown_core_node_free(root);
-            markdown_core_strbuf_free(&source);
-        }
-        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
-        markdown_core_strbuf_puts(&source, "# Only\n\n");
-        for (size_t i = 0; i < count; i++) {
-            markdown_core_strbuf_puts(&source, "Plain **paragraph**.\n\n");
-        }
-        inline_work work = {0};
-        markdown_core_node *root =
-            markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
-        OK(runner, root != NULL, "unrelated content does not add anchor work");
-        if (!anchor_work) {
-            anchor_work = work.anchors;
-        }
-        INT_EQ(runner, work.anchors, anchor_work, "anchor work is independent of unrelated AST size");
-        markdown_core_node_free(root);
-        markdown_core_strbuf_free(&source);
-    }
-}
-
-static void heading_roster_invariants(test_batch_runner *runner) {
-    for (size_t count = 128; count <= 8192; count *= 2) {
-        for (int reserve = 0; reserve < 2; reserve++) {
-            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
-            for (size_t i = 0; i < count; i++) {
-                markdown_core_strbuf_puts(&source, "# Same\n\n");
-            }
-            if (reserve) {
-                markdown_core_strbuf_puts(&source, ":n{#same}\n\n");
-                for (size_t i = 1; i <= count; i++) {
-                    char declaration[80];
-                    snprintf(declaration, sizeof(declaration), ":n{#same-%zu}\n\n", i);
-                    markdown_core_strbuf_puts(&source, declaration);
-                }
-            }
-            markdown_core_strbuf_puts(&source, "[Same] [Same][] [go][Same]\n");
-            inline_work work = {0};
-            markdown_core_node *root =
-                markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
-            OK(runner, root != NULL, "heading roster handles dense future reservations");
-            if (root) {
-                markdown_core_node *node = child_at(root, 0);
-                OK(runner, work.heading_collection_disposed, "the finished document holds no live heading parse state");
-                for (size_t i = 0; i < count; i++, node = child_at(root, i)) {
-                    char expected[80];
-                    size_t ordinal = reserve ? count + i + 1 : i;
-                    if (ordinal) {
-                        snprintf(expected, sizeof(expected), "same-%zu", ordinal);
-                    } else {
-                        strcpy(expected, "same");
-                    }
-                    STR_EQ(runner, (const char *)anchor_of(node).value.data, expected,
-                           "every generated suffix is the smallest available");
-                }
-                OK(runner, work.anchors > count && work.anchors < 25 * (size_t)source.size,
-                   "roster work is linear in input and generated spelling bytes: %zu/%d", work.anchors, source.size);
-                bool named = true;
-                for (size_t node_index = 0; node_index < last_child_of(root)->child_count; node_index++) {
-                    markdown_core_node *node = last_child_of(root)->children[node_index];
-                    if (node->kind == MARKDOWN_CORE_NODE_LINK) {
-                        markdown_core_link *link = node->as.link;
-                        named =
-                            named && !link->resource && link->label.len == 4 && !memcmp(link->label.data, "same", 4);
-                    }
-                }
-                OK(runner, named, "all reference spellings name the heading's label");
-                markdown_core_node_free(root);
-            }
-            markdown_core_strbuf_free(&source);
-        }
-    }
-    /* The cursor may have live delimiters, backtick lookahead, and attribute
-     * recognition state at the declaration boundary. It resumes exactly once. */
-    for (size_t count = 128; count <= 4096; count *= 2) {
-        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
-        for (size_t i = 0; i < count; i++) {
-            markdown_core_strbuf_puts(&source, "# *`prefix` [Later]* {#same}\n\n");
-        }
-        markdown_core_strbuf_puts(&source, "# Later\n");
-        inline_work work = {0};
-        markdown_core_node *root =
-            markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
-        OK(runner, root != NULL, "pending heading cursors retain their delimiter ownership");
-        if (root) {
-            INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_LINK), count, "every forward call resolves once");
-            INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_EMPHASIS), count,
-                   "every live delimiter pair resolves once");
-            OK(runner, work.anchors + work.attributes + work.nonblank < 40 * (size_t)source.size,
-               "declaration parsing and finalization stay linear with pending cursors");
-            markdown_core_node_free(root);
-        }
-        markdown_core_strbuf_free(&source);
-    }
-}
-
-/* AN OCCURRENCE NAMES ITS TARGET BY LABEL: however long the heading's
- * anchor or a Reference's attributes, each occurrence holds the label alone,
- * and the attributes are the target's, never copied into it. */
+/* AN OCCURRENCE NAMES ITS TARGET BY LABEL: however long a Reference's
+ * attributes, each occurrence holds the label alone, and the attributes are
+ * the target's, never copied into it. */
 static void reference_occurrences_hold_the_label_alone(test_batch_runner *runner) {
     markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
     const size_t count = 4096, length = 65536;
-    for (int definition = 0; definition < 2; definition++) {
-        markdown_core_strbuf_clear(&source);
-        markdown_core_strbuf_puts(&source, definition ? "# x\n\n[Target]: /u {id=" : "# Target {id=");
-        for (size_t i = 0; i < length; i++) {
-            markdown_core_strbuf_putc(&source, 'a');
-        }
-        markdown_core_strbuf_puts(&source, " .c k=1}\n\n");
-        for (size_t i = 0; i < count; i++) {
-            markdown_core_strbuf_puts(&source, "[Target] ");
-        }
-        markdown_core_node *root = parse((char *)source.ptr);
-        OK(runner, root != NULL, "a long target parses");
-        if (!root) {
+    markdown_core_strbuf_puts(&source, "# x\n\n[Target]: /u {id=");
+    for (size_t i = 0; i < length; i++) {
+        markdown_core_strbuf_putc(&source, 'a');
+    }
+    markdown_core_strbuf_puts(&source, " .c k=1}\n\n");
+    for (size_t i = 0; i < count; i++) {
+        markdown_core_strbuf_puts(&source, "[Target] ");
+    }
+    markdown_core_node *root = parse((char *)source.ptr);
+    OK(runner, root != NULL, "a long target parses");
+    if (!root) {
+        markdown_core_strbuf_free(&source);
+        return;
+    }
+    size_t references = 0;
+    bool alone = true;
+    for (size_t node_index = 0; node_index < last_child_of(root)->child_count; node_index++) {
+        markdown_core_node *node = last_child_of(root)->children[node_index];
+        if (node->kind != MARKDOWN_CORE_NODE_LINK) {
             continue;
         }
-        size_t references = 0;
-        bool alone = true;
-        for (size_t node_index = 0; node_index < last_child_of(root)->child_count; node_index++) {
-            markdown_core_node *node = last_child_of(root)->children[node_index];
-            if (node->kind != MARKDOWN_CORE_NODE_LINK) {
-                continue;
-            }
-            alone = alone && !node->as.link->resource && node->as.link->label.len == 6 &&
-                    !memcmp(node->as.link->label.data, "target", 6) && !node->attributes.anchor.len &&
-                    !node->attributes.class_count && !node->attributes.record_count;
-            references++;
-        }
-        INT_EQ(runner, references, count, "every occurrence resolves");
-        OK(runner, alone, "every occurrence holds the label and none of the target's attributes");
-        markdown_core_node_free(root);
+        alone = alone && !node->as.link->resource && node->as.link->label.len == 6 &&
+                !memcmp(node->as.link->label.data, "target", 6) && !node->attributes.anchor.len &&
+                !node->attributes.class_count && !node->attributes.record_count;
+        references++;
     }
+    INT_EQ(runner, references, count, "every occurrence resolves");
+    OK(runner, alone, "every occurrence holds the label and none of the target's attributes");
+    markdown_core_node_free(root);
     markdown_core_strbuf_free(&source);
 }
 
@@ -7464,12 +6953,9 @@ static void heading_label_length_boundary(test_batch_runner *runner) {
         }
         markdown_core_strbuf_puts(&source, "]\n");
         markdown_core_node *root = parse((char *)source.ptr);
-        OK(runner, root != NULL, "heading labels respect the inherited raw-label length boundary");
+        OK(runner, root != NULL, "a heading of a label's length parses");
         if (root) {
-            INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_LINK), length == MAX_LINK_LABEL_LENGTH,
-                   "declaration and occurrence use the same raw-label limit");
-            INT_EQ(runner, anchor_of(child_at(root, 0)).value.length, length,
-                   "label eligibility never limits generated heading anchors");
+            INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_LINK), 0, "a bracket naming a heading's text is text");
         }
         markdown_core_node_free(root);
         markdown_core_strbuf_free(&source);
@@ -7522,7 +7008,7 @@ static void image_dimension_linear_work(test_batch_runner *runner) {
                 tree_iter *iter = tree_iter_new(child_at(root, 0));
                 for (markdown_core_event_type event; (event = tree_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE;) {
                     markdown_core_node *node = tree_iter_get_node(iter);
-                    if (event == MARKDOWN_CORE_EVENT_ENTER && node->kind == MARKDOWN_CORE_NODE_EMBEDDED) {
+                    if (event == MARKDOWN_CORE_EVENT_ENTER && node->kind == MARKDOWN_CORE_NODE_EMBED) {
                         images++;
                         sized += node->as.link->dimensions.has_value;
                     }
@@ -7767,14 +7253,6 @@ static void image_cursor_stops_at_buffer_limit(test_batch_runner *runner) {
     OK(runner, buf.oom, "a fold one byte past the limit poisons the buffer");
     OK(runner, buf.size == limit - 5 && buf.ptr[buf.size] == 0, "and leaves its content as it was");
 
-    buf.oom = 0;
-    buf.size = limit - 1;
-    buf.ptr[buf.size] = '\0';
-    markdown_core_utf8proc_anchor(&buf, (const uint8_t *)"AB", 2);
-    OK(runner, buf.oom, "an anchor one byte past the limit poisons the buffer");
-    OK(runner, buf.size == limit && buf.ptr[limit - 1] == 'a' && buf.ptr[limit] == 0,
-       "at the byte where appending it would have been refused");
-
     /* The inline append reads the same room: an append that fits it fits the
      * limit, one that does not is refused, and a poisoned buffer takes none,
      * whatever room it has. */
@@ -7948,15 +7426,13 @@ static void bounded_scanners(test_batch_runner *runner) {
  *
  * Valid UTF-8 is the public precondition and what malformed input parses to is
  * not defined -- but the walk itself must still end and stay inside its own
- * buffer. `markdown_core_utf8proc_anchor` used to assert that precondition and
- * then add the decoder's width, which is NEGATIVE when no character starts
- * there; Release is the default build type, so the assertion was compiled out
- * and `# heading \xff\xfe tail` walked backwards below the literal forever.
- * Anchors are derived from every heading, so one stray byte in one heading hung
- * the parser. */
+ * buffer. A walk once asserted that precondition and then added the
+ * decoder's width, which is NEGATIVE when no character starts there; Release
+ * is the default build type, so the assertion was compiled out and
+ * `# heading \xff\xfe tail` walked backwards below the literal forever. */
 static void malformed_scalar_terminates(test_batch_runner *runner) {
-    /* Each reaches a different decode-and-advance walk: the heading anchor,
-     * the attribute value, and an ordinary text run. */
+    /* Each reaches a decode-and-advance walk: a heading's text, the
+     * attribute value, and an ordinary text run. */
     static const char *const sources[] = {
         "# heading \xff\xfe tail\n\nbody\n",
         "# title {.cls\xff\xfe}\n\nbody\n",
@@ -8018,7 +7494,6 @@ static void definition_gate_reads_the_prefix_not_the_line(test_batch_runner *run
                                            "Term\n\n: body\n",
                                            "> Term\n> : body\n",
                                            "> Term\n>\n> : body\n",
-                                           "Term\n~ body\n",
                                            "Term\n:\n",
                                            "- Term\n  : body\n",
                                            "1. Term\n   : body\n",
@@ -8026,7 +7501,7 @@ static void definition_gate_reads_the_prefix_not_the_line(test_batch_runner *run
                                            "- > Term\n  > : body\n",
                                            "> - Term\n>   : body\n",
                                            "> > Term\n> > : body\n",
-                                           "::: note\nTerm\n: body\n:::\n"};
+                                           ":::note\nTerm\n: body\n:::\n"};
     for (size_t i = 0; i < sizeof(admitted) / sizeof(*admitted); i++) {
         root = markdown_core_parse_document(admitted[i], strlen(admitted[i]));
         OK(runner, root != NULL, "definition shape %zu parses", i);
@@ -8105,21 +7580,12 @@ static const markdown_core_element COLON_PREFIX_CONTAINER = {
     .name = "colon-prefix",
     .lines = &COLON_PREFIX_CONTAINER_LINES,
 };
-static const markdown_core_line_ops TILDE_PREFIX_CONTAINER_LINES = {
-    .prefix_bytes = "~",
-};
-
-static const markdown_core_element TILDE_PREFIX_CONTAINER = {
-    .name = "tilde-prefix",
-    .lines = &TILDE_PREFIX_CONTAINER_LINES,
-};
 static bool attach_marker_prefix_containers(markdown_core_dialect_builder *builder, void *context) {
     (void)context;
-    return markdown_core_dialect_builder_attach(builder, &COLON_PREFIX_CONTAINER) &&
-           markdown_core_dialect_builder_attach(builder, &TILDE_PREFIX_CONTAINER) && attach_work_recorder(builder);
+    return markdown_core_dialect_builder_attach(builder, &COLON_PREFIX_CONTAINER) && attach_work_recorder(builder);
 }
 static void a_prefix_byte_that_is_a_marker_byte_hands_the_line_to_the_transaction(test_batch_runner *runner) {
-    static const char *const sources[] = {"Term\n: body\n", "Term\n~ body\n", "> Term\n> : body\n"};
+    static const char *const sources[] = {"Term\n: body\n", "Term\n\n: body\n", "> Term\n> : body\n"};
     for (size_t i = 0; i < sizeof(sources) / sizeof(*sources); i++) {
         inline_work work = {0};
         markdown_core_node *root = markdown_core_parse_document_with_setup(sources[i], strlen(sources[i]),
@@ -8523,8 +7989,7 @@ static void source_line_geometry_is_shared(test_batch_runner *runner) {
 }
 
 static void short_line_storage_is_bounded(test_batch_runner *runner) {
-    INT_EQ(runner, sizeof(markdown_core_input_line), 24,
-           "ordinary physical geometry, the line look and how far the line decided occupy twenty-four bytes");
+    INT_EQ(runner, sizeof(markdown_core_input_line), 16, "ordinary physical geometry occupies sixteen bytes");
     for (size_t count = 8; count <= 65537; count = count == 8 ? 1025 : count * 64 - 63) {
         for (int shape = 0; shape < 3; shape++) {
             markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
@@ -8975,7 +8440,7 @@ static void directive_recognition_survives_construction(test_batch_runner *runne
     static const char *const attributes[] = {"{}", "{.a k=1 k=2}", "{key=\"a b\" flag .c}", "{x=a=b=c}"};
     for (size_t i = 0; i < sizeof(attributes) / sizeof(*attributes); i++) {
         markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
-        markdown_core_strbuf_puts(&source, "::: ");
+        markdown_core_strbuf_puts(&source, ":::x");
         markdown_core_strbuf_puts(&source, attributes[i]);
         markdown_core_strbuf_puts(&source, "\nbody\n:::\n");
         markdown_core_attribute_scratch scratch = {0};
@@ -9620,7 +9085,6 @@ static void lazy_after_marker_as_after_paragraph(test_batch_runner *runner) {
         "*\n",
         "2. x\n",
         "1. x\n",
-        "(@) ex\n",
         "# h\n",
         "---\n",
         "```\nx\n```\n",
@@ -10001,7 +9465,7 @@ static void completion_acts_on_every_root(test_batch_runner *runner) {
 }
 
 /* The shape that defeats a per-hook walk: depth and width vary independently
- * -- `deep_inline_construction`'s generator, Span or Embedded nesting around
+ * -- `deep_inline_construction`'s generator, Span or Embed nesting around
  * a run of addresses that autolink's step links -- and every address is
  * linked whatever they are. */
 static void completion_links_at_any_depth(test_batch_runner *runner) {
@@ -10253,1648 +9717,9 @@ static void a_flanking_transparent_byte_is_ascii(test_batch_runner *runner) {
     }
 }
 
-/* SESSIONS: a text past the capacity is ALLOCATION_FAILED before it is
- * read, an append takes its bytes as they are, and an append that leaves a
- * node's value alone leaves its id. */
-static void session_appends(test_batch_runner *runner) {
-    static const char source[] = "one\n\ntwo \xf0\xa0\x80\x80\n";
-    markdown_core_session *session = NULL;
-    const markdown_core_document *document = NULL;
-    OK(runner,
-       markdown_core_session_new(NULL, MARKDOWN_CORE_SOURCE_CAPACITY + 1, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
-           MARKDOWN_CORE_ALLOCATION_FAILED,
-       "a source past the capacity is refused before it is read");
-    OK(runner,
-       markdown_core_session_new((const uint8_t *)source, sizeof(source) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF16,
-                                 &session) == MARKDOWN_CORE_OK,
-       "a session opens");
-    if (!session) {
-        return;
-    }
-    document = markdown_core_session_document(session);
-    const uint64_t first = markdown_core_node_id(facade_child(markdown_core_document_root(document), 0));
-    OK(runner,
-       markdown_core_session_append(session, NULL, MARKDOWN_CORE_SOURCE_CAPACITY, &document) ==
-           MARKDOWN_CORE_ALLOCATION_FAILED,
-       "a text past the capacity is refused before it is read");
-    OK(runner,
-       markdown_core_session_append(session, (const uint8_t *)"s", 1, &document) == MARKDOWN_CORE_OK &&
-           markdown_core_node_id(facade_child(markdown_core_document_root(document), 0)) == first,
-       "an append to the second paragraph keeps the first's id");
-    OK(runner,
-       markdown_core_session_append(session, (const uint8_t *)"\xe4\xb8", 2, &document) == MARKDOWN_CORE_OK &&
-           markdown_core_session_text_size(session) == sizeof(source) + 2,
-       "an append takes its bytes as they are");
-    uint8_t text[64];
-    markdown_core_session_text(session, text);
-    OK(runner, memcmp(text, "one\n\ntwo \xf0\xa0\x80\x80\ns\xe4\xb8", sizeof(source) + 2) == 0, "the text");
-    markdown_core_string lent = markdown_core_session_source(session);
-    OK(runner, lent.length == sizeof(source) + 2 && memcmp(lent.data, text, lent.length) == 0,
-       "the lent text is the text");
-    markdown_core_string line = {0};
-    OK(runner,
-       markdown_core_session_lines(session) == 0 &&
-           markdown_core_session_line(session, 1, &line) == MARKDOWN_CORE_SESSION_STREAMING,
-       "a streaming session lends no line");
-    const markdown_core_document *final = NULL;
-    OK(runner,
-       markdown_core_session_flush(session, &final) == MARKDOWN_CORE_OK && final &&
-           final == markdown_core_session_document(session),
-       "flush answers the session's final document");
-    OK(runner,
-       markdown_core_session_lines(session) == 4 && markdown_core_session_line(session, 3, &line) == MARKDOWN_CORE_OK &&
-           line.length == 8 && memcmp(line.data, "two \xf0\xa0\x80\x80", 8) == 0 &&
-           line.data == markdown_core_session_source(session).data + 5 &&
-           markdown_core_session_line(session, 2, &line) == MARKDOWN_CORE_OK && line.length == 0 &&
-           markdown_core_session_line(session, 4, &line) == MARKDOWN_CORE_OK && line.length == 3,
-       "a flushed session lends each line without its ending");
-    OK(runner,
-       markdown_core_session_line(session, 0, &line) == MARKDOWN_CORE_OUT_OF_BOUNDS &&
-           markdown_core_session_line(session, 5, &line) == MARKDOWN_CORE_OUT_OF_BOUNDS,
-       "a line the text does not have is OUT_OF_BOUNDS");
-    document = NULL;
-    OK(runner,
-       markdown_core_session_append(session, (const uint8_t *)"x", 1, &document) == MARKDOWN_CORE_SESSION_FLUSHED &&
-           !document && markdown_core_session_text_size(session) == sizeof(source) + 2,
-       "an append after flush is SESSION_FLUSHED and takes nothing");
-    OK(runner, markdown_core_session_flush(session, &document) == MARKDOWN_CORE_SESSION_FLUSHED && !document,
-       "a second flush is SESSION_FLUSHED");
-    OK(runner, facade_child(markdown_core_document_root(markdown_core_session_document(session)), 0) != NULL,
-       "the final document stays readable");
-    markdown_core_session_close(session);
-
-    /* Every line ending ends a line, and one at the text's end leaves an
-     * empty line after it. */
-    static const char endings[] = "a\r\nb\rc\n";
-    session = NULL;
-    OK(runner,
-       markdown_core_session_new((const uint8_t *)endings, sizeof(endings) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8,
-                                 &session) == MARKDOWN_CORE_OK &&
-           markdown_core_session_flush(session, &final) == MARKDOWN_CORE_OK,
-       "a session of three line endings flushes");
-    if (session) {
-        markdown_core_string a = {0}, b = {0}, c = {0}, last = {0};
-        OK(runner,
-           markdown_core_session_lines(session) == 4 &&
-               markdown_core_session_line(session, 1, &a) == MARKDOWN_CORE_OK &&
-               markdown_core_session_line(session, 2, &b) == MARKDOWN_CORE_OK &&
-               markdown_core_session_line(session, 3, &c) == MARKDOWN_CORE_OK &&
-               markdown_core_session_line(session, 4, &last) == MARKDOWN_CORE_OK && a.length == 1 && a.data[0] == 'a' &&
-               b.length == 1 && b.data[0] == 'b' && c.length == 1 && c.data[0] == 'c' && last.length == 0,
-           "CRLF, CR and LF each end a line");
-        markdown_core_session_close(session);
-    }
-
-    /* A snapshot's lookup sees the definitions written before its root, and
-     * the final document's every one (plan 5.5, 5.10). */
-    static const char later[] = "[x]\n\n[x]: /u\n";
-    session = NULL;
-    OK(runner,
-       markdown_core_session_new((const uint8_t *)later, sizeof(later) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
-           MARKDOWN_CORE_OK,
-       "a session opens on a use before its definition");
-    if (!session) {
-        return;
-    }
-    const markdown_core_node *use =
-        facade_child(facade_child(markdown_core_document_root(markdown_core_session_document(session)), 0), 0);
-    OK(runner, use && markdown_core_node_get_kind(use) == MARKDOWN_CORE_KIND_TEXT,
-       "a snapshot leaves a use before its definition as text");
-    final = NULL;
-    OK(runner, markdown_core_session_flush(session, &final) == MARKDOWN_CORE_OK, "the session flushes");
-    use = final ? facade_child(facade_child(markdown_core_document_root(final), 0), 0) : NULL;
-    OK(runner, use && markdown_core_node_get_kind(use) == MARKDOWN_CORE_KIND_LINK,
-       "the final document resolves a use before its definition");
-    markdown_core_session_close(session);
-}
-
-/* Whether the session's document dumps as a fresh parse of its text does. */
-static bool session_as_parsed(markdown_core_session *session) {
-    const size_t size = markdown_core_session_text_size(session);
-    uint8_t *text = malloc(size + 1);
-    if (!text) {
-        return false;
-    }
-    markdown_core_session_text(session, text);
-    markdown_core_document *fresh = facade_parse(text, size);
-    const markdown_core_document *document = markdown_core_session_document(session);
-    uint8_t *left = NULL, *right = NULL;
-    size_t left_length = 0, right_length = 0;
-    const bool same = fresh &&
-                      markdown_core_document_dump(document, markdown_core_document_root(document), text, size, &left,
-                                                  &left_length) == MARKDOWN_CORE_OK &&
-                      markdown_core_document_dump(fresh, markdown_core_document_root(fresh), text, size, &right,
-                                                  &right_length) == MARKDOWN_CORE_OK &&
-                      left_length == right_length && memcmp(left, right, left_length) == 0;
-    markdown_core_dump_free(left);
-    markdown_core_dump_free(right);
-    if (fresh) {
-        markdown_core_document_free(fresh);
-    }
-    free(text);
-    return same;
-}
-
-/* What a session holds stays as large as what its text needs: an edit lets
- * go what the reading it replaces held, so a thousand edits that type into
- * the blank line of a nested list and take the byte away again hold no more
- * than the first hundred do (plan 12.4). Each edit reads the nested items
- * again and maps their lines anew; the maps of the reading before go. */
-static void session_edits_storage(test_batch_runner *runner) {
-    static const char source[] = "  one\n\n  - two> \n    -# three four\n\n  ```";
-    properties_probe_arm();
-    markdown_core_session *session = NULL;
-    const markdown_core_document *document = NULL;
-    bool edited = markdown_core_session_new((const uint8_t *)source, sizeof(source) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8,
-                                            &session) == MARKDOWN_CORE_OK &&
-                  markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK;
-    size_t early = 0;
-    const markdown_core_position at = {5, 1}, past = {5, 2};
-    for (int edit = 0; edited && edit < 1000; edit++) {
-        edited =
-            edit % 2
-                ? markdown_core_session_edit(session, at, past, (const uint8_t *)"", 0, &document) == MARKDOWN_CORE_OK
-                : markdown_core_session_edit(session, at, at, (const uint8_t *)"x", 1, &document) == MARKDOWN_CORE_OK;
-        if (edit == 99) {
-            early = properties_live_bytes;
-        }
-    }
-    const size_t late = properties_live_bytes;
-    OK(runner, edited && session_as_parsed(session), "a thousand edits read the list as a parse does");
-    OK(runner, late <= early + early / 8, "the session holds %zu bytes after a thousand edits, %zu after a hundred",
-       late, early);
-    markdown_core_session_close(session);
-    properties_probe_disarm();
-    OK(runner, properties_live_bytes == 0, "closing the session releases all it held");
-}
-
-/* An edit that renames a definition and cannot have the storage it needs
- * leaves no use of the old name as the link it no longer is: the next edit
- * reads as a parse does, or fails with the session (E-D2). Each allocation
- * of the edit is refused in turn, until the edit needs no more. */
-static void session_edits_refresh_storage(test_batch_runner *runner) {
-    static const char source[] = "[r]: /url\n\nmid\n\n[r]\n\nplain\n\nend\n";
-    const markdown_core_position name = {1, 2}, after = {1, 3}, end = {9, 1}, past = {9, 4};
-    bool held = true, swept = false;
-    for (size_t fail = 1; held && !swept && fail < 4096; fail++) {
-        markdown_core_session *session = NULL;
-        const markdown_core_document *document = NULL;
-        if (markdown_core_session_new((const uint8_t *)source, sizeof(source) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8,
-                                      &session) != MARKDOWN_CORE_OK ||
-            markdown_core_session_flush(session, &document) != MARKDOWN_CORE_OK) {
-            held = false;
-            markdown_core_session_close(session);
-            break;
-        }
-        payload_probe_arm();
-        payload_fail_at = fail;
-        const markdown_core_status renamed =
-            markdown_core_session_edit(session, name, after, (const uint8_t *)"s", 1, &document);
-        swept = payload_allocations < fail;
-        payload_fail_at = 0;
-        const markdown_core_status next =
-            markdown_core_session_edit(session, end, past, (const uint8_t *)"done", 4, &document);
-        held = (renamed == MARKDOWN_CORE_OK || renamed == MARKDOWN_CORE_ALLOCATION_FAILED) &&
-               (next == MARKDOWN_CORE_OK ? session_as_parsed(session) : next == MARKDOWN_CORE_ALLOCATION_FAILED);
-        markdown_core_session_close(session);
-        payload_probe_disarm();
-    }
-    OK(runner, held && swept, "no edit after a rename that runs out of storage publishes a stale use");
-}
-
-/* An edit reads again only the kept blocks that looked up a label whose
- * definedness it flipped (THE USES): renaming one of two definitions of a
- * label rereads no use of it, a new definition rereads no block that only
- * names its label in code, and deleting a label's only definition turns
- * its uses back into text. */
-static void session_edits_uses(test_batch_runner *runner) {
-    typedef struct {
-        const char *name, *source;
-        markdown_core_position from, to;
-        const char *text;
-        /* The offset no reading of the edit starts before, or 0. */
-        size_t after;
-    } uses_edit;
-    static const char twice[] = "[r]: /a\n\nuse [r]\n\nmid\n\n`[z]` in code\n\n[r]: /b\n\nend [r]\n";
-    static const char once[] = "[r]: /a\n\nuse [r]\n\nmid\n\nend [r]\n";
-    const uses_edit edits[] = {
-        {"rename a duplicate", twice, {9, 2}, {9, 3}, "q", 18},
-        {"define a label only code names", twice, {12, 1}, {12, 1}, "\n[z]: /x\n", 38},
-        {"delete the only definition", once, {1, 1}, {3, 1}, "", 0},
-    };
-    for (size_t e = 0; e < sizeof(edits) / sizeof(edits[0]); e++) {
-        const uses_edit *edit = &edits[e];
-        markdown_core_session *session = NULL;
-        const markdown_core_document *document = NULL;
-        bool edited = markdown_core_session_new((const uint8_t *)edit->source, strlen(edit->source),
-                                                MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) == MARKDOWN_CORE_OK &&
-                      markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK &&
-                      markdown_core_session_edit(session, edit->from, edit->to, (const uint8_t *)edit->text,
-                                                 strlen(edit->text), &document) == MARKDOWN_CORE_OK;
-        size_t from = 0, to = 0;
-        if (edited) {
-            markdown_core_session_reread(session, &from, &to);
-        }
-        OK(runner, edited && session_as_parsed(session), "%s reads as a parse does", edit->name);
-        OK(runner, edited && from >= edit->after, "%s reads again from byte %zu, not before %zu", edit->name, from,
-           edit->after);
-        markdown_core_session_close(session);
-    }
-}
-
-/* A block identifier after a nested list names the list from where the
- * list starts, past its line's indentation: no edit of the identifier's
- * line reads from the list's first item, which would keep the name the
- * list had, and no locate there does either (session.c, session_rest_in).
- * A locate at any place leaves the session as it was: every edit after it
- * reads as a parse does. */
-static void session_edits_nested_identifier(test_batch_runner *runner) {
-    static const char source[] = "- outer\n  - inner\n\n  #inner#\n\n  rest\n";
-    static const char *const typed[] = {"", "x"};
-    for (size_t t = 0; t < sizeof(typed) / sizeof(typed[0]); t++) {
-        markdown_core_session *session = NULL;
-        const markdown_core_document *document = NULL;
-        const markdown_core_position at = {4, 10};
-        bool edited = markdown_core_session_new((const uint8_t *)source, strlen(source), MARKDOWN_CORE_TEXT_UNIT_UTF8,
-                                                &session) == MARKDOWN_CORE_OK &&
-                      markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK &&
-                      markdown_core_session_locate(session, at) == MARKDOWN_CORE_OK &&
-                      markdown_core_session_edit(session, at, at, (const uint8_t *)typed[t], strlen(typed[t]),
-                                                 &document) == MARKDOWN_CORE_OK;
-        OK(runner, edited && session_as_parsed(session), "typing \"%s\" after the identifier reads as a parse does",
-           typed[t]);
-        markdown_core_session_close(session);
-    }
-    /* An identifier line after a block it cannot name -- a comment -- writes
-     * nothing of that block, so replacing the lines after it rereads as a
-     * parse does. */
-    {
-        static const char rejected[] = "e\n%%\n%%\n#d#\n";
-        markdown_core_session *session = NULL;
-        const markdown_core_document *document = NULL;
-        const markdown_core_position from = {3, 1}, to = {5, 1};
-        const bool edited =
-            markdown_core_session_new((const uint8_t *)rejected, strlen(rejected), MARKDOWN_CORE_TEXT_UNIT_UTF8,
-                                      &session) == MARKDOWN_CORE_OK &&
-            markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK &&
-            markdown_core_session_edit(session, from, to, (const uint8_t *)"t", 1, &document) == MARKDOWN_CORE_OK;
-        OK(runner, edited && session_as_parsed(session), "an identifier line after a comment writes nothing of it");
-        markdown_core_session_close(session);
-    }
-    /* A specimen reads how the block before it closes, from the line end
-     * before it: a comment that stops being one rereads with the paragraph
-     * before it, which it joins. */
-    {
-        static const char numbered[] = "x\n%%\n%%\n(@a) b\n";
-        markdown_core_session *session = NULL;
-        const markdown_core_document *document = NULL;
-        const markdown_core_position from = {3, 2}, to = {3, 3};
-        const bool edited =
-            markdown_core_session_new((const uint8_t *)numbered, strlen(numbered), MARKDOWN_CORE_TEXT_UNIT_UTF8,
-                                      &session) == MARKDOWN_CORE_OK &&
-            markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK &&
-            markdown_core_session_edit(session, from, to, (const uint8_t *)"", 0, &document) == MARKDOWN_CORE_OK;
-        OK(runner, edited && session_as_parsed(session), "a specimen after a comment that stops being one");
-        markdown_core_session_close(session);
-    }
-    /* A candidate's lookahead notes its reach where its lines put it,
-     * before the reader is back on its own line: typing before a comment
-     * whose next line is a list item reads as a parse does. */
-    {
-        static const char looked[] = "%%\ni. x";
-        markdown_core_session *session = NULL;
-        const markdown_core_document *document = NULL;
-        const markdown_core_position at = {1, 1};
-        const bool edited =
-            markdown_core_session_new((const uint8_t *)looked, strlen(looked), MARKDOWN_CORE_TEXT_UNIT_UTF8,
-                                      &session) == MARKDOWN_CORE_OK &&
-            markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK &&
-            markdown_core_session_edit(session, at, at, (const uint8_t *)"x", 1, &document) == MARKDOWN_CORE_OK;
-        OK(runner, edited && session_as_parsed(session), "typing before a comment a list item follows");
-        markdown_core_session_close(session);
-    }
-    markdown_core_session *session = NULL;
-    const markdown_core_document *document = NULL;
-    bool same = markdown_core_session_new((const uint8_t *)source, strlen(source), MARKDOWN_CORE_TEXT_UNIT_UTF8,
-                                          &session) == MARKDOWN_CORE_OK &&
-                markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK;
-    for (uint32_t line = 1; same && line <= 6; line++) {
-        for (uint32_t column = 1; same && column <= 10; column++) {
-            const markdown_core_position at = {line, column};
-            const markdown_core_status located = markdown_core_session_locate(session, at);
-            if (located == MARKDOWN_CORE_OUT_OF_BOUNDS) {
-                continue;
-            }
-            same = located == MARKDOWN_CORE_OK &&
-                   markdown_core_session_edit(session, at, at, (const uint8_t *)"", 0, &document) == MARKDOWN_CORE_OK &&
-                   session_as_parsed(session);
-        }
-    }
-    OK(runner, same, "an edit after a locate anywhere reads as a parse does");
-    markdown_core_session_close(session);
-}
-
-/* Whether the session's context at its cursor is the document query's at
- * `at` of a fresh parse of its text. */
-static bool session_as_queried(markdown_core_session *session, markdown_core_position at) {
-    const size_t size = markdown_core_session_text_size(session);
-    uint8_t *text = malloc(size + 1);
-    if (!text) {
-        return false;
-    }
-    markdown_core_session_text(session, text);
-    markdown_core_document *fresh = facade_parse(text, size);
-    markdown_core_context *queried = NULL;
-    const markdown_core_context *located = markdown_core_session_context(session);
-    bool same = fresh && markdown_core_document_context(fresh, text, size, at, &queried) == MARKDOWN_CORE_OK &&
-                markdown_core_context_block_count(queried) == markdown_core_context_block_count(located) &&
-                markdown_core_context_inline_count(queried) == markdown_core_context_inline_count(located) &&
-                markdown_core_context_slot_count(queried) == markdown_core_context_slot_count(located);
-    for (size_t i = 0; same && i < markdown_core_context_block_count(queried); i++) {
-        markdown_core_opener left, right;
-        same = markdown_core_context_block_at(queried, i, &left) == MARKDOWN_CORE_OK &&
-               markdown_core_context_block_at(located, i, &right) == MARKDOWN_CORE_OK && left.kind == right.kind &&
-               !memcmp(&left.scope, &right.scope, sizeof(left.scope));
-    }
-    for (size_t i = 0; same && i < markdown_core_context_inline_count(queried); i++) {
-        markdown_core_opener left, right;
-        same = markdown_core_context_inline_at(queried, i, &left) == MARKDOWN_CORE_OK &&
-               markdown_core_context_inline_at(located, i, &right) == MARKDOWN_CORE_OK && left.kind == right.kind &&
-               !memcmp(&left.scope, &right.scope, sizeof(left.scope));
-    }
-    for (size_t i = 0; same && i < markdown_core_context_slot_count(queried); i++) {
-        markdown_core_slot left, right;
-        same = markdown_core_context_slot_at(queried, i, &left) == MARKDOWN_CORE_OK &&
-               markdown_core_context_slot_at(located, i, &right) == MARKDOWN_CORE_OK && left.kind == right.kind &&
-               left.owner == right.owner && !memcmp(&left.before, &right.before, sizeof(left.before)) &&
-               !memcmp(&left.after, &right.after, sizeof(left.after)) && left.closed == right.closed;
-    }
-    markdown_core_context_free(queried);
-    if (fresh) {
-        markdown_core_document_free(fresh);
-    }
-    free(text);
-    return same;
-}
-
-/* A table's head row and its content rows are two relations of its
- * children, the content going on from where the head ends: a locate in a
- * content row reads a window of the table's rows that starts past the
- * head, which measures its first row from where the window says it starts
- * (ast.c, markdown_core_walk_next). At every place of the text, the
- * session's context is the document query's, the code span a row leaves
- * open among it. */
-static void session_locates_table_rows(test_batch_runner *runner) {
-    static const char source[] = "e||\n-|-\n/\n`\nle\"\n| [r] | x |\n\n[r]: /u\n";
-    markdown_core_session *session = NULL;
-    const markdown_core_document *document = NULL;
-    bool same = markdown_core_session_new((const uint8_t *)source, strlen(source), MARKDOWN_CORE_TEXT_UNIT_UTF8,
-                                          &session) == MARKDOWN_CORE_OK &&
-                markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK;
-    markdown_core_position at = {1, 1};
-    for (const char *c = source; same && *c; c++) {
-        const markdown_core_status located = markdown_core_session_locate(session, at);
-        same = located == MARKDOWN_CORE_OK && session_as_queried(session, at);
-        if (*c == '\n') {
-            at = (markdown_core_position){at.line + 1, 1};
-        } else {
-            at.column++;
-        }
-    }
-    OK(runner, same, "a locate in a table's content rows is the document query, at %d:%d", at.line, at.column);
-    markdown_core_session_close(session);
-}
-
-/* An opener the text leaves open notes no reach (blocks.c, AN OPENER READ
- * TO THE END), and the text before a cursor may end in a stop line of it
- * that the whole line is not: `%%` and a tab before `x`, or `---` before
- * `-`. At every place of each text, the session's context is the document
- * query's. */
-static void session_locates_unclosed_openers(test_batch_runner *runner) {
-    static const char *const sources[] = {
-        "%%\n\na\n\nb\n\nc\n\n%%\tx\n",
-        "---\n\na\n\nb\n\nc\n\n----\n",
-        "lead\n\n%%\n\na\n\n- b\n\n  %% x\n\n> %%\n",
-    };
-    bool same = true;
-    markdown_core_position at = {1, 1};
-    size_t which = 0;
-    for (size_t i = 0; same && i < sizeof(sources) / sizeof(sources[0]); i++) {
-        const char *source = sources[which = i];
-        markdown_core_session *session = NULL;
-        const markdown_core_document *document = NULL;
-        same = markdown_core_session_new((const uint8_t *)source, strlen(source), MARKDOWN_CORE_TEXT_UNIT_UTF8,
-                                         &session) == MARKDOWN_CORE_OK &&
-               markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK;
-        at = (markdown_core_position){1, 1};
-        for (const char *c = source; same && *c; c++) {
-            const markdown_core_status located = markdown_core_session_locate(session, at);
-            same = located == MARKDOWN_CORE_OK && session_as_queried(session, at);
-            if (*c == '\n') {
-                at = (markdown_core_position){at.line + 1, 1};
-            } else {
-                at.column++;
-            }
-        }
-        markdown_core_session_close(session);
-    }
-    OK(runner, same, "a locate after an unclosed opener is the document query, text %zu at %d:%d", which, at.line,
-       at.column);
-}
-
-/* An edit under an unclosed opener whose look for its closer read the
- * lines to the text's end in leaps no old line of the leaf it reopened:
- * the lines read in are the new text's, and a locate after the edit at
- * each place of the text is the document query (THE LEAP). */
-static void session_locates_after_looked_edit(test_batch_runner *runner) {
-    static const char source[] = "a\n%%\nb\ny\nm\n|\n- b\n\n";
-    markdown_core_session *session = NULL;
-    const markdown_core_document *document = NULL;
-    bool same = markdown_core_session_new((const uint8_t *)source, strlen(source), MARKDOWN_CORE_TEXT_UNIT_UTF8,
-                                          &session) == MARKDOWN_CORE_OK &&
-                markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK &&
-                markdown_core_session_edit(session, (markdown_core_position){3, 1}, (markdown_core_position){4, 1},
-                                           (const uint8_t *)"|", 1, &document) == MARKDOWN_CORE_OK;
-    markdown_core_position at = {1, 1};
-    for (const char *c = "a\n%%\n|y\nm\n|\n- b\n\n"; same && *c; c++) {
-        same = markdown_core_session_locate(session, at) == MARKDOWN_CORE_OK && session_as_queried(session, at);
-        if (*c == '\n') {
-            at = (markdown_core_position){at.line + 1, 1};
-        } else {
-            at.column++;
-        }
-    }
-    markdown_core_session_close(session);
-    OK(runner, same, "a locate after an edit under an unclosed opener is the document query, at %d:%d", at.line,
-       at.column);
-}
-
-/* A nested opener a candidate rejected as the text ended read the end: a
- * closer appended after it, past the paragraph it continued, makes the
- * opener a block of its own, as a parse does (blocks.c, S_candidates_end). */
-static void session_edits_after_nested_opener(test_batch_runner *runner) {
-    static const char *const sources[] = {":::note\nx\n%%\n", "> x\n> %%\n"};
-    static const char *const closers[] = {"%%\n", "> %%\n"};
-    static const markdown_core_position ends[] = {{4, 1}, {3, 1}};
-    bool same = true;
-    for (size_t i = 0; same && i < 2; i++) {
-        markdown_core_session *session = NULL;
-        const markdown_core_document *document = NULL;
-        same = markdown_core_session_new((const uint8_t *)sources[i], strlen(sources[i]), MARKDOWN_CORE_TEXT_UNIT_UTF8,
-                                         &session) == MARKDOWN_CORE_OK &&
-               markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK &&
-               markdown_core_session_edit(session, ends[i], ends[i], (const uint8_t *)closers[i], strlen(closers[i]),
-                                          &document) == MARKDOWN_CORE_OK &&
-               session_as_parsed(session);
-        markdown_core_session_close(session);
-    }
-    OK(runner, same, "a closer appended after a nested opener rejected at the text's end reads as a parse");
-}
-
-/* A line whose first reading looked past its end, a term at the next line's
- * marker, keeps that it did through an edit that reads on inside it (blocks.c,
- * A REST INSIDE A LINE): a later edit that ends the line elsewhere reads it
- * again from its start, as a parse does. */
-static void session_edits_keep_term_look(test_batch_runner *runner) {
-    static const char source[] = "abcdef\nx\n::\n\n";
-    markdown_core_session *session = NULL;
-    const markdown_core_document *document = NULL;
-    const bool same =
-        markdown_core_session_new((const uint8_t *)source, strlen(source), MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
-            MARKDOWN_CORE_OK &&
-        markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK &&
-        markdown_core_session_edit(session, (markdown_core_position){1, 5}, (markdown_core_position){1, 6},
-                                   (const uint8_t *)"d", 1, &document) == MARKDOWN_CORE_OK &&
-        session_as_parsed(session) &&
-        markdown_core_session_edit(session, (markdown_core_position){1, 4}, (markdown_core_position){3, 2},
-                                   (const uint8_t *)"\n", 1, &document) == MARKDOWN_CORE_OK &&
-        session_as_parsed(session);
-    markdown_core_session_close(session);
-    OK(runner, same, "a term's look past its line holds through an edit inside the line");
-}
-
-/* A long list, and a long one nested in one of its items, find the rest
- * point of a line by the widths of their items and fold the items kept
- * from the marks of the chunks before (session.c, THE NESTS): a locate at
- * lines across the chunks' bounds is the document query's, and edits that
- * make the list tight, loose and tight again, add items and take them
- * away, each after locates that mark chunks past it, read as a parse
- * does. */
-static void session_edits_wide_list(test_batch_runner *runner) {
-    markdown_core_strbuf text = MARKDOWN_CORE_BUF_INIT();
-    for (int item = 0; item < 150; item++) {
-        char line[96];
-        snprintf(line, sizeof(line), item == 70 ? "- item %03d [r]\n" : "- item %03d with *em* and [r\n", item);
-        markdown_core_strbuf_puts(&text, line);
-        if (item == 120) {
-            markdown_core_strbuf_puts(&text, "\n");
-        }
-        if (item == 40) {
-            for (int inner = 0; inner < 140; inner++) {
-                snprintf(line, sizeof(line), "  - inner %03d `code\n", inner);
-                markdown_core_strbuf_puts(&text, line);
-            }
-        }
-    }
-    markdown_core_strbuf_puts(&text, "\n[r]: /u\n");
-    markdown_core_session *session = NULL;
-    const markdown_core_document *document = NULL;
-    bool same =
-        !text.oom &&
-        markdown_core_session_new(text.ptr, text.size, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) == MARKDOWN_CORE_OK &&
-        markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK;
-    static const uint32_t lines[] = {2, 40, 42, 64, 65, 66, 105, 106, 107, 129, 130, 131, 170, 182, 200, 211, 250, 288};
-    static const uint32_t columns[] = {3, 9, 20, 26};
-    for (size_t l = 0; same && l < sizeof(lines) / sizeof(lines[0]); l++) {
-        for (size_t c = 0; same && c < sizeof(columns) / sizeof(columns[0]); c++) {
-            const markdown_core_position at = {lines[l], columns[c]};
-            const markdown_core_status located = markdown_core_session_locate(session, at);
-            same = located == MARKDOWN_CORE_OUT_OF_BOUNDS ||
-                   (located == MARKDOWN_CORE_OK && session_as_queried(session, at));
-        }
-    }
-    OK(runner, same, "a locate in a long list is the document query");
-    typedef struct {
-        markdown_core_position from, to;
-        const char *text;
-    } list_edit;
-    static const list_edit edits[] = {
-        {{262, 1}, {263, 1}, ""},  {{130, 1}, {130, 1}, "\n"},
-        {{200, 5}, {200, 5}, "x"}, {{131, 1}, {132, 1}, ""},
-        {{66, 3}, {66, 3}, "y"},   {{66, 1}, {66, 1}, "  - more\n"},
-        {{3, 1}, {3, 1}, "\n"},    {{4, 1}, {5, 1}, ""},
-        {{107, 1}, {109, 1}, ""},  {{250, 1}, {250, 1}, "- one\n- two\n"},
-    };
-    for (size_t e = 0; same && e < sizeof(edits) / sizeof(edits[0]); e++) {
-        const list_edit *edit = &edits[e];
-        for (size_t l = 0; same && l < sizeof(lines) / sizeof(lines[0]); l += 3) {
-            const markdown_core_position at = {lines[l], 9};
-            const markdown_core_status located = markdown_core_session_locate(session, at);
-            same = located == MARKDOWN_CORE_OUT_OF_BOUNDS ||
-                   (located == MARKDOWN_CORE_OK && session_as_queried(session, at));
-        }
-        same = same && markdown_core_session_locate(session, edit->from) == MARKDOWN_CORE_OK &&
-               markdown_core_session_edit(session, edit->from, edit->to, (const uint8_t *)edit->text,
-                                          strlen(edit->text), &document) == MARKDOWN_CORE_OK &&
-               session_as_parsed(session);
-        OK(runner, same, "edit %zu of a long list reads as a parse does", e);
-    }
-    markdown_core_session_close(session);
-    markdown_core_strbuf_free(&text);
-}
-
-/* The allocator sweep of 12.7: an edit refused at each of its allocations
- * in turn either leaves the session as it was or fails it, and the session
- * then frees everything it holds. The edits type into a paragraph and a
- * nested item, open a fence, rename a definition, retitle a heading that
- * a reference names, write into a table and take most of a long text away,
- * which compacts it. After each refused edit, another edit either reads as
- * a parse of its text does or fails too. */
-static void session_edits_allocations(test_batch_runner *runner) {
-    typedef struct {
-        const char *name, *source;
-        markdown_core_position from, to;
-        const char *text;
-    } sweep_edit;
-    markdown_core_strbuf huge = MARKDOWN_CORE_BUF_INIT();
-    for (int item = 0; item < 120; item++) {
-        char line[64];
-        snprintf(line, sizeof(line), "- item %03d\n\n  more [r]\n\n", item);
-        markdown_core_strbuf_puts(&huge, line);
-    }
-    markdown_core_strbuf_puts(&huge, "[r]: /u\n");
-    const sweep_edit edits[] = {
-        {"paragraph", "one\n\ntwo\n\nthree\n", {3, 2}, {3, 2}, "x"},
-        {"nested item", "- a\n  - b\n\n  c\n- d\n", {2, 6}, {2, 6}, "x"},
-        {"fence", "one\n\ntwo\n\nthree\n", {1, 1}, {1, 1}, "```\n"},
-        {"definition", "see [r]\n\n[r]: /u\n\nmid\n\n[r] again\n", {3, 2}, {3, 3}, "s"},
-        {"heading", "see [Title]\n\n# Title\n\nend [Title]\n", {3, 8}, {3, 8}, "s"},
-        {"table", "| a |\n|---|\n| b [r] |\n\n[r]: /u\n", {3, 3}, {3, 3}, "c"},
-        {"compaction", (const char *)huge.ptr, {3, 1}, {481, 1}, ""},
-    };
-    const markdown_core_position again = {1, 1};
-    for (size_t e = 0; e < sizeof(edits) / sizeof(edits[0]); e++) {
-        const sweep_edit *edit = &edits[e];
-        bool held = !huge.oom, swept = false;
-        size_t fail = 1;
-        for (; held && !swept && fail < 100000; fail++) {
-            payload_probe_arm();
-            markdown_core_session *session = NULL;
-            const markdown_core_document *document = NULL;
-            if (markdown_core_session_new((const uint8_t *)edit->source, strlen(edit->source),
-                                          MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) != MARKDOWN_CORE_OK ||
-                markdown_core_session_flush(session, &document) != MARKDOWN_CORE_OK) {
-                held = false;
-                markdown_core_session_close(session);
-                payload_probe_disarm();
-                break;
-            }
-            payload_fail_at = payload_allocations + fail;
-            const size_t before = payload_allocations;
-            const markdown_core_status status = markdown_core_session_edit(
-                session, edit->from, edit->to, (const uint8_t *)edit->text, strlen(edit->text), &document);
-            swept = payload_allocations - before < fail;
-            payload_fail_at = 0;
-            const markdown_core_status next =
-                markdown_core_session_edit(session, again, again, (const uint8_t *)"z", 1, &document);
-            held = (status == MARKDOWN_CORE_OK || status == MARKDOWN_CORE_ALLOCATION_FAILED) &&
-                   (next == MARKDOWN_CORE_OK ? session_as_parsed(session) : next == MARKDOWN_CORE_ALLOCATION_FAILED);
-            markdown_core_session_close(session);
-            held = held && payload_live == 0;
-            payload_probe_disarm();
-        }
-        OK(runner, held && swept,
-           "the %s edit refused at each of its %zu allocations keeps the session or fails it, and frees all",
-           edit->name, fail - 1);
-    }
-    markdown_core_strbuf_free(&huge);
-}
-
-/* A use whose label holds a NUL, which the block replaces before the
- * inline parse looks the label up, is read again when an edit renames the
- * definition it names (E-D2). */
-static void session_edits_replaced_label(test_batch_runner *runner) {
-    static const char source[] = "[a\0b]: /url\n\nmid\n\n[a\0b]\n\nend\n";
-    markdown_core_session *session = NULL;
-    const markdown_core_document *document = NULL;
-    const markdown_core_position name = {1, 2}, after = {1, 3};
-    const bool edited =
-        markdown_core_session_new((const uint8_t *)source, sizeof(source) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8,
-                                  &session) == MARKDOWN_CORE_OK &&
-        markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK &&
-        markdown_core_session_edit(session, name, after, (const uint8_t *)"c", 1, &document) == MARKDOWN_CORE_OK;
-    OK(runner, edited && session_as_parsed(session), "renaming a label that holds a NUL reads its use again");
-    markdown_core_session_close(session);
-}
-
-/* An edit that leaps into a paragraph under a definition and parses its
- * inline content whole lists the inline notes of the paragraph's old tail
- * again: the old ones go, to the paragraph's end (blocks.c, THE LEAP). */
-static void session_edits_nested_notes(test_batch_runner *runner) {
-    static const char source[] = "a\n~\n  $m$ |a|\n  word word\n[^n]\nq -\n  [^[n]\nafter\n";
-    markdown_core_session *session = NULL;
-    const markdown_core_document *document = NULL;
-    const markdown_core_position line = {5, 1}, next = {6, 1};
-    const bool edited =
-        markdown_core_session_new((const uint8_t *)source, sizeof(source) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8,
-                                  &session) == MARKDOWN_CORE_OK &&
-        markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK &&
-        markdown_core_session_edit(session, line, next, (const uint8_t *)"", 0, &document) == MARKDOWN_CORE_OK;
-    OK(runner, edited && session_as_parsed(session),
-       "taking a line out of a definition's paragraph reads its inline note as a parse does");
-    markdown_core_session_close(session);
-}
-
-/* A heading whose text holds more before its last line than a label may
- * hold parses from its seams as a paragraph does, and an edit that leaps in
- * it projects only the children it made (names.c, THE NEW BASES): an edit
- * in one of two such headings that project to one base reads as a parse
- * does, and each shows its anchor whole, the second the first's with -1. */
-static void session_edits_long_headings(test_batch_runner *runner) {
-    char line[16];
-    markdown_core_strbuf text = MARKDOWN_CORE_BUF_INIT();
-    for (int copy = 0; copy < 2; copy++) {
-        for (int i = 0; i < 200; i++) {
-            snprintf(line, sizeof(line), "word %d\n", i);
-            markdown_core_strbuf_puts(&text, line);
-        }
-        markdown_core_strbuf_puts(&text, "===\n\n");
-    }
-    markdown_core_strbuf_puts(&text, "end\n");
-    markdown_core_session *session = NULL;
-    const markdown_core_document *document = NULL;
-    bool edited = markdown_core_session_new(text.ptr, (size_t)text.size, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
-                      MARKDOWN_CORE_OK &&
-                  markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK;
-    for (int edit = 0; edited && edit < 6; edit++) {
-        const markdown_core_position at = {(uint32_t)(100 + edit / 2), 2}, past = {(uint32_t)(100 + edit / 2), 3};
-        edited = (edit % 2 ? markdown_core_session_edit(session, at, past, (const uint8_t *)"", 0, &document)
-                           : markdown_core_session_edit(session, at, at, (const uint8_t *)"x", 1, &document)) ==
-                     MARKDOWN_CORE_OK &&
-                 session_as_parsed(session);
-    }
-    OK(runner, edited, "edits in a long heading read as a parse does");
-    const markdown_core_node *root = edited ? markdown_core_document_root(document) : NULL;
-    const markdown_core_optional_string first =
-        root ? anchor_of(facade_child(root, 0)) : (markdown_core_optional_string){0};
-    const markdown_core_optional_string second =
-        root ? anchor_of(facade_child(root, 1)) : (markdown_core_optional_string){0};
-    OK(runner,
-       first.has_value && second.has_value && first.value.length > 1000 &&
-           second.value.length == first.value.length + 2 && memcmp(first.value.data, "word-0-word-1-", 14) == 0 &&
-           memcmp(first.value.data, second.value.data, first.value.length) == 0 &&
-           memcmp(second.value.data + first.value.length, "-1", 2) == 0,
-       "two long headings of one base show it, the second with -1");
-    markdown_core_session_close(session);
-    markdown_core_strbuf_free(&text);
-}
-
-/* A NAME IS ITS BYTES (names.c, THE NAMES): two bases that measure the
- * same but differ are two names, each its own anchor, while a heading of
- * the same bytes as one before takes the next suffix; and an authored
- * anchor of a long name reserves it as a short one does. */
-static int compare_sums(const void *a, const void *b) {
-    const uint64_t x = *(const uint64_t *)a, z = *(const uint64_t *)b;
-    return (x > z) - (x < z);
-}
-
-static void heading_names_exact(test_batch_runner *runner) {
-    /* Two runs of one measure (measure.h): sixteen bytes whose changes from
-     * the first cancel in G's weights, which lattice reduction finds. */
-    const char *same = "mmmmmmmmmmmmmmmm", *other = "ojlmppsrglnngihk";
-    const markdown_core_measure a = markdown_core_measure_of((const unsigned char *)same, 16),
-                                b = markdown_core_measure_of((const unsigned char *)other, 16);
-    OK(runner, a.size == b.size && a.sum == b.sum, "the pair shares its measure");
-    char text[512];
-    int size = snprintf(text, sizeof(text), "# %s\n\n# %s\n\n# %s\n", same, other, same);
-    markdown_core_document *document = NULL;
-    bool ok = markdown_core_document_parse((const uint8_t *)text, (size_t)size, &document) == MARKDOWN_CORE_OK;
-    const markdown_core_node *root = ok ? markdown_core_document_root(document) : NULL;
-    markdown_core_optional_string anchors[3] = {{0}};
-    for (size_t i = 0; root && i < 3; i++) {
-        anchors[i] = anchor_of(facade_child(root, i));
-    }
-    OK(runner,
-       anchors[0].has_value && anchors[0].value.length == 16 && memcmp(anchors[0].value.data, same, 16) == 0 &&
-           anchors[1].has_value && anchors[1].value.length == 16 && memcmp(anchors[1].value.data, other, 16) == 0 &&
-           anchors[2].has_value && anchors[2].value.length == 18 && memcmp(anchors[2].value.data, same, 16) == 0 &&
-           memcmp(anchors[2].value.data + 16, "-1", 2) == 0,
-       "two bases of one measure are two names; the same bytes take -1");
-    markdown_core_document_free(document);
-
-    /* Changes that cancel take a lattice to find, not a pattern: 2^14 runs,
-     * with up to 14 bytes one up at the front and as many one down 61 bytes
-     * on, measure apart. */
-    enum { RUNS = 1 << 14 };
-    uint64_t *sums = (uint64_t *)malloc(RUNS * sizeof(*sums));
-    unsigned char run[140];
-    for (size_t v = 0; sums && v < RUNS; v++) {
-        memset(run, 'm', sizeof(run));
-        for (unsigned k = 0; k < 14; k++) {
-            if (v >> k & 1) {
-                run[k] = 'n';
-                run[61 + k] = 'l';
-            }
-        }
-        sums[v] = markdown_core_measure_of(run, sizeof(run)).sum;
-    }
-    if (sums) {
-        qsort(sums, RUNS, sizeof(*sums), compare_sums);
-    }
-    size_t shared = 0;
-    for (size_t v = 1; sums && v < RUNS; v++) {
-        shared += sums[v] == sums[v - 1];
-    }
-    OK(runner, sums && shared == 0, "a family of small changes measures apart");
-    free(sums);
-
-    markdown_core_strbuf huge = MARKDOWN_CORE_BUF_INIT();
-    char stem[2001];
-    memset(stem, 'a', 2000);
-    stem[2000] = '\0';
-    const char *parts[] = {"# ", stem, "\n\n# x {#", stem, "}\n\n# ", stem, "\n"};
-    for (size_t i = 0; i < sizeof(parts) / sizeof(parts[0]); i++) {
-        markdown_core_strbuf_puts(&huge, parts[i]);
-    }
-    document = NULL;
-    ok = markdown_core_document_parse(huge.ptr, (size_t)huge.size, &document) == MARKDOWN_CORE_OK;
-    root = ok ? markdown_core_document_root(document) : NULL;
-    for (size_t i = 0; root && i < 3; i++) {
-        anchors[i] = anchor_of(facade_child(root, i));
-    }
-    OK(runner,
-       anchors[0].has_value && anchors[0].value.length == 2002 && memcmp(anchors[0].value.data + 2000, "-1", 2) == 0 &&
-           anchors[1].has_value && anchors[1].value.length == 2000 && anchors[2].has_value &&
-           anchors[2].value.length == 2002 && memcmp(anchors[2].value.data + 2000, "-2", 2) == 0,
-       "an authored long anchor reserves its name before and after it");
-    markdown_core_document_free(document);
-    markdown_core_strbuf_free(&huge);
-}
-
-/* A name with a suffix is joined at its first read, which reports a refused
- * allocation rather than showing no anchor, and reads again after. */
-static void heading_long_anchor_refused(test_batch_runner *runner) {
-    char text[2208] = "# ";
-    memset(text + 2, 'a', 1100);
-    memcpy(text + 1102, "\n# ", 3);
-    memset(text + 1105, 'a', 1100);
-    text[2205] = '\n';
-    markdown_core_document *document = NULL;
-    const bool ok = markdown_core_document_parse((const uint8_t *)text, 2206, &document) == MARKDOWN_CORE_OK;
-    const markdown_core_node *heading = ok ? facade_child(markdown_core_document_root(document), 1) : NULL;
-    markdown_core_optional_string anchor = {0};
-    markdown_core_status refused = MARKDOWN_CORE_OK;
-    if (heading) {
-        strbuf_refuse_next = 1;
-        refused = markdown_core_node_anchor(heading, &anchor);
-        strbuf_refuse_next = 0;
-    }
-    INT_EQ(runner, refused, MARKDOWN_CORE_ALLOCATION_FAILED, "a refused first read of a joined anchor reports it");
-    OK(runner,
-       heading && markdown_core_node_anchor(heading, &anchor) == MARKDOWN_CORE_OK && anchor.has_value &&
-           anchor.value.length == 1102 && memcmp(anchor.value.data + 1100, "-1", 2) == 0,
-       "the joined anchor reads once storage is had");
-    markdown_core_document_free(document);
-}
-
-/* A heading that parses from its seams and stops, as an edit shortens it,
- * keeps the ids of the inline nodes the edit leaves. */
-static void heading_seams_end_keeps_ids(test_batch_runner *runner) {
-    char text[1400];
-    size_t size = 0;
-    for (int i = 0; i < 120; i++) {
-        memcpy(text + size, "word word\n", 10);
-        size += 10;
-    }
-    memcpy(text + size, "===\n\nend\n", 9);
-    size += 9;
-    markdown_core_session *session = NULL;
-    const markdown_core_document *document = NULL;
-    bool ok = markdown_core_session_new((const uint8_t *)text, size, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
-                  MARKDOWN_CORE_OK &&
-              markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK;
-    const markdown_core_position at = {76, 1}, past = {76, 2};
-    ok = ok && markdown_core_session_edit(session, at, past, (const uint8_t *)"z", 1, &document) == MARKDOWN_CORE_OK;
-    const markdown_core_node *heading = ok ? facade_child(markdown_core_document_root(document), 0) : NULL;
-    const markdown_core_node *end = heading ? last_child_of(heading) : NULL;
-    const uint64_t last = end ? markdown_core_node_id(end) : 0;
-    const markdown_core_position from = {26, 1}, to = {56, 1};
-    ok = ok && last &&
-         markdown_core_session_edit(session, from, to, (const uint8_t *)"x", 1, &document) == MARKDOWN_CORE_OK;
-    heading = ok ? facade_child(markdown_core_document_root(document), 0) : NULL;
-    end = heading ? last_child_of(heading) : NULL;
-    OK(runner, end && markdown_core_node_id(end) == last,
-       "a heading that stops parsing from its seams keeps the ids of the nodes an edit leaves");
-    markdown_core_session_close(session);
-}
-
-static void heading_long_authored_anchor(test_batch_runner *runner) {
-    char stem[1101];
-    memset(stem, 'a', 1100);
-    stem[1100] = '\0';
-    char text[4096];
-    const int size = snprintf(text, sizeof(text), "# %s\n\n# x {#%s}\n\n# %s\n", stem, stem, stem);
-    markdown_core_session *session = NULL;
-    const markdown_core_document *document = NULL;
-    bool ok = markdown_core_session_new((const uint8_t *)text, (size_t)size, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
-                  MARKDOWN_CORE_OK &&
-              markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK;
-    const markdown_core_node *root = ok ? markdown_core_document_root(document) : NULL;
-    bool shown = root != NULL;
-    static const char *const ends[] = {"-1", "", "-2"};
-    for (int i = 0; shown && i < 3; i++) {
-        const markdown_core_optional_string anchor = anchor_of(facade_child(root, i));
-        const size_t end = strlen(ends[i]);
-        shown = anchor.has_value && anchor.value.length == 1100 + end && memcmp(anchor.value.data, stem, 1100) == 0 &&
-                memcmp(anchor.value.data + 1100, ends[i], end) == 0;
-    }
-    OK(runner, shown, "a long authored anchor reserves its name before and after it");
-    /* Line 3 is the authored heading: its anchor goes, then comes back. */
-    const markdown_core_position at = {3, 5}, past = {3, (uint32_t)(5 + 3 + 1100)};
-    ok = ok && markdown_core_session_edit(session, at, past, (const uint8_t *)"", 0, &document) == MARKDOWN_CORE_OK &&
-         session_as_parsed(session);
-    const int written = snprintf(text, sizeof(text), "{#%s}", stem);
-    ok = ok &&
-         markdown_core_session_edit(session, at, at, (const uint8_t *)text, (size_t)written, &document) ==
-             MARKDOWN_CORE_OK &&
-         session_as_parsed(session);
-    OK(runner, ok, "edits that write a long authored anchor or let it go read as a parse does");
-    markdown_core_session_close(session);
-}
-
-/* What a session holds after an edit lets most of its text go: the edit
- * reads all of what is left into storage of its own, which holds no more
- * than twice what a session that reads that text afresh holds, and the
- * blocks before the edit keep their ids (plan 12.4, E-D4). */
-static void session_edits_compaction(test_batch_runner *runner) {
-    markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
-    for (int item = 0; item < 400; item++) {
-        char line[96];
-        snprintf(line, sizeof(line), "- item %03d\n  more\n\n  - inner\n    - deep\n\n  ```\n  code\n  ```\n\n", item);
-        markdown_core_strbuf_puts(&source, line);
-    }
-    properties_probe_arm();
-    markdown_core_session *session = NULL;
-    const markdown_core_document *document = NULL;
-    bool edited = markdown_core_session_new(source.ptr, (size_t)source.size, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
-                      MARKDOWN_CORE_OK &&
-                  markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK;
-    const uint64_t first = edited ? markdown_core_node_id(facade_child(markdown_core_document_root(document), 0)) : 0;
-    /* Lines 1 to 400 are the first forty items, and the edit takes the
-     * rest away. */
-    const markdown_core_position from = {401, 1}, to = {4001, 1};
-    edited =
-        edited && markdown_core_session_edit(session, from, to, (const uint8_t *)"", 0, &document) == MARKDOWN_CORE_OK;
-    const size_t held = properties_live_bytes;
-    const size_t size = edited ? markdown_core_session_text_size(session) : 0;
-    uint8_t *const text = malloc(size + 1);
-    size_t fresh = 0;
-    if (edited && text) {
-        markdown_core_session_text(session, text);
-        markdown_core_session *again = NULL;
-        const markdown_core_document *read = NULL;
-        if (markdown_core_session_new(text, size, MARKDOWN_CORE_TEXT_UNIT_UTF8, &again) == MARKDOWN_CORE_OK &&
-            markdown_core_session_flush(again, &read) == MARKDOWN_CORE_OK) {
-            fresh = properties_live_bytes - held;
-        }
-        markdown_core_session_close(again);
-    }
-    OK(runner, edited && session_as_parsed(session),
-       "the edit that takes most of the list away reads it as a parse does");
-    OK(runner, edited && markdown_core_node_id(facade_child(markdown_core_document_root(document), 0)) == first,
-       "the list keeps its id");
-    OK(runner, fresh && held <= 2 * fresh, "the session holds %zu bytes after the edit, a fresh one %zu", held, fresh);
-    markdown_core_session_close(session);
-    properties_probe_disarm();
-    OK(runner, properties_live_bytes == 0, "closing the sessions releases all they held");
-    free(text);
-    markdown_core_strbuf_free(&source);
-}
-
 /* An edit after the flush: refused while the session streams and at a cursor
  * that stands nowhere, and otherwise the parse of the new text, keeping the
  * ids of what it did not change (plan 12.3). */
-/* THE NAMES AN EDIT MOVES (names.c): an edit names again only the groups
- * of the stems it touched, and the anchors every heading then shows are a
- * fresh parse's. The text holds bases that are each other's parent
- * (`section`, `section-1`, `section-1-1`), a run of one base (`notes`),
- * explicit anchors that take a heading's name, and bases no other heading
- * bears on (`part-2`, `part-3`). Each edit types a byte, a line ending, a
- * whole heading or an anchor at every place, and takes it away again. */
-static void session_edits_name_headings(test_batch_runner *runner) {
-    static const char text[] = "# Section\n\n# Section 1\n\n# Notes\n\nx\n\n# Notes\n\n# Section\n\n"
-                               "# Other {#notes-1}\n\n# Section 1 1\n\n# Part 2\n\n# Notes\n\n# Part 3\n\n"
-                               "# Notes 1\n\n# Section {#section-2}\n";
-    static const char *const typed[] = {"z", "\n", "1", " 1", "# Notes\n\n", "# Section 1\n\n", " {#notes}", "-"};
-    markdown_core_session *session = NULL;
-    const markdown_core_document *document = NULL;
-    bool same = markdown_core_session_new((const uint8_t *)text, sizeof(text) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8,
-                                          &session) == MARKDOWN_CORE_OK &&
-                markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK && session_as_parsed(session);
-    size_t lines = 1;
-    for (size_t i = 0; i + 1 < sizeof(text); i++) {
-        lines += text[i] == '\n';
-    }
-    for (size_t t = 0; same && t < sizeof(typed) / sizeof(*typed); t++) {
-        const size_t size = strlen(typed[t]);
-        for (int line = 1; same && line <= (int)lines; line++) {
-            for (int column = 1; same; column++) {
-                const markdown_core_position at = {line, column};
-                const markdown_core_status status =
-                    markdown_core_session_edit(session, at, at, (const uint8_t *)typed[t], size, &document);
-                if (status == MARKDOWN_CORE_OUT_OF_BOUNDS) {
-                    break;
-                }
-                same = status == MARKDOWN_CORE_OK && session_as_parsed(session);
-                /* Where the typed text ends: its own lines move the end. */
-                markdown_core_position end = at;
-                for (size_t i = 0; i < size; i++) {
-                    if (typed[t][i] == '\n') {
-                        end.line++;
-                        end.column = 1;
-                    } else {
-                        end.column++;
-                    }
-                }
-                same = same && markdown_core_session_edit(session, at, end, NULL, 0, &document) == MARKDOWN_CORE_OK &&
-                       session_as_parsed(session);
-            }
-        }
-    }
-    OK(runner, same, "the headings an edit names again show the anchors a fresh parse gives them");
-    markdown_core_session_close(session);
-    /* Edits that take many lines at once: each run of whole lines of each
-     * text goes, or gives way to a heading, in a session of its own. The
-     * second text holds two headings of one base that one edit takes (a
-     * stem that the edit empties once, however many of its headings go). */
-    static const char *const texts[] = {text, "# A\n\n# A\n\n# A 1\n\n# A 1\n\n# A 2\n"};
-    static const char *const put[] = {"", "# A\n\n", "# Notes\n\n", "# Section 1\n\n"};
-    bool kept = true;
-    for (size_t x = 0; kept && x < sizeof(texts) / sizeof(*texts); x++) {
-        const size_t length = strlen(texts[x]);
-        int count = 1;
-        for (size_t i = 0; i + 1 < length; i++) {
-            count += texts[x][i] == '\n';
-        }
-        for (int first = 1; kept && first <= count; first++) {
-            for (int last = first + 1; kept && last <= count + 1; last++) {
-                for (size_t p = 0; kept && p < sizeof(put) / sizeof(*put); p++) {
-                    markdown_core_session *own = NULL;
-                    const markdown_core_document *read = NULL;
-                    const markdown_core_position from = {first, 1}, to = {last, 1};
-                    kept = markdown_core_session_new((const uint8_t *)texts[x], length, MARKDOWN_CORE_TEXT_UNIT_UTF8,
-                                                     &own) == MARKDOWN_CORE_OK &&
-                           markdown_core_session_flush(own, &read) == MARKDOWN_CORE_OK;
-                    const markdown_core_status status =
-                        kept ? markdown_core_session_edit(own, from, to, (const uint8_t *)put[p], strlen(put[p]), &read)
-                             : MARKDOWN_CORE_OK;
-                    kept = kept && (status == MARKDOWN_CORE_OUT_OF_BOUNDS ||
-                                    (status == MARKDOWN_CORE_OK && session_as_parsed(own)));
-                    markdown_core_session_close(own);
-                }
-            }
-        }
-    }
-    OK(runner, kept, "the headings an edit of many lines names again show a fresh parse's anchors");
-    /* A base whose number is past any size: no earlier heading holds its
-     * name, as no suffix wraps to the first heading's base. */
-    static const char wide[] = "# a\n\n# a-18446744073709551616\n\nend\n";
-    markdown_core_session *own = NULL;
-    const markdown_core_document *read = NULL;
-    const markdown_core_position from = {3, 3}, to = {3, 4};
-    OK(runner,
-       markdown_core_session_new((const uint8_t *)wide, sizeof(wide) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8, &own) ==
-               MARKDOWN_CORE_OK &&
-           markdown_core_session_flush(own, &read) == MARKDOWN_CORE_OK &&
-           markdown_core_session_edit(own, from, to, (const uint8_t *)"a", 1, &read) == MARKDOWN_CORE_OK &&
-           session_as_parsed(own),
-       "a heading whose base ends in a number past any size keeps a fresh parse's anchor");
-    markdown_core_session_close(own);
-}
-
-/* Every block of literal lines reads an edit of a later line of its own
- * from that line (blocks.c, THE LEAP): a code fence; a `$$`, `\\[` or `%%`
- * block, whose opener's line gives its content its first line as a fence's
- * does, and the `%%` block's opener, which read ahead for its closer,
- * decided only that it found one (element.h, the edit's `shuts`); and a
- * block a block of literal lines became as it closed, an HTML comment
- * block or a formula fence, as the block it read as (THE FORMER KIND). It
- * is the node it was, and the reading takes the old text past it back. An
- * edit of its last line reads it as a fresh parse does, and one that leaves
- * it no longer of its kind makes it a node of its own. */
-static void session_edits_literal_blocks(test_batch_runner *runner) {
-    static const struct {
-        const char *open, *close;
-        markdown_core_node_kind kind;
-    } blocks[] = {
-        {"```\n", "```\n", MARKDOWN_CORE_KIND_CODE_BLOCK},
-        {"$$\n", "$$\n", MARKDOWN_CORE_KIND_FORMULA_BLOCK},
-        {"\\\\[  \n", "\\\\]\n", MARKDOWN_CORE_KIND_FORMULA_BLOCK},
-        {"%%\n", "%%\n", MARKDOWN_CORE_KIND_COMMENT},
-        {"<!--\n", "-->\n", MARKDOWN_CORE_KIND_COMMENT},
-        {"```formula\n", "```\n", MARKDOWN_CORE_KIND_FORMULA_BLOCK},
-    };
-    for (size_t b = 0; b < sizeof(blocks) / sizeof(*blocks); b++) {
-        markdown_core_strbuf text = MARKDOWN_CORE_BUF_INIT();
-        markdown_core_strbuf_puts(&text, "before\n\n");
-        markdown_core_strbuf_puts(&text, blocks[b].open);
-        for (int i = 0; i < 64; i++) {
-            markdown_core_strbuf_puts(&text, "x_line\n");
-        }
-        markdown_core_strbuf_puts(&text, blocks[b].close);
-        markdown_core_strbuf_puts(&text, "\nafter\n");
-        markdown_core_session *session = NULL;
-        const markdown_core_document *document;
-        OK(runner,
-           markdown_core_session_new(text.ptr, (size_t)text.size, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
-                   MARKDOWN_CORE_OK &&
-               markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK,
-           "a session flushes the block");
-        markdown_core_strbuf_free(&text);
-        if (!session) {
-            continue;
-        }
-        const markdown_core_node *block = facade_child(markdown_core_document_root(document), 1);
-        const uint64_t id = markdown_core_node_id(block);
-        OK(runner, markdown_core_node_get_kind(block) == blocks[b].kind, "the block became its own kind");
-        bool kept = true, local = true;
-        for (int k = 0; k < 8; k++) {
-            const markdown_core_position at = {4 + 30 + k % 3, 2};
-            size_t from = 0, to = 0;
-            kept =
-                kept &&
-                markdown_core_session_edit(session, at, at, (const uint8_t *)"y", 1, &document) == MARKDOWN_CORE_OK &&
-                session_as_parsed(session);
-            block = facade_child(markdown_core_document_root(document), 1);
-            kept = kept && markdown_core_node_get_kind(block) == blocks[b].kind && markdown_core_node_id(block) == id;
-            markdown_core_session_reread(session, &from, &to);
-            local = local && to - from < 64;
-        }
-        OK(runner, kept, "an edit of a later line keeps the block, the node it was");
-        OK(runner, local, "and reads the text again only around the line");
-        /* Its last line no longer closes it: it reads to the text's end
-         * as the block of literal lines, or the fence it was. */
-        const markdown_core_position last = {3 + 64 + 1, 1}, cut = {3 + 64 + 1, 3};
-        OK(runner,
-           markdown_core_session_edit(session, last, cut, NULL, 0, &document) == MARKDOWN_CORE_OK &&
-               session_as_parsed(session),
-           "an edit of its last line reads it as a fresh parse does");
-        block = facade_child(markdown_core_document_root(document), 1);
-        OK(runner,
-           markdown_core_node_get_kind(block) != blocks[b].kind ? markdown_core_node_id(block) != id
-                                                                : markdown_core_node_id(block) == id,
-           "a block no longer of the kind it became is a node of its own");
-        markdown_core_session_close(session);
-    }
-}
-
-static void session_edits(test_batch_runner *runner) {
-    static const char source[] = "one\n\ntw\xf0\xa0\x80\x80o\n";
-    markdown_core_session *session = NULL;
-    const markdown_core_document *document = NULL;
-    OK(runner,
-       markdown_core_session_new((const uint8_t *)source, sizeof(source) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF16,
-                                 &session) == MARKDOWN_CORE_OK,
-       "a session opens");
-    if (!session) {
-        return;
-    }
-    const markdown_core_position at = {3, 6};
-    OK(runner,
-       markdown_core_session_edit(session, at, at, (const uint8_t *)"s", 1, &document) ==
-               MARKDOWN_CORE_SESSION_STREAMING &&
-           !document,
-       "an edit before the flush is SESSION_STREAMING");
-    OK(runner, markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK, "the session flushes");
-    const markdown_core_node *root = markdown_core_document_root(document);
-    const uint64_t first = markdown_core_node_id(facade_child(root, 0));
-    const uint64_t second = markdown_core_node_id(facade_child(root, 1));
-    const markdown_core_position nowhere[][2] = {
-        {{0, 1}, {0, 1}}, {{1, 5}, {1, 5}}, {{3, 4}, {3, 4}}, {{5, 1}, {5, 1}}, {{3, 2}, {3, 1}}};
-    bool refused = true;
-    for (size_t i = 0; i < sizeof(nowhere) / sizeof(nowhere[0]); i++) {
-        document = NULL;
-        refused = refused &&
-                  markdown_core_session_edit(session, nowhere[i][0], nowhere[i][1], (const uint8_t *)"x", 1,
-                                             &document) == MARKDOWN_CORE_OUT_OF_BOUNDS &&
-                  !document;
-    }
-    OK(runner, refused && markdown_core_session_text_size(session) == sizeof(source) - 1,
-       "an edit at a cursor that stands nowhere, or reversed, is OUT_OF_BOUNDS and changes nothing");
-    OK(runner,
-       markdown_core_session_edit(session, at, at, (const uint8_t *)"s", 1, &document) == MARKDOWN_CORE_OK &&
-           document == markdown_core_session_document(session),
-       "an edit after the surrogate pair answers the session's document");
-    uint8_t text[64];
-    markdown_core_session_text(session, text);
-    OK(runner,
-       markdown_core_session_text_size(session) == sizeof(source) &&
-           memcmp(text, "one\n\ntw\xf0\xa0\x80\x80os\n", sizeof(source)) == 0,
-       "the edit lands in the text");
-    root = markdown_core_document_root(document);
-    OK(runner,
-       markdown_core_node_id(facade_child(root, 0)) == first && markdown_core_node_id(facade_child(root, 1)) == second,
-       "both paragraphs keep their ids");
-    size_t from = 0, to = 0;
-    markdown_core_session_reread(session, &from, &to);
-    OK(runner, from <= 5 && to == sizeof(source), "the edit read the text again from the paragraph before it");
-    const markdown_core_position start = {1, 1}, end = {3, 1};
-    OK(runner,
-       markdown_core_session_edit(session, start, end, (const uint8_t *)"# ", 2, &document) == MARKDOWN_CORE_OK &&
-           markdown_core_node_get_kind(facade_child(markdown_core_document_root(document), 0)) ==
-               MARKDOWN_CORE_KIND_HEADING &&
-           !facade_child(markdown_core_document_root(document), 1),
-       "an edit across lines reads the new text");
-    markdown_core_session_close(session);
-
-    /* An edit reads the new text up to the first old child after it that
-     * reads as it did, and takes that child and those after it back as
-     * they were (plan 12.3, step 4). */
-    static const char middle[] = "one\n\ntwo\n\nthree\n";
-    session = NULL;
-    OK(runner,
-       markdown_core_session_new((const uint8_t *)middle, sizeof(middle) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
-               MARKDOWN_CORE_OK &&
-           markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK,
-       "a session flushes three paragraphs");
-    if (!session) {
-        return;
-    }
-    const uint64_t third = markdown_core_node_id(facade_child(markdown_core_document_root(document), 2));
-    const markdown_core_position typed = {3, 2}, past = {3, 3};
-    OK(runner,
-       markdown_core_session_edit(session, typed, typed, (const uint8_t *)"x", 1, &document) == MARKDOWN_CORE_OK &&
-           session_as_parsed(session) &&
-           markdown_core_node_id(facade_child(markdown_core_document_root(document), 2)) == third,
-       "an edit in the middle paragraph takes the last one back");
-    markdown_core_session_reread(session, &from, &to);
-    OK(runner, from == 5 && to == 11, "it reads the text again only from the middle paragraph up to the last");
-    OK(runner,
-       markdown_core_session_edit(session, typed, past, (const uint8_t *)"", 0, &document) == MARKDOWN_CORE_OK &&
-           session_as_parsed(session),
-       "an edit that takes the typed byte away takes the last paragraph back again");
-    markdown_core_session_reread(session, &from, &to);
-    OK(runner, from == 5 && to == 10,
-       "it reads the text again only from the middle paragraph up to where the last starts");
-    const markdown_core_position later = {5, 3};
-    OK(runner,
-       markdown_core_session_edit(session, later, later, (const uint8_t *)"\n\n# t", 5, &document) ==
-               MARKDOWN_CORE_OK &&
-           session_as_parsed(session),
-       "an edit in a paragraph taken back reads it as any other");
-    markdown_core_session_close(session);
-
-    /* What the children taken back hold stands: their headings, numbered
-     * after the new ones, their definitions and the links to them. */
-    static const char held[] = "# a\n\nb\n\n# a\n\n[x]: /u\n\n[x] [^n]\n\n[^n]: n\n";
-    session = NULL;
-    OK(runner,
-       markdown_core_session_new((const uint8_t *)held, sizeof(held) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
-               MARKDOWN_CORE_OK &&
-           markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK,
-       "a session flushes headings, definitions and links");
-    if (!session) {
-        return;
-    }
-    const markdown_core_position into_b = {3, 2};
-    OK(runner,
-       markdown_core_session_edit(session, into_b, into_b, (const uint8_t *)"\n\n# a", 5, &document) ==
-               MARKDOWN_CORE_OK &&
-           session_as_parsed(session),
-       "a heading the edit adds names those taken back after it");
-    markdown_core_session_reread(session, &from, &to);
-    OK(runner, to < markdown_core_session_text_size(session), "that edit took the children after it back");
-    const markdown_core_position link = {11, 2};
-    OK(runner,
-       markdown_core_session_edit(session, link, link, (const uint8_t *)"y", 1, &document) == MARKDOWN_CORE_OK &&
-           session_as_parsed(session),
-       "an edit among the children taken back reads them as any other");
-    const markdown_core_position head = {1, 3};
-    OK(runner,
-       markdown_core_session_edit(session, head, head, (const uint8_t *)"\n\n[x]: /v", 9, &document) ==
-               MARKDOWN_CORE_OK &&
-           session_as_parsed(session),
-       "an edit that declares a label anew reads the whole text again");
-    markdown_core_session_close(session);
-
-    /* A block whose definitions were cut from its front starts past them,
-     * and an edit reads it again from where they began. */
-    static const char cut[] = "[x]: /a\n    a\na | b\n[x]: /a\n---\n";
-    session = NULL;
-    OK(runner,
-       markdown_core_session_new((const uint8_t *)cut, sizeof(cut) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
-               MARKDOWN_CORE_OK &&
-           markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK,
-       "a session flushes a heading whose definitions were cut");
-    if (!session) {
-        return;
-    }
-    const markdown_core_position last = {6, 1};
-    OK(runner,
-       markdown_core_session_edit(session, last, last, (const uint8_t *)"z", 1, &document) == MARKDOWN_CORE_OK &&
-           session_as_parsed(session),
-       "an edit after the heading reads it again from its definitions");
-    markdown_core_session_close(session);
-
-    /* An edit refused at any allocation leaves nothing behind once the
-     * session closes, the blocks the edit took from the tree included. */
-    static const char kept[] = "# a\n\nb\n\nc\n";
-    bool clean = true, done = false;
-    for (size_t fail = 1; fail < 400 && clean && !done; fail++) {
-        payload_probe_arm();
-        session = NULL;
-        if (markdown_core_session_new((const uint8_t *)kept, sizeof(kept) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8,
-                                      &session) != MARKDOWN_CORE_OK ||
-            markdown_core_session_flush(session, &document) != MARKDOWN_CORE_OK) {
-            clean = false;
-        } else {
-            const markdown_core_position into = {5, 1};
-            payload_fail_at = payload_allocations + fail;
-            done = markdown_core_session_edit(session, into, into, (const uint8_t *)"abc\n", 4, &document) ==
-                   MARKDOWN_CORE_OK;
-            payload_fail_at = 0;
-        }
-        markdown_core_session_close(session);
-        payload_probe_disarm();
-        clean = clean && payload_live == 0;
-    }
-    OK(runner, clean && done, "an edit refused at any allocation leaks nothing");
-
-    /* An edit refused at any allocation leaves the session as a fresh
-     * parse of its text has it, or refusing every edit after it, a label it
-     * declares for the children before it included. */
-    static const char labeled[] = "[x]\n\na\n\nb\n\nc\n";
-    bool sound = true;
-    done = false;
-    for (size_t fail = 1; fail < 1000 && sound && !done; fail++) {
-        payload_probe_arm();
-        session = NULL;
-        const markdown_core_position into = {8, 1};
-        if (markdown_core_session_new((const uint8_t *)labeled, sizeof(labeled) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8,
-                                      &session) != MARKDOWN_CORE_OK ||
-            markdown_core_session_flush(session, &document) != MARKDOWN_CORE_OK) {
-            sound = false;
-        } else {
-            payload_fail_at = payload_allocations + fail;
-            done = markdown_core_session_edit(session, into, into, (const uint8_t *)"\n[x]: /a\n", 9, &document) ==
-                   MARKDOWN_CORE_OK;
-            payload_fail_at = 0;
-            const markdown_core_status again = markdown_core_session_edit(session, into, into, NULL, 0, &document);
-            sound = again == MARKDOWN_CORE_ALLOCATION_FAILED ? !done
-                                                             : again == MARKDOWN_CORE_OK && session_as_parsed(session);
-        }
-        markdown_core_session_close(session);
-        payload_probe_disarm();
-        sound = sound && payload_live == 0;
-    }
-    OK(runner, sound && done, "an edit refused at any allocation leaves the session sound");
-
-    /* The same of an edit that takes children back, with what they hold:
-     * a heading, a definition and a link to it. */
-    static const char spliced[] = "a\n\nb\n\n# h\n\n[x]: /u\n\n[x]\n";
-    sound = true;
-    done = false;
-    for (size_t fail = 1; fail < 1000 && sound && !done; fail++) {
-        payload_probe_arm();
-        session = NULL;
-        const markdown_core_position into = {3, 1};
-        if (markdown_core_session_new((const uint8_t *)spliced, sizeof(spliced) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8,
-                                      &session) != MARKDOWN_CORE_OK ||
-            markdown_core_session_flush(session, &document) != MARKDOWN_CORE_OK) {
-            sound = false;
-        } else {
-            payload_fail_at = payload_allocations + fail;
-            done =
-                markdown_core_session_edit(session, into, into, (const uint8_t *)"z", 1, &document) == MARKDOWN_CORE_OK;
-            payload_fail_at = 0;
-            from = to = 0;
-            markdown_core_session_reread(session, &from, &to);
-            sound = !done || to < markdown_core_session_text_size(session);
-            const markdown_core_position back = {9, 2};
-            const markdown_core_status again =
-                markdown_core_session_edit(session, back, back, (const uint8_t *)"y", 1, &document);
-            sound = sound && (again == MARKDOWN_CORE_ALLOCATION_FAILED
-                                  ? !done
-                                  : again == MARKDOWN_CORE_OK && session_as_parsed(session));
-        }
-        markdown_core_session_close(session);
-        payload_probe_disarm();
-        sound = sound && payload_live == 0;
-    }
-    OK(runner, sound && done, "an edit that takes children back, refused at any allocation, leaves the session sound");
-
-    /* After an edit that took children back, an edit anywhere reads as a
-     * fresh parse does: what it took back holds its lines, its reach, its
-     * declarations and its headings in the new text's terms. */
-    static const char twice[] = "# a\n\nb\n\n# a\n\n> q\n\n[x]: /u\n\n[x] [^n]\n\n[^n]: n\n";
-    session = NULL;
-    bool fresh = markdown_core_session_new((const uint8_t *)twice, sizeof(twice) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8,
-                                           &session) == MARKDOWN_CORE_OK &&
-                 markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK;
-    const markdown_core_position seed = {3, 2};
-    fresh = fresh &&
-            markdown_core_session_edit(session, seed, seed, (const uint8_t *)"z", 1, &document) == MARKDOWN_CORE_OK;
-    size_t lines = 0;
-    for (size_t i = 0; i < sizeof(twice); i++) {
-        lines += twice[i] == '\n';
-    }
-    for (int line = 1; fresh && line <= (int)lines; line++) {
-        for (int column = 1; fresh; column++) {
-            const markdown_core_position at = {line, column};
-            const markdown_core_status status =
-                markdown_core_session_edit(session, at, at, (const uint8_t *)"\n", 1, &document);
-            if (status == MARKDOWN_CORE_OUT_OF_BOUNDS) {
-                break;
-            }
-            const markdown_core_position next = {line + 1, 1};
-            fresh = status == MARKDOWN_CORE_OK && session_as_parsed(session) &&
-                    markdown_core_session_edit(session, at, next, NULL, 0, &document) == MARKDOWN_CORE_OK &&
-                    session_as_parsed(session);
-        }
-    }
-    OK(runner, fresh, "an edit anywhere after one that took children back reads as a fresh parse");
-    markdown_core_session_close(session);
-}
-
-/* The anchor `node` has, compared with `expected`. */
-static bool anchor_is(const markdown_core_node *node, const char *expected) {
-    markdown_core_optional_string anchor = node ? anchor_of(node) : (markdown_core_optional_string){0};
-    return anchor.has_value && anchor.value.length == strlen(expected) &&
-           memcmp(anchor.value.data, expected, anchor.value.length) == 0;
-}
-
-/* The first heading under the document's first block, or inside its first
- * item. */
-static const markdown_core_node *first_heading(const markdown_core_document *document) {
-    const markdown_core_node *heading = facade_child(facade_child(markdown_core_document_root(document), 0), 0);
-    if (heading && markdown_core_node_get_kind(heading) == MARKDOWN_CORE_KIND_LIST_ITEM) {
-        heading = facade_child(heading, 0);
-    }
-    return heading;
-}
-
-/* A snapshot's headings take their anchors as a fresh parse's do: every
- * explicit anchor of the text is reserved first, a later one included, and
- * one of a block the text ends in too (docs/specs/dialect/anchors.md). */
-static void session_snapshot_anchors(test_batch_runner *runner) {
-    static const struct {
-        const char *source;
-        const char *message;
-    } cases[] = {
-        {":::note{#x}\n# x\n:::\n", "a heading inside a container avoids the container's anchor"},
-        {"- # x\n\n#x#\n", "a heading avoids an explicit anchor written after it"},
-        {"- # x\n\n:::note{#x}\nbody\n", "a heading avoids the anchor of a container the text ends in"},
-        {"- # x\n\n- a #x#\n", "a heading avoids the anchor an open item takes from its paragraph"},
-    };
-    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
-        markdown_core_session *session = NULL;
-        if (markdown_core_session_new((const uint8_t *)cases[i].source, strlen(cases[i].source),
-                                      MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) != MARKDOWN_CORE_OK) {
-            OK(runner, 0, "a session opens on %s", cases[i].source);
-            continue;
-        }
-        OK(runner, anchor_is(first_heading(markdown_core_session_document(session)), "x-1"), "snapshot: %s",
-           cases[i].message);
-        const markdown_core_document *final = NULL;
-        OK(runner,
-           markdown_core_session_flush(session, &final) == MARKDOWN_CORE_OK && anchor_is(first_heading(final), "x-1"),
-           "final: %s", cases[i].message);
-        markdown_core_session_close(session);
-    }
-}
-
-/* The canonical dump of `document` over `source`, or NULL. */
-static uint8_t *dump_of(const markdown_core_document *document, const char *source, size_t length,
-                        size_t *dump_length) {
-    uint8_t *dump = NULL;
-    if (!document ||
-        markdown_core_document_dump(document, markdown_core_document_root(document), (const uint8_t *)source, length,
-                                    &dump, dump_length) != MARKDOWN_CORE_OK) {
-        return NULL;
-    }
-    return dump;
-}
-
-/* Whether a session opened with the first `cut` bytes of `source` and fed
- * the rest in chunks of `chunk` bytes, or line by line when it is 0,
- * flushes to the dump of a fresh parse of it. */
-static bool splits_as_a_parse(const char *source, size_t cut, size_t chunk) {
-    const size_t length = strlen(source);
-    size_t expected_length = 0, actual_length = 0;
-    markdown_core_document *parsed = NULL;
-    uint8_t *expected = markdown_core_document_parse((const uint8_t *)source, length, &parsed) == MARKDOWN_CORE_OK
-                            ? dump_of(parsed, source, length, &expected_length)
-                            : NULL;
-    markdown_core_session *session = NULL;
-    bool appended = markdown_core_session_new((const uint8_t *)source, cut, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
-                    MARKDOWN_CORE_OK;
-    for (size_t at = cut; appended && at < length;) {
-        size_t step = chunk;
-        if (!step) {
-            const char *newline = memchr(source + at, '\n', length - at);
-            step = newline ? (size_t)(newline - (source + at)) + 1 : length - at;
-        }
-        step = step < length - at ? step : length - at;
-        const markdown_core_document *document = NULL;
-        appended =
-            markdown_core_session_append(session, (const uint8_t *)source + at, step, &document) == MARKDOWN_CORE_OK;
-        at += step;
-    }
-    const markdown_core_document *final = NULL;
-    uint8_t *actual = appended && markdown_core_session_flush(session, &final) == MARKDOWN_CORE_OK
-                          ? dump_of(final, source, length, &actual_length)
-                          : NULL;
-    const bool same =
-        expected && actual && expected_length == actual_length && memcmp(expected, actual, expected_length) == 0;
-    markdown_core_dump_free(actual);
-    markdown_core_session_close(session);
-    markdown_core_dump_free(expected);
-    markdown_core_document_free(parsed);
-    return same;
-}
-
-/* The same of a session opened empty. */
-static bool flushes_as_a_parse(const char *source, size_t chunk) { return splits_as_a_parse(source, 0, chunk); }
-
-/* A STREAMED SESSION FINALIZES TO WHAT A FRESH PARSE OF ITS TEXT IS (plan
- * 5.4, 5.10). The text arrives byte by byte, three bytes at a time and line
- * by line. A block that completes at a commit sees only the definitions
- * written before it, so each use below is defined after it, past enough
- * paragraphs that the use's block completes at a commit before the
- * definition arrives; flush looks the use up again. The uses sit in each
- * holder of inline content: a paragraph, a heading and its trailing
- * attributes, a callout title, a definition term, a table caption, a pipe
- * cell and a grid cell, a list item inside a quote, and a heading inside a
- * container. Some uses stay undefined, and a heading whose anchor depends on
- * whether its use resolves comes before a heading of the resolved text. A
- * grid table followed by a paragraph of several lines appends to the
- * paragraph's content after the table's cells. */
-static void session_flush_matches_a_parse(test_batch_runner *runner) {
-#define FILLER "\n\nfiller one\n\nfiller two\n\nfiller three\n\n"
-    static const char *const sources[] = {
-        "See [x], [^n] and @s." FILLER "[x]: /u\n\n[^n]: note\n\n(@s) sample\n",
-        "# Head [x]\n\ntext" FILLER "[x]: /u\n",
-        "# Title [x][]{#a}\n\n# a" FILLER "[x]: /u\n",
-        "# Head [foo][x]" FILLER "# Head foo\n\n[x]: /u\n",
-        "# Head @s here" FILLER "(@s) sample\n",
-        "> [!NOTE] Title [x]\n> body" FILLER "[x]: /u\n",
-        "Term [x]\n: def" FILLER "[x]: /u\n",
-        "Table: Caption [x]\n\n| a | b |\n|---|---|\n| c | d |" FILLER "[x]: /u\n",
-        "| a | b |\n|---|---|\n| [x] | y |" FILLER "[x]: /u\n",
-        "+---+---+\n| a | b |\n+===+===+\n| [x] | y |\n+---+---+\n\npara line one\nline two\nline three" FILLER
-        "[x]: /u\n",
-        "> - item [x] and [y]" FILLER "[x]: /u\n",
-        ":::note{#d}\n# x [x]\n:::" FILLER "# x\n\n[x]: /u\n",
-        "See [^n] here." FILLER "[^n]: note\n",
-        "See [^n]{#c} and [x][y]{#a}." FILLER "# a\n\n# c\n\n[^n]: note\n\n[y]: /u\n",
-        "- a\n  - # A [x]\n  - > b [y]\n    > - # A [x]\n- c" FILLER ":n{#a}\n\n# A\n\n[x]: /u\n\n[y]: /v\n",
-        /* A `$` pair whose body a code span begins makes no formula, but
-         * takes the `*` between away: no settle point lies inside it. */
-        "a\n$`\n`*$*",
-        "a\n$`b\n`*b$*\n",
-        /* A quote whose closer the text has not reached yet leaves the
-         * attribute block open past the brace it closes at for now. */
-        "a\n:d{b='\n}c'x",
-        /* A topic's name reads the character after it whole: a four-byte
-         * lead the text cuts short may yet be part of the name. */
-        "%%%%\ns\n~\x9b~#\xc8\xdd\xf2"
-        "3\xc2\xe3",
-        /* A `$` the emphasis around it takes away still made each `$` after
-         * it a closer: no settle point lies past it. */
-        "a\n*$`m\n`*$x$",
-    };
-#undef FILLER
-    static const size_t chunks[] = {1, 3, 0};
-    for (size_t i = 0; i < sizeof(sources) / sizeof(sources[0]); i++) {
-        for (size_t c = 0; c < sizeof(chunks) / sizeof(chunks[0]); c++) {
-            OK(runner, flushes_as_a_parse(sources[i], chunks[c]), "a session streamed in %s flushes as a parse: %s",
-               chunks[c] == 1   ? "bytes"
-               : chunks[c] == 3 ? "three bytes"
-                                : "lines",
-               sources[i]);
-        }
-    }
-}
-
-/* A SNAPSHOT WALKS THROUGH A DEFINITION'S BODY, which is no node of the
- * tree but a relation of its definition: the commits change the body, as a
- * list closes inside it and the text goes on below the list, or a block
- * open inside it, a quote or a list. The session opens with every prefix of
- * the text and takes the rest in chunks of one, two, three and five bytes. */
-static void session_walks_through_definition_bodies(test_batch_runner *runner) {
-    static const char *const sources[] = {
-        "m\n:\n  -\n\n  d|\n",
-        "Term\n:\n  - item\n\n  more text|\n",
-        "m\n: > a\n  > b\n  > c\n\n  > d\n  > e\n",
-        "m\n: - a\n\n  - b\n\n    c\n    d\n",
-    };
-    static const size_t chunks[] = {1, 2, 3, 5};
-    for (size_t i = 0; i < sizeof(sources) / sizeof(sources[0]); i++) {
-        const size_t length = strlen(sources[i]);
-        bool same = true;
-        size_t cut = 0, c = 0;
-        for (cut = 0; same && cut < length; cut++) {
-            for (c = 0; same && c < sizeof(chunks) / sizeof(chunks[0]); c++) {
-                same = splits_as_a_parse(sources[i], cut, chunks[c]);
-            }
-        }
-        OK(runner, same, "a session split through a definition's body flushes as a parse, at byte %zu: %s",
-           same ? length : cut - 1, sources[i]);
-    }
-}
-
-/* EVERY SNAPSHOT NAMES ITS HEADINGS AS A PARSE OF THE TEXT SO FAR DOES
- * (step 7, 4.5): the text arrives byte by byte, and after each append the
- * snapshot's dump is a fresh parse's of the same text. An explicit anchor
- * written after headings that took its name displaces the first of them,
- * which displaces the next along its own sequence: while the anchor is in a
- * snapshot's tail, a committed heading shows another name, and the commit
- * that reaches the anchor gives it that name for good. An anchor in an
- * unclosed code span is gone once the span closes, and the heading shows its
- * own name again. The headings sit at the top, in a footnote, as a setext
- * heading the last paragraph becomes, and with authored anchors. No text
- * here looks a definition up, so a snapshot's lookups change nothing. */
-static void session_snapshot_names(test_batch_runner *runner) {
-    static const char *const sources[] = {
-        "# A\n\n# A\n\n# A\n\ntext :n{#a} more\n\n# A\n",
-        "# A\n\none\n\ntwo\n\npara `x :n{#a}\nline` after\n\n# A\n\nthree\n\n`:n{#a-1}` and :n{#a-2}\n",
-        "# A\n\n# A-1\n\n# A\n\n:n{#a}\n\n# A-1\n",
-        "[^n]: # A\n\n    # A\n\n# A\n\n:n{#a}\n",
-        "# A\n\n# A\n\n# A\n\n# A\n\n# A\n\n# A\n\n# A\n\n:n{#a-2}\n\n# A\n\n:n{#a}\n",
-        "# A\n\n# B {#a}\n\n# A\n\nA\n=\n\nA {#a-1}\n-\n",
-        "- # A\n\n  # A\n\n> :n{#a-1}\n> # A\n",
-        "- a\n  - # A\n    text\n  - > # A\n    > - # A\n- # A\n\npara\n\n:n{#a}\n\n:n{#a-2}\n",
-    };
-    for (size_t i = 0; i < sizeof(sources) / sizeof(sources[0]); i++) {
-        const char *source = sources[i];
-        const size_t length = strlen(source);
-        markdown_core_session *session = NULL;
-        bool same = markdown_core_session_new((const uint8_t *)source, 0, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
-                    MARKDOWN_CORE_OK;
-        size_t at = 0;
-        while (same && at < length) {
-            const markdown_core_document *document = NULL;
-            same =
-                markdown_core_session_append(session, (const uint8_t *)source + at, 1, &document) == MARKDOWN_CORE_OK;
-            at++;
-            markdown_core_document *parsed = NULL;
-            size_t expected_length = 0, actual_length = 0;
-            uint8_t *expected = markdown_core_document_parse((const uint8_t *)source, at, &parsed) == MARKDOWN_CORE_OK
-                                    ? dump_of(parsed, source, at, &expected_length)
-                                    : NULL;
-            uint8_t *actual = same ? dump_of(document, source, at, &actual_length) : NULL;
-            same = expected && actual && expected_length == actual_length &&
-                   memcmp(expected, actual, expected_length) == 0;
-            markdown_core_dump_free(expected);
-            markdown_core_dump_free(actual);
-            markdown_core_document_free(parsed);
-        }
-        const markdown_core_document *final = NULL;
-        OK(runner, same && markdown_core_session_flush(session, &final) == MARKDOWN_CORE_OK,
-           "every snapshot names its headings as a parse of its text, up to byte %zu of %zu: %s", at, length, source);
-        markdown_core_session_close(session);
-    }
-}
 
 /* WHERE A NODE IS in the source, which names a node of one document in
  * another parsed from the same source even where their trees differ: its
@@ -11905,631 +9730,6 @@ typedef struct {
     markdown_core_position start;
     markdown_core_position end;
 } node_where;
-
-static bool node_where_of(const markdown_core_document *document, const markdown_core_node *node, const char *source,
-                          size_t length, node_where *where) {
-    memset(where, 0, sizeof(*where));
-    if (!node) {
-        return true;
-    }
-    markdown_core_scope *scopes = NULL;
-    size_t count = 0;
-    if (markdown_core_document_scope(document, node, (const uint8_t *)source, length, &scopes, &count) !=
-            MARKDOWN_CORE_OK ||
-        !count) {
-        markdown_core_scopes_free(scopes);
-        return false;
-    }
-    where->kind = (int)markdown_core_node_get_kind(node) + 1;
-    where->start = scopes[0].start;
-    where->end = scopes[count - 1].end;
-    markdown_core_scopes_free(scopes);
-    return true;
-}
-
-/* The label of a definition of table `table` (0 Footnotes, 1 Specimens, 2
- * References), and whether it has one. */
-static bool definition_label_of(int table, const markdown_core_node *node, markdown_core_string *label) {
-    markdown_core_optional_string optional = {0};
-    markdown_core_optional_i64 start;
-    if (table == 2) {
-        optional.has_value = markdown_core_reference_label(node, &optional.value) == MARKDOWN_CORE_OK;
-    } else if (table == 1) {
-        markdown_core_specimen_properties(node, &optional, &start);
-    } else {
-        markdown_core_footnote_label(node, &optional);
-    }
-    *label = optional.value;
-    return optional.has_value;
-}
-
-static size_t definition_count(int table, const markdown_core_document *document) {
-    return table == 0   ? markdown_core_document_footnote_count(document)
-           : table == 1 ? markdown_core_document_specimen_count(document)
-                        : markdown_core_document_reference_count(document);
-}
-
-static const markdown_core_node *definition_entry(int table, const markdown_core_document *document, size_t index) {
-    const markdown_core_node *node = NULL;
-    const markdown_core_status status = table == 0   ? markdown_core_document_footnote_at(document, index, &node)
-                                        : table == 1 ? markdown_core_document_specimen_at(document, index, &node)
-                                                     : markdown_core_document_reference_at(document, index, &node);
-    return status == MARKDOWN_CORE_OK ? node : NULL;
-}
-
-static const markdown_core_node *definition_lookup(int table, const markdown_core_document *document,
-                                                   markdown_core_string label) {
-    return table == 0   ? markdown_core_document_footnote_for(document, label)
-           : table == 1 ? markdown_core_document_specimen_for(document, label)
-                        : markdown_core_document_reference_for(document, label);
-}
-
-/* Whether two documents parsed from `length` bytes of `source` have tables
- * that agree, entry for entry, by where their nodes are: every list, the
- * lookup of every label a list holds and of a label none does, and the
- * reference label table. */
-static bool same_node(const markdown_core_document *actual, const markdown_core_node *mine,
-                      const markdown_core_document *expected, const markdown_core_node *theirs, const char *source,
-                      size_t length) {
-    node_where a, b;
-    return node_where_of(actual, mine, source, length, &a) && node_where_of(expected, theirs, source, length, &b) &&
-           a.kind == b.kind && a.start.line == b.start.line && a.start.column == b.start.column &&
-           a.end.line == b.end.line && a.end.column == b.end.column;
-}
-
-static bool tables_agree(const markdown_core_document *actual, const markdown_core_document *expected,
-                         const char *source, size_t length) {
-    bool same = true;
-#define SAME_NODE(a, b) same_node(actual, (a), expected, (b), source, length)
-    for (int table = 0; same && table < 3; table++) {
-        const size_t count = definition_count(table, expected);
-        same = definition_count(table, actual) == count;
-        for (size_t i = 0; same && i < count; i++) {
-            const markdown_core_node *entry = definition_entry(table, expected, i);
-            markdown_core_string label;
-            same = entry && SAME_NODE(definition_entry(table, actual, i), entry) &&
-                   (!definition_label_of(table, entry, &label) ||
-                    SAME_NODE(definition_lookup(table, actual, label), definition_lookup(table, expected, label)));
-        }
-        const markdown_core_string absent = {(const uint8_t *)"absent label", 12};
-        same = same && !definition_lookup(table, actual, absent) && !definition_lookup(table, expected, absent);
-    }
-    const size_t labels = markdown_core_document_reference_label_count(expected);
-    same = same && markdown_core_document_reference_label_count(actual) == labels;
-    for (size_t i = 0; same && i < labels; i++) {
-        markdown_core_string label, expected_label;
-        const markdown_core_node *target = NULL, *expected_target = NULL;
-        same = markdown_core_document_reference_label_at(actual, i, &label, &target) == MARKDOWN_CORE_OK &&
-               markdown_core_document_reference_label_at(expected, i, &expected_label, &expected_target) ==
-                   MARKDOWN_CORE_OK &&
-               label.length == expected_label.length && !memcmp(label.data, expected_label.data, label.length) &&
-               SAME_NODE(target, expected_target) &&
-               SAME_NODE(markdown_core_document_reference_for(actual, label), expected_target);
-    }
-#undef SAME_NODE
-    return same;
-}
-
-/* THE LABELS OF ANOTHER TABLE: a reference definition and a heading of one
- * label, a footnote and a specimen beside them. An edit of many lines that
- * takes a definition hands its label to the next holder, which may be in
- * another table and past the edit: every table is in the new text's terms
- * when it does (ast.c, markdown_core_publish_splice). Each run of whole
- * lines goes, or gives way to a line, in a session of its own. */
-static void session_edits_cross_tables(test_batch_runner *runner) {
-    static const char *const texts[] = {
-        "[a]: /foo\n\npara\n\n# a\n\nend\n",
-        "# b\n\n[b]: /b\n\n[^b]: n\n\n# B\n\n[b] [^b] [B]\n\n[b]: /again\n",
-        "[x]: /x\n[y]: /y\n\n(@x) X.\n\n# y\n\n# x\n\n[x] [y] @x\n",
-    };
-    static const char *const put[] = {"", "z\n", "[a]: /new\n\n", "# b\n\n"};
-    bool kept = true;
-    for (size_t x = 0; kept && x < sizeof(texts) / sizeof(*texts); x++) {
-        const size_t length = strlen(texts[x]);
-        int count = 1;
-        for (size_t i = 0; i + 1 < length; i++) {
-            count += texts[x][i] == '\n';
-        }
-        for (int first = 1; kept && first <= count; first++) {
-            for (int last = first + 1; kept && last <= count + 1; last++) {
-                for (size_t p = 0; kept && p < sizeof(put) / sizeof(*put); p++) {
-                    markdown_core_session *own = NULL;
-                    const markdown_core_document *read = NULL;
-                    const markdown_core_position from = {first, 1}, to = {last, 1};
-                    kept = markdown_core_session_new((const uint8_t *)texts[x], length, MARKDOWN_CORE_TEXT_UNIT_UTF8,
-                                                     &own) == MARKDOWN_CORE_OK &&
-                           markdown_core_session_flush(own, &read) == MARKDOWN_CORE_OK;
-                    const markdown_core_status status =
-                        kept ? markdown_core_session_edit(own, from, to, (const uint8_t *)put[p], strlen(put[p]), &read)
-                             : MARKDOWN_CORE_OK;
-                    kept = kept && (status == MARKDOWN_CORE_OUT_OF_BOUNDS ||
-                                    (status == MARKDOWN_CORE_OK && session_as_parsed(own)));
-                    if (kept && status == MARKDOWN_CORE_OK) {
-                        const size_t size = markdown_core_session_text_size(own);
-                        char *text = malloc(size + 1);
-                        markdown_core_document *parsed = NULL;
-                        kept = text != NULL;
-                        if (kept) {
-                            markdown_core_session_text(own, (uint8_t *)text);
-                            text[size] = '\0';
-                        }
-                        kept = kept &&
-                               markdown_core_document_parse((const uint8_t *)text, size, &parsed) == MARKDOWN_CORE_OK &&
-                               tables_agree(read, parsed, text, size);
-                        markdown_core_document_free(parsed);
-                        free(text);
-                    }
-                    markdown_core_session_close(own);
-                }
-            }
-        }
-    }
-    OK(runner, kept, "an edit that takes a definition hands its label on as a fresh parse does, across tables");
-}
-
-/* EVERY SNAPSHOT'S TABLES ARE A PARSE'S OF THE TEXT SO FAR (step 7, 4.5):
- * the text arrives byte by byte, and after each append the snapshot's
- * definition tables -- the lists, the lookups by label and the reference
- * labels -- name the nodes a fresh parse of the same text names, by where
- * they are in the text, since the snapshot's inline roots resolve only
- * definitions before them and its tree differs from the parse's. The committed definitions sit in the committed tables
- * and the tail's are the snapshot's own: footnotes nested in an open
- * footnote, inline notes, labels written twice, a Reference and Headings
- * declaring one label in either order, the tail's labels between committed
- * ones and over a committed Heading's, specimens, and a heading in a
- * footnote that a later anchor renames, which moves the footnote and the
- * heading to objects of their own while their entries stay committed. */
-static void session_snapshot_tables(test_batch_runner *runner) {
-    static const char *const sources[] = {
-        "[^a]: one\n\n    [^b]: inner\n\n    more\n\n[^a]: again\n\ntext [^a] ^[inline] [^b]\n\n[^c]: last\n",
-        "# Foo\n\n[foo]: /u\n\n# Foo\n\n[Foo] and [bar]\n\n[bar]: /b\n\n# Bar\n\n[foo]: /again\n",
-        "[^n]: # A\n\n    # A\n\n# A\n\n[A] and [a-1]\n\n:n{#a}\n\n[x]: /x\n",
-        "(5@etude) Body.\n(@) Anonymous.\n\n(@etude) Again.\n\n@etude and (@next) Next.\n",
-        "- [r]: /r\n- # R\n\n> [^q]: quote\n>\n> # Q\n\n[R] [Q] [^q]\n",
-        "[a]: /a\n\n# D\n\n[c]: /c\n\n# G\n\n[b]: /b\n[d]: /d\n[f]: /f\n\n[B] [D] [G]\n",
-    };
-    for (size_t i = 0; i < sizeof(sources) / sizeof(sources[0]); i++) {
-        const char *source = sources[i];
-        const size_t length = strlen(source);
-        markdown_core_session *session = NULL;
-        bool same = markdown_core_session_new((const uint8_t *)source, 0, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
-                    MARKDOWN_CORE_OK;
-        size_t at = 0;
-        while (same && at < length) {
-            const markdown_core_document *document = NULL;
-            same =
-                markdown_core_session_append(session, (const uint8_t *)source + at, 1, &document) == MARKDOWN_CORE_OK;
-            at++;
-            markdown_core_document *parsed = NULL;
-            same = same && markdown_core_document_parse((const uint8_t *)source, at, &parsed) == MARKDOWN_CORE_OK &&
-                   tables_agree(document, parsed, source, at);
-            markdown_core_document_free(parsed);
-        }
-        const markdown_core_document *final = NULL;
-        markdown_core_document *parsed = NULL;
-        same = same && markdown_core_session_flush(session, &final) == MARKDOWN_CORE_OK &&
-               markdown_core_document_parse((const uint8_t *)source, length, &parsed) == MARKDOWN_CORE_OK &&
-               tables_agree(final, parsed, source, length);
-        OK(runner, same, "every snapshot's tables are a parse's of its text, up to byte %zu of %zu: %s", at, length,
-           source);
-        markdown_core_document_free(parsed);
-        markdown_core_session_close(session);
-    }
-}
-
-/* The lists of a document in canonical walk order, into `lists`, which
- * holds `capacity`; their count, or SIZE_MAX when the walk could not
- * allocate. */
-static size_t document_lists(const markdown_core_document *document, const markdown_core_node **lists,
-                             size_t capacity) {
-    markdown_core_walk walk;
-    markdown_core_walk_item item;
-    size_t count = 0;
-    markdown_core_walk_begin(&walk, markdown_core_document_root(document));
-    while (markdown_core_walk_next(&walk, &item)) {
-        if (item.node && markdown_core_node_get_kind(item.node) == MARKDOWN_CORE_KIND_LIST && count < capacity) {
-            lists[count++] = item.node;
-        }
-    }
-    const bool failed = walk.failed;
-    markdown_core_walk_end(&walk);
-    return failed ? SIZE_MAX : count;
-}
-
-static bool list_tight(const markdown_core_node *list) {
-    markdown_core_list_flavor flavor;
-    markdown_core_optional_i64 start;
-    markdown_core_ordered_list_variant variant;
-    markdown_core_ordered_list_delimiter delimiter;
-    bool tight = false;
-    markdown_core_node_list_properties(list, &flavor, &start, &variant, &delimiter, &tight);
-    return tight;
-}
-
-/* EVERY SNAPSHOT LAYS ITS LISTS OUT AS A PARSE OF ITS TEXT (step 7, plan
- * 5.6): the text arrives byte by byte, and after each append every list of
- * the snapshot is where a fresh parse of the same text has one, and is
- * tight exactly when that one is. Each item and each child an item holds
- * folds into its list as it settles, and a snapshot closes copies of the
- * open list and item whose folds hold the committed children: a blank line
- * between items or between an item's children, a last item or child ending
- * with one, a nested list ending with one, a reference definition the
- * blank-line facts read through, a blank line inside a fence, an empty item
- * and lists that a later line ends. */
-static void session_snapshot_lists(test_batch_runner *runner) {
-    static const char *const sources[] = {
-        "- a\n- b\n- c\n\nafter\n",    "- a\n\n- b\n- c\n",          "- a\n\n  b\n- c\n\n  d\n",
-        "- a\n  - b\n\n- c\n",         "- a\n  - b\n\n  c\n",        "- a\n\n  [r]: /r\n- b\n\n- [s]: /s\n\n  e\n",
-        "- a\n\n  [r]: /r\n\n[r]\n",   "- ```\n  x\n\n  ```\n- b\n", "-\n- b\n\n-\n\n  c\n",
-        "1. a\n2. b\n\n\n3. c\n- d\n",
-    };
-    enum { LISTS = 16 };
-    for (size_t i = 0; i < sizeof(sources) / sizeof(sources[0]); i++) {
-        const char *source = sources[i];
-        const size_t length = strlen(source);
-        markdown_core_session *session = NULL;
-        bool same = markdown_core_session_new((const uint8_t *)source, 0, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
-                    MARKDOWN_CORE_OK;
-        size_t at = 0;
-        while (same && at <= length) {
-            const markdown_core_document *document = NULL;
-            if (at < length) {
-                same = markdown_core_session_append(session, (const uint8_t *)source + at, 1, &document) ==
-                       MARKDOWN_CORE_OK;
-            } else {
-                same = markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK;
-            }
-            const size_t parsed_length = at < length ? at + 1 : length;
-            markdown_core_document *parsed = NULL;
-            same = same &&
-                   markdown_core_document_parse((const uint8_t *)source, parsed_length, &parsed) == MARKDOWN_CORE_OK;
-            const markdown_core_node *mine[LISTS], *theirs[LISTS];
-            const size_t count = same ? document_lists(parsed, theirs, LISTS) : 0;
-            same = same && count < LISTS && document_lists(document, mine, LISTS) == count;
-            for (size_t k = 0; same && k < count; k++) {
-                same = same_node(document, mine[k], parsed, theirs[k], source, parsed_length) &&
-                       list_tight(mine[k]) == list_tight(theirs[k]);
-            }
-            markdown_core_document_free(parsed);
-            at++;
-        }
-        OK(runner, same, "every snapshot lays its lists out as a parse of its text, up to byte %zu of %zu: %s", at,
-           length, source);
-        markdown_core_session_close(session);
-    }
-}
-
-/* Whether `document` dumps as a fresh parse of the first `length` bytes of
- * `source` does. */
-static bool dumps_as_a_parse(const markdown_core_document *document, const char *source, size_t length) {
-    markdown_core_document *parsed = NULL;
-    size_t expected_length = 0, actual_length = 0;
-    uint8_t *expected = markdown_core_document_parse((const uint8_t *)source, length, &parsed) == MARKDOWN_CORE_OK
-                            ? dump_of(parsed, source, length, &expected_length)
-                            : NULL;
-    uint8_t *actual = dump_of(document, source, length, &actual_length);
-    const bool same =
-        expected && actual && expected_length == actual_length && memcmp(expected, actual, expected_length) == 0;
-    markdown_core_dump_free(expected);
-    markdown_core_dump_free(actual);
-    markdown_core_document_free(parsed);
-    return same;
-}
-
-/* A paragraph typed at its end, a few bytes an edit, on a flushed session,
- * dumps after every edit as a parse of the text so far does (blocks.c, THE
- * SEAMS): the reading parses its content from a seam inside its last line
- * while the edit only goes on from where the content ended, and from a seam
- * before when a line it reads takes the lines before it from the paragraph,
- * as a table's delimiter row and a heading's underline do. */
-static void session_typed_paragraph_end_matches_a_parse(test_batch_runner *runner) {
-#define LINES "one *two* three `four` five\nsix [seven](x) eight **nine** ten\neleven *twelve* thirteen\n"
-    static const char *const sources[] = {
-        LINES LINES "fourteen *fifteen* sixteen\n",
-        LINES LINES "a | b\n| - | - |\n| c | d |\n",
-        LINES LINES "head *line*\n=====\n\ntail *one* two\n",
-        LINES "hard *break*  \nnext *line*\\\nlast *line*\n",
-        LINES "an *open and `code\nspan` closes* later\n",
-        LINES "a [use][label] here *x* and\nmore *y* words\n\n[label]: /url\n",
-        LINES LINES "- item *one*\n- item *two*\n",
-        LINES "with trailing *spaces*   \nand *more*\r\nlines *crlf*\r\n",
-        /* After a block that holds blocks, the line after its last and the
-         * line after blank lines past it may go on in it. */
-        "- one *a*\n\n- two *b*\n\n\n- three\n  - four *c*\n\n  - five\n\nafter *d*\n",
-        "1) one\n2) two\n\n   more *x*\n3) three\n\n\nnot *in*\n- y\n",
-        "> quote *a*\n> more\n\n> again\nlazy *b*\n\nout\n",
-        "- a\n  > q\n\n  > r\n- b\n\n  ```\n  code\n\n  ```\n\ntail\n",
-        /* Columns of scalars of two, three and four bytes. */
-        "\xc3\xa9t\xc3\xa9 *\xe2\x82\xac* \xf0\x9f\x98\x80 x\n- \xc3\xa9 *y*\n\n- \xe2\x82\xac\n",
-    };
-    static const size_t steps[] = {1, 3, 2, 5, 1, 4, 7, 2};
-    for (size_t s = 0; s < sizeof(sources) / sizeof(*sources); s++) {
-        const char *source = sources[s];
-        const size_t length = strlen(source);
-        markdown_core_session *session = NULL;
-        const markdown_core_document *document = NULL;
-        bool ok = markdown_core_session_new(NULL, 0, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) == MARKDOWN_CORE_OK &&
-                  markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK;
-        size_t at = 0, k = 0;
-        markdown_core_position end = {1, 1};
-        while (ok && at < length) {
-            size_t size = steps[k++ % (sizeof(steps) / sizeof(*steps))];
-            size = size < length - at ? size : length - at;
-            ok = markdown_core_session_edit(session, end, end, (const uint8_t *)source + at, size, &document) ==
-                 MARKDOWN_CORE_OK;
-            for (size_t i = at; i < at + size; i++) {
-                const bool breaks = source[i] == '\n' || (source[i] == '\r' && source[i + 1] != '\n');
-                end = breaks ? (markdown_core_position){end.line + 1, 1}
-                             : (markdown_core_position){end.line, end.column + 1};
-            }
-            at += size;
-            ok = ok && dumps_as_a_parse(document, source, at);
-        }
-        OK(runner, ok, "a paragraph typed at its end dumps as a parse after every edit (source %zu, at %zu)", s, at);
-        markdown_core_session_close(session);
-    }
-    /* Whole lines written at the end, after an edit that leaves seams. */
-    static const char *const pieces[][6] = {
-        {LINES LINES, "a | b", "\n", "| - | - |\n", "| c | d |\n", NULL},
-        {LINES LINES, "head *x*", "\n", "===\n", "more *y*", NULL},
-        {LINES LINES, "head *x*", "\n", "---\n", "more *y*", NULL},
-        {LINES, "a *b* c", "\n", "| - |\n", NULL, NULL},
-        {LINES, "x *y*  ", "\n", "z *w*\\", "\n", "end"},
-    };
-    for (size_t s = 0; s < sizeof(pieces) / sizeof(*pieces); s++) {
-        char source[1024];
-        size_t at = 0;
-        markdown_core_session *session = NULL;
-        const markdown_core_document *document = NULL;
-        bool ok = markdown_core_session_new(NULL, 0, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) == MARKDOWN_CORE_OK &&
-                  markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK;
-        markdown_core_position end = {1, 1};
-        for (size_t k = 0; ok && k < 6 && pieces[s][k]; k++) {
-            const size_t size = strlen(pieces[s][k]);
-            memcpy(source + at, pieces[s][k], size);
-            ok = markdown_core_session_edit(session, end, end, (const uint8_t *)source + at, size, &document) ==
-                 MARKDOWN_CORE_OK;
-            for (size_t i = at; i < at + size; i++) {
-                end = source[i] == '\n' ? (markdown_core_position){end.line + 1, 1}
-                                        : (markdown_core_position){end.line, end.column + 1};
-            }
-            at += size;
-            ok = ok && dumps_as_a_parse(document, source, at);
-        }
-        OK(runner, ok, "lines written at a paragraph's end dump as a parse after every edit (pieces %zu, at %zu)", s,
-           at);
-        markdown_core_session_close(session);
-    }
-#undef LINES
-}
-
-/* Whether `source`, appended in pieces that end at each of the `count`
- * offsets `ends`, in order, gives after each append a snapshot whose dump is
- * a fresh parse's of the same text, and a flushed document whose dump is a
- * parse's of all of it; `at` is how many bytes were appended when it
- * stopped. */
-static bool pieces_dump_as_parses(const char *source, const size_t *ends, size_t count, size_t *at) {
-    markdown_core_session *session = NULL;
-    bool same = markdown_core_session_new((const uint8_t *)source, 0, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
-                MARKDOWN_CORE_OK;
-    *at = 0;
-    for (size_t i = 0; same && i < count; i++) {
-        const markdown_core_document *document = NULL;
-        same = markdown_core_session_append(session, (const uint8_t *)source + *at, ends[i] - *at, &document) ==
-                   MARKDOWN_CORE_OK &&
-               dumps_as_a_parse(document, source, ends[i]);
-        *at = ends[i];
-    }
-    const markdown_core_document *final = NULL;
-    same = same && markdown_core_session_flush(session, &final) == MARKDOWN_CORE_OK &&
-           dumps_as_a_parse(final, source, *at);
-    markdown_core_session_close(session);
-    return same;
-}
-
-/* The same of `source` appended byte by byte. */
-static bool snapshots_dump_as_parses(const char *source, size_t *at) {
-    const size_t length = strlen(source);
-    size_t *ends = malloc((length ? length : 1) * sizeof(*ends));
-    for (size_t i = 0; ends && i < length; i++) {
-        ends[i] = i + 1;
-    }
-    const bool same = ends && pieces_dump_as_parses(source, ends, length, at);
-    free(ends);
-    return same;
-}
-
-/* WHAT A BLOCK'S OPENING LINE GIVES IT, IN EVERY SNAPSHOT (step 7, THE
- * COPIES): the text arrives byte by byte, and after each append the
- * snapshot's dump is a fresh parse's of the same text. The blocks own what
- * their opening lines give them -- the attributes and name of a directive,
- * the info string and attributes of a fence, a callout's variant, a
- * footnote's label, a table's columns, a task's marker -- which the copies a
- * snapshot reads view, while the block is open, while it is the pending
- * block a blank line or an identifier still writes, and after a commit
- * closes it, settles it or makes a formula of it. No text here looks a
- * definition up, so a snapshot's lookups change nothing. */
-static void session_snapshot_openers(test_batch_runner *runner) {
-    static const char *const sources[] = {
-        ":::note{#d .c key=v}\nbody one\n\nbody two\n:::\n\nafter\n",
-        ":::note[Label *x*]{#d}\nbody\n:::\n\n\n\nafter\n",
-        "```js {#c .x key=v}\ncode one\ncode two\n```\n\nafter\n",
-        "```formula {#f}\nx^2\n```\n\nafter\n",
-        "> [!NOTE] Title *x*\n> body\n\nafter\n",
-        "- > [!TIP] Tip title\n  > body\n- next\n",
-        "[^n]: note one\n\n    note two\n\nafter\n",
-        "| a | b |\n|---|---|\n| c | d |\n| e | f |\n\n#t#\n\nafter\n",
-        "- [ ] task one #one#\n- [x] task two\n\n  more\n\nafter\n",
-        "> ```js {#c}\n> code\n> ```\n>\n> after\n\n:::note{#d}\n> q\n:::\n",
-        "(@s) sample one\n\n(@t) sample two\n",
-        "Term\n: def one\n: def two\n\nafter\n",
-        "<div>\nhtml\n</div>\n\n~~~ {.x}\ncode\n~~~\n",
-    };
-    for (size_t i = 0; i < sizeof(sources) / sizeof(sources[0]); i++) {
-        size_t at = 0;
-        OK(runner, snapshots_dump_as_parses(sources[i], &at),
-           "every snapshot holds what its blocks' opening lines give them as a parse of its text, up to byte %zu "
-           "of %zu: %s",
-           at, strlen(sources[i]), sources[i]);
-    }
-}
-
-/* A SETTLED LOOKUP IS ASKED AGAIN AT THE FINALIZE (step 8, THE SETTLE
- * POINT): the text arrives byte by byte and flushes to a fresh parse's
- * dump. The paragraph settles a reference or note that finds nothing, and
- * the definition that ends the text, which only the flush completes,
- * defines it. */
-static void session_settled_lookups_at_flush(test_batch_runner *runner) {
-    static const char *const sources[] = {
-        "[x]\na\nb\n\n[x]: /u",
-        "a [x] b\nc\nd\ne\n\n[x]: /u \"t\"",
-        "[x]\na\nb\n\n[x]:\n/u",
-        "[^n] a\nb\nc\n\n[^n]: note",
-    };
-    for (size_t i = 0; i < sizeof(sources) / sizeof(sources[0]); i++) {
-        OK(runner, flushes_as_a_parse(sources[i], 1),
-           "a settled lookup is asked again at the flush, as a parse of the text: %s", sources[i]);
-    }
-}
-
-/* WHAT A CANDIDATE DECIDES, IN EVERY SNAPSHOT (step 7, THE CANDIDATES): the
- * text arrives byte by byte, and after each append the snapshot's dump is a
- * fresh parse's of the same text. A construct whose call reads to the end
- * of the text so far -- a grid, a multiline table with or without a header,
- * a headerless simple table, a `%%` comment, a block identifier line, a
- * definition's term and its body's blank line, the Properties envelope the
- * text opens with, a caption before or after a table -- is read on as the
- * commit reads its lines, and decided at the line that ends it, inside
- * containers too; one the text leaves open stays as its lines read. */
-static void session_snapshot_candidates(test_batch_runner *runner) {
-    static const char *const sources[] = {
-        "%%\nhidden *x*\n\n- not a list\n%%\n\nafter\n",
-        "> %%\n> a\n> %%\n> b\n\n%%\nopen\n",
-        "- %%\n  x\n- y\n  %%\n",
-        "%%\n%%x\n%\n %%  \nafter\n",
-        "+---+---+\n| a | b |\n+---+---+\n| c | d |\n+---+---+\n\nafter\n",
-        "+---+\n| a |\n|   |\n\npara\n",
-        "-------------------\nHead A    Head B\n--------  --------\nrow a1    row b1\n\nrow a2    row b2\n"
-        "-------------------\n\nafter\n",
-        "----------- -------\n   First    row\n\n  Second    row\n-------------------\n\nafter\n",
-        "------ ------\nx      y\n------ ------\nafter\n",
-        "> -------------------\n> Head A    Head B\n> --------  --------\n> row a1    row b1\n>\n"
-        "> row a2    row b2\n> -------------------\n>\n> after\n",
-        "- a\n\n#id#\n  x\n",
-        "- a\n\n#id#\n\nafter\n",
-        "> [!NOTE]\n> x\n\n#id#\n x\n",
-        "| a |\n|---|\n\n#id#\n\n#no#\n",
-        "> - a\n>\n> #id#\n>  x\n",
-        "Term\n: def\n\n  more\n\nafter\n",
-        "Term\n\n: def\n\n\n  code?\nTwo\n:x\n",
-        "> Term\n> : def\n>\n>   more\n> after\n",
-        "Term\n: Caption\n\n| a |\n|---|\n| b |\n",
-        "---\ntitle: a\n---\nbody\n",
-        "---\ntitle: a\n\n- item\n> quote\n",
-        "---\na: b\n----\n--\n -- -\n---\nafter\n",
-        "---\n---\n",
-        "---\r\na: b\r\n---\r\nx\r\n",
-        "--- \na: b\n---\n",
-        "x\n---\na: b\n---\n",
-        "\n---\na: b\n---\n",
-        "---\n%%\n---\n%%\nafter\n",
-        "---\na: b\n---",
-        "| a |\n|---|\n\nTable: ab\n\nafter\n",
-        "| a |\n|---|\n| c |\n\nTable: ab\nmore\n\nx\n",
-        "| a |\n|---|\n\nTable: ab\n| b |\n|---|\n\nTable: c\n",
-        "Table: lead\n\n+---+\n| a |\n+---+\n\nafter\n",
-    };
-    for (size_t i = 0; i < sizeof(sources) / sizeof(sources[0]); i++) {
-        size_t at = 0;
-        OK(runner, snapshots_dump_as_parses(sources[i], &at),
-           "every snapshot decides a construct read on as a parse of its text, up to byte %zu of %zu: %s", at,
-           strlen(sources[i]), sources[i]);
-    }
-}
-
-/* A HELD LINE'S STEP READS TO THE END OF THE SCALAR IT TAKES (blocks.c, THE
- * LINE A SESSION HOLDS): the text arrives byte by byte, and after each append
- * the snapshot's dump is a fresh parse's of the same text. A column-counted
- * advance over a container's prefix -- a quote's `>` and the space after it,
- * a list item's, a footnote's and a specimen's indentation -- takes the
- * continuation bytes after the last byte it takes as that byte's scalar, so
- * its step on a line the text has not finished is decided once a byte that is
- * not one follows them. The bytes are malformed UTF-8, which the engine reads
- * as it reads any text. */
-static void session_held_scalars(test_batch_runner *runner) {
-    static const char *const sources[] = {
-        ">\r> \x80\n",
-        ">\n>\x80\x80"
-        "b\n",
-        "> a\n> \x80"
-        "b\n",
-        "> x\n>\x80\x80 b\n",
-        "- a\n  \x80\x80"
-        "b\n",
-        "[^a]: x\n    \x80\x80"
-        "b\n",
-        "(@a) x\n    \x80\x80"
-        "b\n",
-    };
-    for (size_t i = 0; i < sizeof(sources) / sizeof(sources[0]); i++) {
-        size_t at = 0;
-        OK(runner, snapshots_dump_as_parses(sources[i], &at),
-           "every snapshot reads a held prefix to its scalar's end as a parse of its text, up to byte %zu of %zu: %s",
-           at, strlen(sources[i]), sources[i]);
-    }
-}
-
-/* A CANDIDATE'S DECISION LEAVES THE LINES IT READS AS THE READING PLACED
- * THEM (blocks.c, THE CANDIDATES): a table's call on a quote's lazy line reads
- * the next line on the root's path, where the reading matched that line in
- * the quote, and the quote's paragraph, which spans it, takes its places from
- * where the reading found the line's own bytes. The text arrives byte by
- * byte, in the two pieces the lazy line ends, and whole, and each snapshot
- * and the flushed document dump as a parse of its text does. */
-static void session_decisions_keep_lines(test_batch_runner *runner) {
-    static const char *const sources[] = {">_\n:\n>a\n", ">_\r:\r>a"};
-    for (size_t i = 0; i < sizeof(sources) / sizeof(sources[0]); i++) {
-        const size_t length = strlen(sources[i]);
-        size_t at = 0;
-        OK(runner, snapshots_dump_as_parses(sources[i], &at),
-           "a decision leaves the lines it reads to the reading, byte by byte, up to byte %zu of %zu: %s", at, length,
-           sources[i]);
-        const size_t halves[] = {4, length};
-        OK(runner, pieces_dump_as_parses(sources[i], halves, 2, &at),
-           "a decision leaves the lines it reads to the reading, in two pieces, up to byte %zu of %zu: %s", at, length,
-           sources[i]);
-        const size_t whole[] = {length};
-        OK(runner, pieces_dump_as_parses(sources[i], whole, 1, &at),
-           "a decision leaves the lines it reads to the reading, whole: %s", sources[i]);
-    }
-}
-
-/* WHAT AN ACCEPT TAKES AWAY (blocks.c, THE CANDIDATES) goes, and the next
- * publish matches what continues it against what the last publish recorded
- * of it as it placed it (ast.c, THE RECORDS), whatever the commit wrote in
- * it since: a simple table read after a multiline table's opening line, which
- * a publish places open, and which the commit then closes with a row no
- * publish placed, before the closing line accepts the multiline table; and
- * the same inside a quote. Each text arrives in two appends, split where the
- * first publish places the simple table, and each document dumps as a parse
- * of its text does. */
-static void session_accept_after_commit_writes(test_batch_runner *runner) {
-    static const struct {
-        const char *source;
-        size_t split;
-    } cases[] = {
-        {"-------\nh   j\n--- ---\na   b\nc   d\n\ne   f\n-------\n", 28},
-        {"> -------\n> h   j\n> --- ---\n> a   b\n> c   d\n>\n> e   f\n> -------\n", 36},
-    };
-    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
-        const size_t ends[] = {cases[i].split, strlen(cases[i].source)};
-        size_t at = 0;
-        OK(runner, pieces_dump_as_parses(cases[i].source, ends, 2, &at),
-           "a multiline table accepted after the commit closed the simple table a publish placed dumps as a parse, "
-           "up to byte %zu: %s",
-           at, cases[i].source);
-    }
-}
 
 /* Where the bytes a block owns of each part a view of it views are: its
  * attributes' anchor, classes and records, its record's string and its
@@ -12546,9 +9746,6 @@ static owned_parts parts_of(const markdown_core_node *node) {
         break;
     case MARKDOWN_CORE_NODE_CALLOUT:
         parts.text = node->as.callout->variant.value.data;
-        break;
-    case MARKDOWN_CORE_NODE_LIST_ITEM:
-        parts.text = node->as.list->task_marker.value.data;
         break;
     case MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK:
         parts.payload = markdown_core_elements_get_directive_name(node);
@@ -12600,7 +9797,7 @@ static bool parts_equal(const markdown_core_node *a, const markdown_core_node *b
     case MARKDOWN_CORE_NODE_CALLOUT:
         return chunks_equal(a->as.callout->variant.value, b->as.callout->variant.value);
     case MARKDOWN_CORE_NODE_LIST_ITEM:
-        return chunks_equal(a->as.list->task_marker.value, b->as.list->task_marker.value);
+        return a->as.list->task == b->as.list->task;
     case MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK:
         return strcmp(markdown_core_elements_get_directive_name(a), markdown_core_elements_get_directive_name(b)) == 0;
     case MARKDOWN_CORE_NODE_TABLE: {
@@ -12610,123 +9807,6 @@ static bool parts_equal(const markdown_core_node *a, const markdown_core_node *b
     }
     default:
         return true;
-    }
-}
-
-/* `pattern` with each `%s` in it the field `field`, in a new string the
- * caller frees. */
-static char *with_field(const char *pattern, const char *field) {
-    const size_t field_length = strlen(field);
-    size_t length = 0;
-    for (const char *p = pattern; *p; p++) {
-        length += p[0] == '%' && p[1] == 's' ? (p++, field_length) : 1;
-    }
-    char *made = malloc(length + 1), *at = made;
-    for (const char *p = pattern; made && *p; p++) {
-        if (p[0] == '%' && p[1] == 's') {
-            memcpy(at, field, field_length);
-            at += field_length;
-            p++;
-        } else {
-            *at++ = *p;
-        }
-    }
-    if (made) {
-        *at = '\0';
-    }
-    return made;
-}
-
-/* THE ROOTS A FINALIZE COMPLETES ANEW LIE AT EVERY DEPTH (blocks.c, A
- * LOOKUP THAT FOUND NOTHING), as do the headings a late anchor renames: in
- * three nested directives, each published open and then closed. The last
- * root of each directive completes as its closing line closes it, after the
- * roots that completed while it was open; a directive's label looks the late
- * definition up beside the roots inside it. Each text arrives byte by byte,
- * three bytes at a time and line by line, and its flush dumps as a parse
- * of the same text does. The headings look no definition up, so every
- * snapshot of their text dumps as a parse of the text so far does. */
-static void session_roots_at_every_depth(test_batch_runner *runner) {
-#define FILLER "\n\nfiller one\n\nfiller two\n\nfiller three\n\n"
-    static const char *const sources[] = {
-        ":::note\n\nouter [x]\n\n:::note\n\nmiddle [x]\n\n:::note\n\ninner one [x]\n\ninner two [x]\n:::\n\n"
-        "middle again [x]\n:::\n\nouter again [x]\n:::" FILLER "[x]: /u\n",
-        ":::note[Label [x]]\n\n:::note[Inner [x]]\n\nbody [x]\n\nlast [x]\n:::\n\nafter [x]\n:::" FILLER "[x]: /u\n",
-    };
-#undef FILLER
-    static const char headings[] =
-        ":::note\n\n# A\n\n:::note\n\n# A\n\n:::note\n\n# A\n\n# A\n:::\n\n# A\n:::\n\n# A\n:::\n\ntext :n{#a} more\n";
-    static const size_t chunks[] = {1, 3, 0};
-    for (size_t c = 0; c < sizeof(chunks) / sizeof(chunks[0]); c++) {
-        const char *const unit = chunks[c] == 1 ? "bytes" : chunks[c] == 3 ? "three bytes" : "lines";
-        for (size_t i = 0; i < sizeof(sources) / sizeof(sources[0]); i++) {
-            OK(runner, flushes_as_a_parse(sources[i], chunks[c]), "a session streamed in %s flushes as a parse: %s",
-               unit, sources[i]);
-        }
-        OK(runner, flushes_as_a_parse(headings, chunks[c]), "a session streamed in %s flushes as a parse: %s", unit,
-           headings);
-    }
-    size_t at = 0;
-    const bool dumped = snapshots_dump_as_parses(headings, &at);
-    OK(runner, dumped, "a session streamed byte by byte dumps as a parse, up to byte %zu: %s", at, headings);
-}
-
-/* A FIELD AN OPENING LINE WRITES COMPLETES ONCE ITS LINE IS READ (step 7,
- * plan 5.3): a callout's title, a definition's term, a block directive's
- * label and a table's caption, before or after its rows, each some
- * hundreds of bytes of the inline content a completion makes -- emphasis,
- * code, a reference, an inline note holding a reference, and an anchor. While its
- * block stays open over many appends, every snapshot holds it as a fresh
- * parse of the text so far does when each reference is defined before it.
- * When each is defined after it, the flush looks the field's references
- * up again and gives what a parse of the whole text gives: with the block
- * closed and published before the definition arrives, and with the block
- * still open when the text ends, the definition inside it -- in a quote, a
- * definition's body, an unclosed directive and a list item. */
-static void session_opener_fields(test_batch_runner *runner) {
-    char field[1024] = "";
-    for (size_t length = 0; length + 40 < 300;) {
-        length += (size_t)snprintf(field + length, sizeof(field) - length, "word *em* [x] ^[note [x]] `code` ");
-    }
-    strcat(field, ":n{#a} end");
-    static const char *const defined_before[] = {
-        "[x]: /u\n\n> [!NOTE] %s\n> body one\n>\n> body two\n>\n> body three\n\nafter\n",
-        "[x]: /u\n\n%s\n: def one\n\n  def two\n\n  def three\n\nafter\n",
-        "[x]: /u\n\n:::note[%s]\nbody one\n\nbody two\n\nbody three\n:::\n\nafter\n",
-        "[x]: /u\n\nTable: %s\n\n| a | b |\n|---|---|\n| c | d |\n| e | f |\n| g | h |\n\nafter\n",
-        "[x]: /u\n\n| a | b |\n|---|---|\n| c | d |\n| e | f |\n\nTable: %s\n\nafter\n",
-    };
-    for (size_t i = 0; i < sizeof(defined_before) / sizeof(defined_before[0]); i++) {
-        char *source = with_field(defined_before[i], field);
-        size_t at = 0;
-        OK(runner, source && snapshots_dump_as_parses(source, &at),
-           "every snapshot holds a long field its opening line wrote as a parse of its text, up to byte %zu: %s", at,
-           defined_before[i]);
-        free(source);
-    }
-    static const char *const defined_after[] = {
-        "> [!NOTE] %s\n> body\n\nfiller one\n\nfiller two\n\n# a\n\n[x]: /u\n",
-        "%s\n: def\n\nfiller one\n\nfiller two\n\n# a\n\n[x]: /u\n",
-        ":::note[%s]\nbody\n:::\n\nfiller one\n\nfiller two\n\n# a\n\n[x]: /u\n",
-        "Table: %s\n\n| a | b |\n|---|---|\n| c | d |\n\nfiller one\n\nfiller two\n\n# a\n\n[x]: /u\n",
-        "| a | b |\n|---|---|\n| c | d |\n\nTable: %s\n\nfiller one\n\nfiller two\n\n# a\n\n[x]: /u\n",
-        "> [!NOTE] %s\n> body\n>\n> filler\n>\n> # a\n>\n> [x]: /u\n",
-        "%s\n: def\n\n  filler\n\n  # a\n\n  [x]: /u\n",
-        ":::note[%s]\nbody\n\nfiller\n\n# a\n\n[x]: /u\n",
-        "- > [!TIP] %s\n  > body\n  >\n  > # a\n  >\n  > [x]: /u\n",
-    };
-    static const size_t chunks[] = {1, 7, 0};
-    for (size_t i = 0; i < sizeof(defined_after) / sizeof(defined_after[0]); i++) {
-        char *source = with_field(defined_after[i], field);
-        for (size_t c = 0; c < sizeof(chunks) / sizeof(chunks[0]); c++) {
-            OK(runner, source && flushes_as_a_parse(source, chunks[c]),
-               "a session streamed in %s flushes a long field defined after it as a parse: %s",
-               chunks[c] == 1   ? "bytes"
-               : chunks[c] == 7 ? "seven bytes"
-                                : "lines",
-               defined_after[i]);
-        }
-        free(source);
     }
 }
 
@@ -12779,64 +9859,6 @@ static void node_view_views(test_batch_runner *runner) {
     markdown_core_document_free(kept);
 }
 
-/* The allocator-seam sweep (plan 8, gates 4.7): an append and a flush
- * fail at every allocation, report ALLOCATION_FAILED, and the session frees
- * everything it holds. */
-static void session_allocation_failures(test_batch_runner *runner) {
-    static const char source[] = "# Head\n\nSome *text* [a][r].\n\n- item\n- item\n\n[r]: /url\n";
-    payload_probe_arm();
-    size_t needed = 0;
-    int failed = 1;
-    for (size_t fail = 0; fail == 0 || fail <= needed; fail++) {
-        markdown_core_session *session = NULL;
-        const markdown_core_document *document = NULL;
-        if (markdown_core_session_new((const uint8_t *)source, sizeof(source) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8,
-                                      &session) != MARKDOWN_CORE_OK) {
-            failed = 0;
-            break;
-        }
-        size_t before = payload_allocations;
-        payload_fail_at = fail ? before + fail : 0;
-        markdown_core_status status =
-            markdown_core_session_append(session, (const uint8_t *)"more *text*\n", 12, &document);
-        payload_fail_at = 0;
-        if (!fail) {
-            needed = payload_allocations - before;
-            failed &= status == MARKDOWN_CORE_OK;
-        } else {
-            failed &= status == MARKDOWN_CORE_ALLOCATION_FAILED;
-        }
-        markdown_core_session_close(session);
-        failed &= payload_live == 0;
-    }
-    OK(runner, needed > 0 && failed, "an append fails at each of its %zu allocations and leaks nothing", needed);
-    needed = 0;
-    failed = 1;
-    for (size_t fail = 0; fail == 0 || fail <= needed; fail++) {
-        markdown_core_session *session = NULL;
-        const markdown_core_document *document = NULL;
-        if (markdown_core_session_new((const uint8_t *)source, sizeof(source) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8,
-                                      &session) != MARKDOWN_CORE_OK) {
-            failed = 0;
-            break;
-        }
-        size_t before = payload_allocations;
-        payload_fail_at = fail ? before + fail : 0;
-        markdown_core_status status = markdown_core_session_flush(session, &document);
-        payload_fail_at = 0;
-        if (!fail) {
-            needed = payload_allocations - before;
-            failed &= status == MARKDOWN_CORE_OK;
-        } else {
-            failed &= status == MARKDOWN_CORE_ALLOCATION_FAILED;
-        }
-        markdown_core_session_close(session);
-        failed &= payload_live == 0;
-    }
-    OK(runner, needed > 0 && failed, "a flush fails at each of its %zu allocations and leaks nothing", needed);
-    payload_probe_disarm();
-}
-
 int main(void) {
     int retval;
     test_batch_runner *runner = test_batch_runner_new();
@@ -12848,13 +9870,12 @@ int main(void) {
     block_content_storage_follows_writes(runner);
     node_slots_come_from_slabs_and_go_back_to_the_pool(runner);
     resource_slots_come_from_slabs_and_outlive_the_pool(runner);
-    heading_reference_resolves_to_the_heading(runner);
+    heading_text_names_no_reference(runner);
     class_runs_split_on_ascii_white_space(runner);
     unicode_classes_are_unicode_17(runner);
     utf8_decode_reads_every_scalar(runner);
     utf8_decode_is_total(runner);
     unicode_classes_are_total(runner);
-    anchor_images_only_scalars(runner);
     whitespace_is_space_tab_and_line_ending(runner);
     roster_records_are_carved_from_its_blocks(runner);
     key_tree_matches_a_sorted_model(runner);
@@ -12875,7 +9896,6 @@ int main(void) {
     image_cursor_stops_at_buffer_limit(runner);
     attribute_linear_work(runner);
     attribute_recognition_is_memoised(runner);
-    open_members_are_memoised(runner);
     attribute_unclosed_quote_is_unquoted(runner);
     attribute_reads_refuse_every_allocation(runner);
     attribute_values_are_one_allocation(runner);
@@ -12888,13 +9908,10 @@ int main(void) {
     an_undeclared_first_byte_reaches_no_gated_scanner(runner);
     the_list_scanner_reads_a_numeral_by_its_first_bytes_class(runner);
     attribute_attachment_linear_work(runner);
-    heading_completion_invariants(runner);
-    heading_roster_invariants(runner);
     reference_occurrences_hold_the_label_alone(runner);
     heading_label_length_boundary(runner);
     autolink_domain_linear_work(runner);
     deep_inline_construction(runner);
-    ordered_numeral_ceiling(runner);
     citation_sparse_brace_storage(runner);
     definition_list_linear_work(runner);
     definition_gate_reads_the_prefix_not_the_line(runner);
@@ -12951,9 +9968,7 @@ int main(void) {
     link_resource_lifecycle(runner);
     reference_attribute_lifecycle(runner);
     block_cursor_coordinates(runner);
-    task_marker_tab_structure(runner);
-    task_marker_ownership(runner);
-    specimen_values(runner);
+    task_status_values(runner);
     definition_blank_continuation(runner);
     set_kind_keeps_element_data_beside_the_arm(runner);
     citation_and_footnote_values(runner);
@@ -12962,7 +9977,6 @@ int main(void) {
     table_values(runner);
     bounded_scanners(runner);
     malformed_scalar_terminates(runner);
-    stray_byte_columns(runner);
     inline_hook_projection_ignores_non_owners(runner);
     properties_envelope_derives_each_line_once(runner);
     properties_rejected_members_borrow_source(runner);
@@ -12988,8 +10002,6 @@ int main(void) {
     standalone_formula_as_owned_root(runner);
     strbuf_overflow(runner);
     strbuf_failure_is_a_transaction(runner);
-    lazy_literal_failure_writes_nothing(runner);
-    void_source_continues(runner);
     stray_delimiter(runner);
     finish_step_skips_absent_kinds(runner);
     finish_step_gate_opens_when_its_kind_is_made(runner);
@@ -12998,47 +10010,7 @@ int main(void) {
     inline_dispatch_ownership(runner);
     inline_dispatch_orders_every_precedence(runner);
     scope_queries_count_in_the_document_unit(runner);
-    session_appends(runner);
-    session_edits(runner);
-    session_edits_literal_blocks(runner);
-    session_edits_name_headings(runner);
-    session_edits_cross_tables(runner);
-    session_edits_storage(runner);
-    session_edits_nested_notes(runner);
-    session_edits_long_headings(runner);
-    heading_long_authored_anchor(runner);
-    heading_seams_end_keeps_ids(runner);
-    heading_long_anchor_refused(runner);
-    heading_names_exact(runner);
-    session_edits_refresh_storage(runner);
-    session_edits_uses(runner);
-    session_edits_nested_identifier(runner);
-    session_locates_table_rows(runner);
-    session_locates_unclosed_openers(runner);
-    session_locates_after_looked_edit(runner);
-    session_edits_after_nested_opener(runner);
-    session_edits_keep_term_look(runner);
-    session_edits_wide_list(runner);
-    session_edits_replaced_label(runner);
-    session_edits_allocations(runner);
-    session_edits_compaction(runner);
-    session_snapshot_anchors(runner);
-    session_snapshot_names(runner);
-    session_snapshot_tables(runner);
-    session_snapshot_lists(runner);
-    session_snapshot_openers(runner);
-    session_settled_lookups_at_flush(runner);
-    session_snapshot_candidates(runner);
-    session_held_scalars(runner);
-    session_decisions_keep_lines(runner);
-    session_accept_after_commit_writes(runner);
-    session_opener_fields(runner);
     node_view_views(runner);
-    session_flush_matches_a_parse(runner);
-    session_typed_paragraph_end_matches_a_parse(runner);
-    session_walks_through_definition_bodies(runner);
-    session_roots_at_every_depth(runner);
-    session_allocation_failures(runner);
 
     test_print_summary(runner);
     retval = test_ok(runner) ? 0 : 1;

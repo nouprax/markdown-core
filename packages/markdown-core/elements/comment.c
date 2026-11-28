@@ -2,7 +2,6 @@
 #include "comment.h"
 #include "inline_internal.h"
 #include "block_internal.h"
-#include "parts.h"
 #include <string.h>
 #include "element.h"
 #include "node.h"
@@ -42,26 +41,6 @@ static int is_fence_line(const unsigned char *data, int len, int first_nonspace)
         return 0;
     }
     return markdown_core_is_blank_to_line_end(data, i + 2, len);
-}
-
-/* THE STOP LINES (element.h, `stops`): a line whose content is the fence,
- * at any indentation, which takes in every line that closes a reading from
- * an opener in the document's root. */
-static bool comment_stops(const markdown_core_element_instance *self, const unsigned char *line, size_t length) {
-    (void)self;
-    size_t i = 0;
-    while (i < length && (line[i] == ' ' || line[i] == '\t')) {
-        i++;
-    }
-    if (i + 2 > length || line[i] != '%' || line[i + 1] != '%') {
-        return false;
-    }
-    for (i += 2; i < length; i++) {
-        if (line[i] != ' ' && line[i] != '\t' && line[i] != '\r' && line[i] != '\n') {
-            return false;
-        }
-    }
-    return true;
 }
 
 /* THE CALL'S READING (element.h, `reads`): whether the fence line on the
@@ -230,35 +209,6 @@ static bool close_comment(const markdown_core_element_instance *self, markdown_c
  * itself. */
 enum { MARKDOWN_CORE_NODE__COMMENT_HTML = MARKDOWN_CORE_NODE__ELEMENT_FIRST };
 
-static markdown_core_node_type comment_former(const markdown_core_element_instance *self,
-                                              const markdown_core_node *node) {
-    (void)self;
-    return node->kind == MARKDOWN_CORE_NODE_COMMENT_BLOCK && (node->flags & MARKDOWN_CORE_NODE__COMMENT_HTML)
-               ? MARKDOWN_CORE_NODE_HTML_BLOCK
-               : MARKDOWN_CORE_NODE_NONE;
-}
-
-/* The HTML block it was, of type 2, which its opening set, and which its
- * close makes a CommentBlock again when it still holds one comment. */
-static bool comment_revert(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                           markdown_core_node *node, markdown_core_node *parent, uint32_t *kept) {
-    (void)self;
-    (void)kept;
-    const markdown_core_node_set_kind_result result =
-        markdown_core_parser_set_node_kind(parser, node, parent, MARKDOWN_CORE_NODE_HTML_BLOCK);
-    assert(result != MARKDOWN_CORE_NODE_SET_KIND_REJECTED);
-    if (result != MARKDOWN_CORE_NODE_SET_KIND_OK) {
-        return false;
-    }
-    node->as.html_block->block_type = 2;
-    return true;
-}
-
-static const markdown_core_edit_ops COMMENT_EDIT = {
-    .stops = comment_stops,
-    .shuts = true,
-};
-
 static const markdown_core_content_ops COMMENT_CONTENT = {
     .mode = MARKDOWN_CORE_CONTENT_LITERAL,
 };
@@ -290,12 +240,7 @@ static bufsize_t S_follow_html(const markdown_core_element_instance *self, markd
                                markdown_core_lead *lead);
 static const markdown_core_node_type COMMENT_LEADERS[] = {MARKDOWN_CORE_NODE_HTML_BLOCK, MARKDOWN_CORE_NODE_NONE};
 static const markdown_core_follow COMMENT_FOLLOWS[] = {
-    {.at = MARKDOWN_CORE_FOLLOW_CLOSE,
-     .kinds = COMMENT_LEADERS,
-     .follow = S_follow_html,
-     .makes = MARKDOWN_CORE_NODE_COMMENT_BLOCK,
-     .former = comment_former,
-     .revert = comment_revert},
+    {.at = MARKDOWN_CORE_FOLLOW_CLOSE, .kinds = COMMENT_LEADERS, .follow = S_follow_html},
     {0},
 };
 
@@ -308,7 +253,7 @@ static markdown_core_chunk *S_literal(const markdown_core_node *node, bufsize_t 
 }
 
 const markdown_core_facet MARKDOWN_CORE_COMMENT_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_COMMENT, .parts = markdown_core_comment_parts, .literal = S_literal},
+    {.kind = MARKDOWN_CORE_KIND_COMMENT, .literal = S_literal},
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 
@@ -317,7 +262,6 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_COMMENT = {
     .state_size = sizeof(markdown_core_comment_work),
     .follows = COMMENT_FOLLOWS,
     .name = "comment",
-    .edit = &COMMENT_EDIT,
     .content = &COMMENT_CONTENT,
     .inlines = &COMMENT_INLINES,
     .candidate = &COMMENT_CANDIDATE,
@@ -514,26 +458,4 @@ markdown_core_node *markdown_core_comment_make_html(markdown_core_inline_state *
     markdown_core_chunk body = markdown_core_chunk_dup(&inline_state->input, pos + 3, body_length);
     inline_state->pos = pos + length;
     return markdown_core_comment_make_inline(inline_state, pos - 1, inline_state->pos - 1, body);
-}
-
-/* THE PARTS OF A COMMENT (parts.h): its literal, the body between its
- * delimiters, after its opening `%%` or `<!--`. */
-void markdown_core_comment_parts(markdown_core_parts *parts) {
-    const unsigned char *s = parts->text;
-    const bufsize_t n = parts->length;
-    bufsize_t from = 0;
-    if (n >= 4 && !memcmp(s, "<!--", 4)) {
-        from = 4;
-    } else {
-        while (from < n && from < 2 && s[from] == '%') {
-            from++;
-        }
-    }
-    /* Its literal in at most two parts, which part at a line's start. */
-    const unsigned char *front, *back;
-    bufsize_t front_size, back_size;
-    markdown_core_literal_halves(parts->node, parts->node->as.literal, markdown_core_comment_block_start(parts->node),
-                                 &front, &front_size, &back, &back_size);
-    from = markdown_core_parts_find(parts, from, front, front_size);
-    markdown_core_parts_find(parts, from, back, back_size);
 }

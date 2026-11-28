@@ -26,18 +26,17 @@ Commit abbreviations identify the reviewed history, not implementation layers.
 | Autolink: angle-delimited URI/email and bare links | `autolink.c` | Inherited |
 | Comment: HTML comments and `%%` inline/block comments | `comment.c` | `ab01af37`, `b7dc8daf` |
 | Link: direct destinations, reference occurrences, `Reference` definitions, attribute attachment | `link.c`, using `attributes.c` | `18602b2e`, `1c5c7a39`, `8d9177fa` |
-| Embedded: image prefix, destinations and authored label dimensions | `embedded.c`, using Link's shared destination and bracket grammar | `18602b2e`, `1c5c7a39`, `9ab6dfee` |
-| CrossLink and CrossEmbedded: `[[...]]` and `![[...]]` | `cross_link.c`, using the same `embedded.c` dimension parser | `4853f2ad`, `9ab6dfee` |
+| Embed: image prefix, destinations and authored label dimensions | `embed.c`, using Link's shared destination and bracket grammar | `18602b2e`, `1c5c7a39`, `9ab6dfee` |
+| CrossLink and CrossEmbed: `[[...]]` and `![[...]]` | `cross_link.c`, using the same `embed.c` dimension parser | `4853f2ad`, `9ab6dfee` |
 | Callout: quote container, variant/fold metadata and inline title | `callout.c` | `b6a11e50`, `d53b6f53` |
-| Citation: bibliography groups, author forms, affixes and specimen references | `citation.c` | `078cf4cf`, `012cb4e1`, `5f5a516c` |
+| Citation: bibliography groups, author forms and affixes | `citation.c` | `078cf4cf`, `012cb4e1`, `5f5a516c` |
 | Footnote: named definitions, named calls and `^[...]` bodies | `footnote.c`, using Citation's shared referent construction | `078cf4cf`, `fbe1d5e5` |
-| Specimen: authored examples, labels, numbering and definition registry | `specimen.c` | `012cb4e1`, `5f5a516c` |
-| List: authored marker facts, decimal/alpha/Roman and automatic numbering | `list.c` | `012cb4e1`, `5f5a516c` |
-| Task marker: one Unicode marker at list-item creation | `tasklist.c`, called by `list.c` | `9f5e630c` |
+| List: authored marker facts and decimal numbering | `list.c` | `012cb4e1`, `5f5a516c` |
+| Task marker: one of ` `, `x`, `X`, `?`, `-` at list-item creation, as a status | `tasklist.c`, called by `list.c` | `9f5e630c` |
 | DefinitionList: terms, bodies, compactness, indentation and lookahead | `definition_list.c` | `5f5a516c` |
 | Table: pipe rows, head and body groups, columns | `table.c` | `798717b7`, `a540b69e` |
 | Attributes: one brace grammar and attachment operations | `attributes.c` | `1ad40aed`, `8d9177fa` |
-| Heading: ATX/setext openers, suffix ownership, generated anchors and implicit references | `heading.c` | Inherited; `25282384`, `8d9177fa` |
+| Heading: ATX/setext openers, suffix ownership | `heading.c` | Inherited; `25282384`, `8d9177fa` |
 | Block identifier: `#anchor-id#` suffix and separate-line attachment | `block_identifier.c`, writing the shared anchor value | `d6abfbd0` |
 | Properties: document metadata envelope, fixed fields and literal prose | `properties.c` | `2640f0da` |
 | Mark: `==...==` | `mark.c` | `8a2b1462` |
@@ -45,7 +44,7 @@ Commit abbreviations identify the reviewed history, not implementation layers.
 | Span: bracketed content with attributes | `span.c` | `0c68bd1d` |
 | Superscript: `^...^` word body | `superscript.c` | `0c68bd1d` |
 | Subscript: single-tilde word body | `subscript.c` | `0c68bd1d` |
-| DirectiveBlock: named and nameless fenced containers | `directive.c` | `1ad40aed`, `5f5a516c` |
+| DirectiveBlock: named fenced containers | `directive.c` | `1ad40aed`, `5f5a516c` |
 | Formula: non-nesting opaque pairs | `formula.c` | `ab01af37` |
 | Topic: `#name` hashtags | `topic.c` | Topic grammar (2026-10-21) |
 
@@ -132,7 +131,7 @@ There is no input-size threshold or second text-scanning algorithm. The shared
 text scanner retains its cached maximal delimiter run, so literal `=` and `+`
 runs do not create unnecessary Text nodes or get rescanned at dispatch.
 
-Link's shared bracket owner arbitrates explicit Link/Embedded tails, Span, citation
+Link's shared bracket owner arbitrates explicit Link/Embed tails, Span, citation
 tails/groups, shortcut links and named footnotes. Each alternative consumes
 the existing parsed range; none reparses bracket contents. Heading suspension,
 field completion, ordinary whitespace boundaries and source positions use
@@ -211,8 +210,7 @@ is released before any parse and the instance is released as one block. An
 instance runs one parse transaction at a time -- a start, a commit and a
 finalize (`markdown_core_parser_start`, `markdown_core_parser_commit`,
 `markdown_core_parser_finalize`) -- and each starts with the parser and the
-element records as the instance was made; a session keeps its instance for
-every append.
+element records as the instance was made.
 Instances in one process may seal different dialects, and nothing about a
 dialect is process state, so no global initialization cache or lock is needed.
 

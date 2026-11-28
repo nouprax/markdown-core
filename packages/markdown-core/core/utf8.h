@@ -19,8 +19,7 @@ void markdown_core_utf8proc_normalize_label(markdown_core_strbuf *dest, const ui
 void markdown_core_utf8proc_encode_char(int32_t uc, markdown_core_strbuf *buf);
 
 /* A SCALAR NO CHARACTER HAS: the first value past Unicode's range. The class
- * lookup, the anchor projection, case folding and the front-matter printable
- * test all answer "none" for it, as for every value above it. */
+ * lookup, case folding and the front-matter printable test all answer "none" for it, as for every value above it. */
 enum { MARKDOWN_CORE_NO_SCALAR = 0x110000 };
 
 /* THE CHARACTER THAT BEGINS AT `str`: returns its width and writes its scalar
@@ -123,7 +122,7 @@ enum {
 };
 
 /* The staged class table unicode_categories.inc defines, generated from
- * Unicode 17 by scripts/tooling/generate-unicode-categories.mjs: `pages` holds
+ * Unicode 17 by scripts/tools/generate-unicode-categories.mjs: `pages` holds
  * the offset in `blocks` of each run of 256 scalars' classes. Hidden: every
  * lookup is inline in the library's own code, which addresses the table
  * PC-relative instead of through the global offset table. */
@@ -169,9 +168,6 @@ static inline int markdown_core_utf8proc_alnum_width(const uint8_t *str, bufsize
                ? width
                : 0;
 }
-
-/* Append the anchors module's Unicode projection of a valid UTF-8 literal. */
-void markdown_core_utf8proc_anchor(markdown_core_strbuf *dest, const uint8_t *str, bufsize_t len);
 
 /* THE COLUMNS OF A LINE. An editor counts a line's columns in bytes, or,
  * with `wide`, in UTF-16 units, where a scalar past the basic plane takes

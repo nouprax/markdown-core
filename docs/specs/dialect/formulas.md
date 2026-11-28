@@ -16,10 +16,10 @@ parser does not validate TeX or typeset the expression.
 
 | Spelling | Placement | Body |
 | --- | --- | --- |
-| `$x$` | Embedded | `x` |
-| `` $`x`$ `` | Embedded | `x`, excluding the backticks |
+| `$x$` | Embed | `x` |
+| `` $`x`$ `` | Embed | `x`, excluding the backticks |
 | `$$x$$` | Standalone | `x` |
-| `\\(x\\)` | Embedded | `x` |
+| `\\(x\\)` | Embed | `x` |
 | `\\[x\\]` | Standalone | `x` |
 
 The last two spellings contain **two literal backslashes** before each bracket.

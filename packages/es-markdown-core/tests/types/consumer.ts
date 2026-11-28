@@ -1,22 +1,13 @@
 import {
-    Server,
-    ServerError,
-    type Capabilities as LspCapabilities,
-    type Completions,
-    type Edit as LspEdit,
-    type Phase,
-    type ServerCode
-} from "@nouprax/es-markdown-core/lsp";
-import {
     Document,
     Attributes,
     type Record,
     type MetadataValue,
     type MetadataScalar,
     type MetadataListItem,
-    type Embedded,
+    type Embed,
     type CrossLink,
-    type CrossEmbedded,
+    type CrossEmbed,
     type Destination,
     type Dimensions,
     type Extent,
@@ -27,14 +18,12 @@ import {
     type TextUnit,
     type ErrorCode,
     MarkdownCoreError,
-    MarkdownSession,
     MarkupDumper,
     markupEquals,
     walk,
     type Citation,
     type CitationReferent,
     type Footnote,
-    type Specimen,
     type Reference,
     type Heading,
     type Markup,
@@ -43,43 +32,13 @@ import {
     type TableRow,
     type MarkupVisitor,
     type MarkupVisitPhase,
-    type Context,
-    type Opener,
-    type Edit,
-    type SlotKind,
-    Metadata,
-    Slot
+    type Metadata
 } from "@nouprax/es-markdown-core";
 
 const document: Document = Document.parse("# typed");
 // @ts-expect-error the dialect has no switches: parse takes the source and a unit, nothing else
 Document.parse("# typed", { tables: true });
 const unit: TextUnit = Document.parse("# typed", { unit: "utf8" }).unit;
-const session = new MarkdownSession("# typed", { unit: "utf16" });
-const appended: Document = session.append("\n");
-const final: Document = session.flush();
-const edited: Document = session.edit({ line: 1, column: 1 }, { line: 1, column: 3 }, "# Re");
-// @ts-expect-error an edit takes two cursors and the text written between them
-session.edit({ line: 1, column: 1 }, "# Re");
-const sessionText: string = session.text;
-const sessionUnit: TextUnit = session.unit;
-session.locate({ line: 1, column: 3 });
-const context: Context = session.context;
-const openers: readonly Opener[] = [...context.blocks, ...context.inlines];
-const opened: Markup["kind"] | null = openers[0]!.kind;
-const slots: readonly Slot[] = context.slots;
-const slotKind: SlotKind = slots[0]!.kind;
-const edit: Edit | null = session.spell(slots[0]!, "value");
-const edits: (Edit | null)[] = session.spell(slots[0]!, ["a", "b"]);
-const path: Markup[] = session.path({ line: 1, column: 1 });
-const fields: Scope[] = session.scope(final, "dest");
-const others: Scope[] = session.scope(final, null);
-const markers: Scope[] = session.markers(final);
-// @ts-expect-error a field is a slot kind or null
-session.scope(final, "title");
-const lexicon: readonly string[] = [...Metadata.fields, ...Slot.cues];
-void [opened, slotKind, edit, edits, path, fields, others, markers, lexicon];
-session.dispose();
 // @ts-expect-error a unit is UTF-8 or UTF-16
 Document.parse("# typed", { unit: "utf32" });
 const dump: string = document.dump("# typed");
@@ -88,7 +47,7 @@ const nodeDump: string = document.dump(document.content[0]!, "# typed");
 const explicitNodeDump: string = MarkupDumper.dump(document, document.content[0]!, "# typed");
 // @ts-expect-error a dump is computed from the source
 document.dump();
-void [unit, dump, explicitDump, nodeDump, explicitNodeDump, appended, final, edited, sessionText, sessionUnit];
+void [unit, dump, explicitDump, nodeDump, explicitNodeDump];
 const id: number = document.id;
 const extent: Extent = document.extent;
 const runs: readonly Run[] = document.content[0]!.runs;
@@ -104,7 +63,7 @@ try {
         void [code, message];
     }
 }
-const codes: readonly ErrorCode[] = ["allocationFailed", "outOfBounds", "kindMismatch", "sessionFlushed"];
+const codes: readonly ErrorCode[] = ["allocationFailed", "outOfBounds", "kindMismatch"];
 // @ts-expect-error the codes are closed
 const unknownCode: ErrorCode = "invalidArgument";
 // @ts-expect-error an error's code is readonly
@@ -112,23 +71,18 @@ new MarkdownCoreError("outOfBounds").code = "kindMismatch";
 void [codes, unknownCode];
 const equal: boolean = markupEquals(document, Document.parse("# typed"));
 const footnotes: readonly Footnote[] = document.footnotes;
-const specimens: readonly Specimen[] = document.specimens;
 const footnote: Footnote | null = document.footnote("label");
-const specimen: Specimen | null = document.specimen("label");
 const references: readonly Reference[] = document.references;
-const target: Reference | Heading | null = document.reference("label");
-// @ts-expect-error a label names a Reference or a Heading, nothing else
+const target: Reference | null = document.reference("label");
+// @ts-expect-error a label names a Reference, nothing else
 const footnoteTarget: Footnote | null = document.reference("label");
-void [id, extent, scope, hit, equal, footnotes, specimens, footnote, specimen, references, target, footnoteTarget];
+void [id, extent, scope, hit, equal, footnotes, footnote, references, target, footnoteTarget];
 void [runs];
 const visitor: MarkupVisitor = {
     citation: (node) => {
         void node.kind;
     },
     footnote: (node) => {
-        void node.kind;
-    },
-    specimen: (node) => {
         void node.kind;
     },
     metadata: (node) => {
@@ -203,7 +157,7 @@ const visitor: MarkupVisitor = {
     crossLink: (node) => {
         void node.kind;
     },
-    crossEmbedded: (node) => {
+    crossEmbed: (node) => {
         void node.kind;
     },
     formula: (node) => {
@@ -251,13 +205,13 @@ const visitor: MarkupVisitor = {
         }
         void link.kind;
     },
-    embedded(embedded) {
-        const inferred: Embedded = embedded;
+    embed(embed) {
+        const inferred: Embed = embed;
         const dimensions: Dimensions | null = inferred.dimensions;
-        // @ts-expect-error Embedded is not a Heading
-        void embedded.level;
+        // @ts-expect-error Embed is not a Heading
+        void embed.level;
         void dimensions;
-        void embedded.kind;
+        void embed.kind;
     },
     directive: (node) => {
         void node.kind;
@@ -272,20 +226,20 @@ const visitor: MarkupVisitor = {
 walk(document, visitor);
 // @ts-expect-error node-level dispatch is not public
 document.accept(visitor);
-// @ts-expect-error a document cannot be passed to the Embedded callback
-visitor.embedded(document, "enter");
+// @ts-expect-error a document cannot be passed to the Embed callback
+visitor.embed(document, "enter");
 const mismatchedVisitor: MarkupVisitor = {
     ...visitor,
-    // @ts-expect-error the Embedded handler cannot accept only Headings
-    embedded: (heading: Heading) => {
+    // @ts-expect-error the Embed handler cannot accept only Headings
+    embed: (heading: Heading) => {
         void heading.level;
     }
 };
 void mismatchedVisitor;
-const { embedded: omitted, ...remaining } = visitor;
+const { embed: omitted, ...remaining } = visitor;
 // @ts-expect-error even one missing kind makes a visitor incomplete
-const missingEmbedded: MarkupVisitor = remaining;
-void [omitted, missingEmbedded];
+const missingEmbed: MarkupVisitor = remaining;
+void [omitted, missingEmbed];
 const walkingVisitor: MarkupVisitor = {
     document: () => undefined,
     callout: () => undefined,
@@ -307,7 +261,7 @@ const walkingVisitor: MarkupVisitor = {
     code: () => undefined,
     html: () => undefined,
     crossLink: () => undefined,
-    crossEmbedded: () => undefined,
+    crossEmbed: () => undefined,
     comment: () => undefined,
     formula: () => undefined,
     emphasis: () => undefined,
@@ -319,7 +273,7 @@ const walkingVisitor: MarkupVisitor = {
     superscript: () => undefined,
     subscript: () => undefined,
     link: () => undefined,
-    embedded: () => undefined,
+    embed: () => undefined,
     directive: () => undefined,
     topic: () => undefined,
     cite: () => undefined,
@@ -349,11 +303,6 @@ const walkingVisitor: MarkupVisitor = {
         const kind: "citation" = node.kind;
         void kind;
         void [referent, inferredPhase];
-    },
-    specimen(specimen, phase) {
-        const inferred: Specimen = specimen;
-        const inferredPhase: MarkupVisitPhase = phase;
-        void [inferred, inferredPhase];
     },
     reference(reference, phase) {
         const inferred: Reference = reference;
@@ -452,7 +401,7 @@ const metadata: Metadata = {
 };
 const parsedMetadata: Metadata | null = document.metadata;
 void [anchor, attributes, empty, record, listItem, metadata, parsedMetadata];
-declare const image: Embedded;
+declare const image: Embed;
 const dimensions: Dimensions | null = image.dimensions;
 const standaloneSize: Dimensions = { width: 640, height: null };
 void [dimensions, standaloneSize];
@@ -472,36 +421,15 @@ const recordMarkup: Markup = record;
 void recordMarkup;
 
 declare const crossLink: CrossLink;
-declare const crossEmbedded: CrossEmbedded;
-const embeddedSize: Dimensions | null = crossEmbedded.dimensions;
-void embeddedSize;
+declare const crossEmbed: CrossEmbed;
+const embedSize: Dimensions | null = crossEmbed.dimensions;
+void embedSize;
 // @ts-expect-error ordinary cross links have no dimensions
 void crossLink.dimensions;
 // @ts-expect-error the node kind replaces the old embedded flag
 void crossLink.embedded;
-// @ts-expect-error CrossEmbedded also has no redundant embedded flag
-void crossEmbedded.embedded;
-
-// The language engine is its own entry point, and the main one does not carry it.
-const server: Server = new Server();
-const capabilities: LspCapabilities = server.initialize(["utf8", "utf16"]);
-const replaced: readonly LspEdit[] = [
-    { text: "whole" },
-    { scope: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } }, text: "" }
-];
-server.open("file:///a.md", 1, capabilities.cues);
-server.update("file:///a.md", 2, replaced);
-const completions: Completions = server.complete("file:///a.md", { line: 0, character: 0 });
-const phase: Phase = server.phase;
-void completions.version;
-void phase;
-// @ts-expect-error a version is a number
-server.open("file:///a.md", "1", "");
-void ((error: ServerError): ServerCode => error.code);
-server.dispose();
-// @ts-expect-error the server is only exported from the lsp entry point
-import { Server as MainServer } from "@nouprax/es-markdown-core";
-void MainServer;
+// @ts-expect-error CrossEmbed also has no redundant embedded flag
+void crossEmbed.embedded;
 
 // @ts-expect-error dispatch is internal; walk is the only visitor execution API
 import { visit } from "@nouprax/es-markdown-core";

@@ -1,0 +1,148 @@
+//! Task list item check occurs at the end of a [list item][list_item]'s
+//! prefix.
+//!
+//! ## Grammar
+//!
+//! Checks form with the following BNF
+//! (<small>see [construct][crate::construct] for character groups</small>):
+//!
+//! ```bnf
+//! task_list_item_check ::= '[' (' ' | 'x' | 'X' | '?' | '-') ']' 1*space_or_tab
+//! ```
+//!
+//! The check is the first thing after the list item marker and its
+//! padding, before the first block of the item is decided: `- [?] # a` is
+//! an item checked `?` holding a heading.
+//! It does not count toward the item's indent: continuation lines align with
+//! the content after the marker, as without a check.
+//! The whitespace after the check is part of it, so a line with nothing else
+//! leaves the item empty, with no paragraph that a lax line could continue.
+//! Its value gives the item's status: a space is open, `x` and `X` done, `?`
+//! a question and `-` cancelled; any other byte is no check, and the line is
+//! text.
+//!
+//! ## Tokens
+//!
+//! * [`SpaceOrTab`][Name::SpaceOrTab]
+//! * [`TaskListItemCheck`][Name::TaskListItemCheck]
+//! * [`TaskListItemMarker`][Name::TaskListItemMarker]
+//! * [`TaskListItemValue`][Name::TaskListItemValue]
+//!
+//! ## References
+//!
+//! * [*§ 5.3 Task list items (extension)* in `GFM`](https://github.github.com/gfm/#task-list-items-extension-)
+//!
+//! [list_item]: crate::construct::list_item
+
+use crate::construct::parts::space_or_tab::space_or_tab;
+use crate::event::Name;
+use crate::state::{Name as StateName, State};
+use crate::tokenizer::Tokenizer;
+
+/// At the check, after the list item marker and its padding.
+///
+/// ```markdown
+/// > | * [x] y.
+///       ^
+/// ```
+fn start(tokenizer: &mut Tokenizer) -> State {
+    if tokenizer.current == Some(b'[') {
+        tokenizer.enter(Name::TaskListItemCheck);
+        tokenizer.enter(Name::TaskListItemMarker);
+        tokenizer.consume();
+        tokenizer.exit(Name::TaskListItemMarker);
+        State::Next(StateName::TaskListItemCheck(Step::Inside))
+    } else {
+        State::Nok
+    }
+}
+
+/// At the value.
+///
+/// ```markdown
+/// > | * [x] y.
+///        ^
+/// ```
+fn inside(tokenizer: &mut Tokenizer) -> State {
+    if matches!(tokenizer.current, Some(b' ' | b'x' | b'X' | b'?' | b'-')) {
+        tokenizer.enter(Name::TaskListItemValue);
+        tokenizer.consume();
+        tokenizer.exit(Name::TaskListItemValue);
+        State::Next(StateName::TaskListItemCheck(Step::Close))
+    } else {
+        State::Nok
+    }
+}
+
+/// At the closing bracket.
+///
+/// ```markdown
+/// > | * [x] y.
+///         ^
+/// ```
+fn close(tokenizer: &mut Tokenizer) -> State {
+    if tokenizer.current == Some(b']') {
+        tokenizer.enter(Name::TaskListItemMarker);
+        tokenizer.consume();
+        tokenizer.exit(Name::TaskListItemMarker);
+        State::Next(StateName::TaskListItemCheck(Step::After))
+    } else {
+        State::Nok
+    }
+}
+
+/// After the check, at the whitespace it needs.
+///
+/// ```markdown
+/// > | * [x] y.
+///          ^
+/// ```
+fn after(tokenizer: &mut Tokenizer) -> State {
+    if matches!(tokenizer.current, Some(b'\t' | b' ')) {
+        tokenizer.attempt(
+            State::Next(StateName::TaskListItemCheck(Step::End)),
+            State::Nok,
+        );
+        State::Redo(space_or_tab())
+    } else {
+        State::Nok
+    }
+}
+
+/// After the whitespace.
+///
+/// ```markdown
+/// > | * [x] y.
+///           ^
+/// ```
+fn end(tokenizer: &mut Tokenizer) -> State {
+    tokenizer.exit(Name::TaskListItemCheck);
+    State::Ok
+}
+
+/// Steps of this construct.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Step {
+    Start,
+    Inside,
+    Close,
+    After,
+    End,
+}
+
+impl From<Step> for StateName {
+    fn from(step: Step) -> StateName {
+        StateName::TaskListItemCheck(step)
+    }
+}
+
+/// Run a step.
+pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
+    match step {
+        Step::Start => start(tokenizer),
+        Step::Inside => inside(tokenizer),
+        Step::Close => close(tokenizer),
+        Step::After => after(tokenizer),
+        Step::End => end(tokenizer),
+    }
+}

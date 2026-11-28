@@ -6,15 +6,100 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Only the whole-document parse remains. The incremental session is removed
+  from C and all three bindings, with its streaming steps (new, append,
+  flush), its edits and its error codes (`SESSION_FLUSHED`,
+  `SESSION_STREAMING`); so are the language engine and its Swift
+  `MarkdownCoreLSP` product, Kotlin `lsp` package and ES `./lsp` entry point,
+  the context queries (locate, context, spell), the field and marker
+  queries, slot kinds and cues, and `Metadata.fields`. Parsing, the AST
+  accessors, the dump, the definition tables and the scope, path and
+  hit-test queries are unchanged. The incremental correctness set, the
+  stream and completion benchmarks and their CI jobs go with them.
+
+- Parse fixes found by the random differential against the Rust parser: a
+  callout right after a reference definition has its title; a backslash
+  formula opener with no closer, `\\(` or `\\[`, is escaped as written (`\(`);
+  an address in a Text whose trailing spaces are trimmed before a line ending
+  is placed on its own bytes, and the Text after it keeps that whitespace in
+  its scope; a bare URL no longer takes a citation key's letters as its scheme
+  (`@http://e`); an unclosed block whose empty last line is in a block
+  quote ends after that line's prefix, in one run per line; and a link
+  destination with a parenthesis left open is no destination, as CommonMark
+  6.3 has it (`[](( "")` is text); and a closer of `*` or `_` that can also
+  open no longer bounds the opener search of one that only closes, as in
+  cmark 0.31 (`**d*n*r*` is `*<em>d<em>n</em>r</em>`).
+
+- Ordered list markers are decimal only, `1.` or `1)`: Pandoc's letters,
+  Roman numerals, `#.` and both-sided `(1)` markers are ordinary text, and a
+  list nested in an item may start at any number, as in CommonMark. The
+  list's `variant` is removed in C (`markdown_core_ordered_list_variant`),
+  Swift, Kotlin and ES (`OrderedListVariant`) and the dump; the delimiter is
+  a plain enum, `period` or `parenthesis`, and
+  `markdown_core_node_list_properties` no longer takes a variant.
+
+- Pandoc's numbered examples are removed: `(@label)` and `(@)` are ordinary
+  list text and a bare `@label` is always a bibliography citation. The
+  `Specimen` kind, the `specimen` slot, the specimen citation referent and
+  the document's specimen table are gone from C
+  (`markdown_core_document_specimen_*`, `markdown_core_specimen_*`),
+  Swift, Kotlin, ES, the wire format and the dump.
+
+- Pandoc's nameless fenced divs are removed: every container directive is
+  named, `:::name`, and a line such as `::: {.warning}` or `::: note`, with
+  a space after the colons, is paragraph text. `DirectiveBlock.name` is
+  never null: C's `markdown_core_node_directive_properties` writes a
+  `markdown_core_string`, Swift and Kotlin expose `name: String`, ES
+  `name: string`, the wire format writes a plain string and the dump never
+  writes `name=null`.
+
+- Pandoc's implicit heading references are removed: a heading declares no
+  reference label, so `[Heading]`, `[Heading][]` and `[text][Heading]` are
+  bracket text unless a link reference definition declares the label; link
+  to a heading by its anchor, `[text](#heading)`. The document's label
+  table lists `Reference` nodes only: C's
+  `markdown_core_document_reference_for` never returns a `Heading`, and
+  Swift's `reference(for:)`, Kotlin's `reference(label)` and ES's
+  `reference(label)` return a `Reference`.
+
+- Automatic heading anchors are removed: a heading's `anchor` is the
+  explicit one its attributes declare, `# Title {#title}`, and null without
+  one; the parser derives no anchor from a heading's text and reserves no
+  name for one. `markdown_core_node_anchor` and
+  `markdown_core_attribute_value_anchor` return the
+  `markdown_core_optional_string` itself and cannot fail. Swift, Kotlin and
+  ES `anchor`, the wire format and the dump carry only explicit anchors.
+
+- Callouts, cross links and cross embeds take attributes. A callout's
+  attribute block ends its marker line, after the title and the spaces
+  before it, `> [!note] Title {#id .c}`, and is the `Callout`'s; a title
+  that was only the block is null. A cross link's or an embed's follows its
+  closing brackets right away, `[[Note]]{.c}`, `![[clip.mp4|320]]{autoplay}`,
+  as a link's or an image's does.
+
+- A definition starts only with `:`; Pandoc's `~` marker is text. A lone
+  `-` in an attribute container is an ordinary bare name, `{-}` giving the
+  record `-="true"`, no longer the class `unnumbered`.
+
+- Task checks accept only `[ ]`, `[x]` and `[X]`, `[?]` and `[-]`; any
+  other character between the brackets is ordinary text. A list item's
+  authored `marker` string is replaced by a `status`: open, done, question
+  or cancelled, and null for an ordinary item. C reads it with
+  `markdown_core_node_list_item_status` (`markdown_core_task_status`), which
+  replaces `markdown_core_node_list_item_marker`; Swift, Kotlin and ES expose
+  `status` (`TaskStatus`), replacing `marker`, `tasked` and `completed`; the
+  dump writes `status=done`.
+
+- Rename the image node `Embedded` to `Embed` and the workspace transclusion
+  `CrossEmbedded` to `CrossEmbed` across C, Swift, Kotlin, ES, the dump and
+  the fixtures: C uses `MARKDOWN_CORE_KIND_EMBED` and
+  `MARKDOWN_CORE_KIND_CROSS_EMBED`, ES uses `kind: "embed"` and
+  `"crossEmbed"`, and the visitors' callbacks are `embed` and `crossEmbed`.
+  A formula's `embedded` placement is unchanged.
+
 - Android requires API 24 (Android 7.0) or later, up from API 21, matching
   the Google Play services and AndroidX floor; CI tests it on an API 24
   emulator. The build moves to AGP 9.5.2.
-
-- `markdown_core_node_anchor` and `markdown_core_attribute_value_anchor`
-  return a `markdown_core_status` and give the anchor through an
-  out-parameter. A heading's computed anchor longer than 1024 bytes is made
-  at its first read, which answers `MARKDOWN_CORE_ALLOCATION_FAILED` when
-  storage cannot be had, instead of showing no anchor.
 
 - Lend one line of a flushed session: `markdown_core_session_lines` counts
   the text's lines, the empty one after a last line ending included, and

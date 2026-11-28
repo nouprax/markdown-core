@@ -150,12 +150,6 @@ reads one way the properties grammar reads the same way or rejects.
 `Metadata` is a leaf Markup node exposed through `Document.metadata`, outside
 `Document.content`. A document walk reports its `enter` and `exit` callbacks
 before visiting content, including when every metadata field is absent.
-Every `MarkupVisitor` must handle Metadata. The node has one envelope scope,
-and the field query gives each decoded member's name a scope of slot kind
-`field` and each of its values one of slot kind `value`, inside a quoted
-value's quotes and from a literal's first text to its last line's end; the
-values have no separate Markup callbacks. In an envelope, the context query
-answers the same slots at a cursor (the completion engine's plan, 3.2): a
-`field` on a name or at the start of a line that names no field yet, and a
-`value` on a value or after a name's colon and a space where the member's
-value is empty. The named `comment` field is data, not a `Comment` node.
+Every `MarkupVisitor` must handle Metadata. The node has one envelope scope;
+the values have no separate Markup callbacks. The named `comment` field is
+data, not a `Comment` node.

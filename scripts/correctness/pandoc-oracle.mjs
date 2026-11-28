@@ -81,20 +81,10 @@ const inlineKinds = {
 };
 const alignment = (value) =>
     ({ AlignDefault: "none", AlignLeft: "left", AlignCenter: "center", AlignRight: "right" })[value.t];
-const variant = (value) =>
-    ({
-        Decimal: "decimal",
-        LowerAlpha: "alpha(lowercased=true)",
-        UpperAlpha: "alpha(lowercased=false)",
-        LowerRoman: "roman(lowercased=true)",
-        UpperRoman: "roman(lowercased=false)",
-        Example: "example",
-        DefaultStyle: "default"
-    })[value.t];
 const delimiter = (value) =>
     ({
         Period: "period",
-        OneParen: "parenthesis(closed=false)",
+        OneParen: "parenthesis",
         TwoParens: "parenthesis(closed=true)",
         DefaultDelim: "default"
     })[value.t];
@@ -134,7 +124,7 @@ function pandocNode({ t, c }) {
         case "Link":
         case "Image":
             return node(
-                t === "Link" ? "Link" : "Embedded",
+                t === "Link" ? "Link" : "Embed",
                 { dest: { kind: "url", value: c[2][0] }, title: c[2][1] || null },
                 sequence(c[1]),
                 c[0]
@@ -158,7 +148,6 @@ function pandocNode({ t, c }) {
                 {
                     flavor: "bullet",
                     start: null,
-                    variant: null,
                     delimiter: null,
                     tight: c.every((item) => item.every((block) => block.t !== "Para"))
                 },
@@ -170,7 +159,6 @@ function pandocNode({ t, c }) {
                 {
                     flavor: "ordered",
                     start: c[0][0],
-                    variant: variant(c[0][1]),
                     delimiter: delimiter(c[0][2]),
                     tight: c[1].every((item) => item.every((block) => block.t !== "Para"))
                 },
@@ -252,7 +240,7 @@ export function fromCanonical(value) {
             citations: value.children.map((item) => {
                 const referent = item.fields.referent;
                 const bib = /^bib\(key=("(?:\\.|[^"\\])*"),mode=(normal|authorInText|suppressAuthor)\)$/.exec(referent);
-                const labeled = /^(footnote|specimen)\(label=("(?:\\.|[^"\\])*")\)$/.exec(referent);
+                const labeled = /^(footnote)\(label=("(?:\\.|[^"\\])*")\)$/.exec(referent);
                 const note = referent === "footnote(note)";
                 assert.ok(bib || labeled || note, `unknown citation referent: ${referent}`);
                 // The dump prints an inline note as the citation's first child
@@ -292,14 +280,10 @@ export function fromCanonical(value) {
         result.literal = f.literal.replace(/\n$/, "");
         if (optional("language") !== null) attrs.classes = [optional("language"), ...attrs.classes];
     }
-    if (value.kind === "Specimen") {
-        result.label = optional("label");
-        result.start = optional("start");
-    }
     if (value.kind === "Heading") result.level = Number(f.level);
-    if (["Link", "Embedded", "CrossLink", "CrossEmbedded"].includes(value.kind)) {
+    if (["Link", "Embed", "CrossLink", "CrossEmbed"].includes(value.kind)) {
         result.dest = parseDestination(f.dest);
-        if (value.kind === "Link" || value.kind === "Embedded") result.title = optional("title") || null;
+        if (value.kind === "Link" || value.kind === "Embed") result.title = optional("title") || null;
         else result.label = f.label;
     }
     if (value.kind === "Callout") {
@@ -307,7 +291,7 @@ export function fromCanonical(value) {
         result.collapsed = optional("collapsed");
     }
     if (value.kind === "List")
-        for (const key of ["flavor", "start", "variant", "delimiter", "tight"])
+        for (const key of ["flavor", "start", "delimiter", "tight"])
             result[key] =
                 f[key] === "null"
                     ? null
@@ -394,9 +378,6 @@ export function assertCanaries(run) {
     assert.deepEqual(headingAnchors("# a‿b ∑ 😀\n"), ["a‿b--grinning"]);
     assert.deepEqual(headingAnchors("# İ ſ ẞ Σ ς\n"), ["i̇-ſ-ß-σ-ς"]);
     assert.deepEqual(headingAnchors("# A\u0085B\u2028C\n"), ["abc"]);
-    const adjacent = fromPandoc(run("# H\n\n[H] [H]\n", anchors + "+implicit_header_references"));
-    assert.equal(adjacent.children[1].children.length, 1, "Pandoc permits whitespace before a full reference tail");
-    assert.equal(adjacent.children[1].children[0].dest.value, "#h");
 }
 
 export function validatePolicy(policy, cases) {

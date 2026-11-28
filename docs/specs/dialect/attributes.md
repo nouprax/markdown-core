@@ -22,7 +22,6 @@ validate units, or choose a layout.
 | `class="one two"` | Split the value into classes. |
 | `key=value` | Append an ordered name/value record. |
 | `key` | A bare name: the record `key="true"`. |
-| `-` | Standing alone, append the class `unnumbered`. |
 | `{}` | An empty attribute container. |
 
 Names are taken as written, as in an HTML start tag. A name is one or more
@@ -30,11 +29,11 @@ bytes other than space, tab, a line ending, `=`, `}`, `"`, `'`, or `{`;
 nothing is classified by Unicode category, so `{中文=值}`, `{1a=b}`,
 `{_k=v}` and `{a#b=c}` are records named exactly as spelled. A member's first
 byte selects its shape: `#` and `.` begin the identifier and class shorthands,
-whose names follow the same rule and must be nonempty; a `-` followed by a
-separator or the closing brace is the `unnumbered` class; anything else begins
-a name. A name followed by `=` is an assignment, and a name followed by a
-separator or the closing brace is a bare attribute, recorded as
-`name="true"`. Names and values are case-sensitive. The exact lowercase `id`
+whose names follow the same rule and must be nonempty; anything else begins
+a name, a lone `-` too: Pandoc's `{-}` shorthand for `.unnumbered` is the
+record `-="true"` here. A name followed by `=` is an assignment, and a
+name followed by a separator or the closing brace is a bare attribute,
+recorded as `name="true"`. Names and values are case-sensitive. The exact lowercase `id`
 and `class` names are special, in a bare form too: `{id}` is the anchor `true`
 and `{class}` the class `true`; other assignments are records.
 
@@ -54,7 +53,9 @@ byte, `{#a#b}` is the single anchor `a#b` and `{.one.two}` the single class
 Values may be unquoted, single-quoted, or double-quoted, and may be empty.
 Quoted values decode ASCII punctuation escapes and character references;
 unquoted values decode escapes but retain character references literally.
-Permitted line endings inside quoted values become one space.
+Permitted line endings inside quoted values become one space; the spaces and
+tabs that begin the next line are that line's, as in a paragraph, not the
+value's.
 
 ```markdown
 `x`{quoted="a&amp;b" raw=a&amp;b empty=}
@@ -83,10 +84,11 @@ escapes or character references.
 | Heading | At the end of the final heading-content line. |
 | Fenced code | At the end of the opening fence's info region. |
 | Direct link/image, resolving full/collapsed reference, angle autolink | Immediately after the complete occurrence. |
+| Cross link, cross embed | Immediately after the closing `]]`. |
+| Callout | At the end of its marker line, after the title. |
 | Link reference definition | After its destination and optional title. |
 | Bracketed span | Immediately after its closing bracket. |
 | Named directive | Immediately after its name or label. |
-| Nameless container | On its opening colon fence. |
 
 Every AST node has an `attributes` value, but only supported attachment rules
 populate it. Other nodes have empty classes and records. A missing container,
@@ -116,6 +118,19 @@ Both headings receive explicit anchors. The valid suffix and preceding
 whitespace are removed before applying the ordinary closing-hash rule. For
 Setext headings the suffix belongs to the last content line. `# {#empty}` is
 an empty heading with an explicit anchor.
+
+### Callouts
+
+```markdown
+> [!note] Read **this** {#tip .compact}
+> Body text.
+```
+
+The callout has anchor `tip` and class `compact`; its title is `Read`
+and strong `this`. As for a heading, the block and the spaces before it are
+removed from the title, a code span or other token of the title that owns
+the brace keeps it, and `> [!note] {.compact}` has a null title. See
+[callouts](callouts.md#attributes).
 
 ### Fenced code
 
@@ -149,7 +164,8 @@ to the ordinary definition grammar.
 
 An attribute container after a shortcut-looking bracket makes a
 [span](bracketed-spans.md), since spans have earlier precedence. Bare automatic
-links accept no container. Image width/height records are independent of typed
+links accept no container. A [cross link or embed](cross-links.md#attributes)
+takes its container right after its `]]`. Image width/height records are independent of typed
 [dimensions](links-and-images.md#image-dimensions).
 
 ## Invalid containers

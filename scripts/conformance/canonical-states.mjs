@@ -36,7 +36,7 @@ function parentEdges(tree) {
 }
 // A direct Footnote child can be inline or block content, so that parent
 // alone cannot witness a comment placement. Use unambiguous content owners.
-const BLOCK_CONTENT = new Set(["Document", "Callout", "ListItem", "Specimen", "DirectiveBlock"]);
+const BLOCK_CONTENT = new Set(["Document", "Callout", "ListItem", "DirectiveBlock"]);
 const INLINE_CONTENT = new Set([
     "Paragraph",
     "Heading",
@@ -46,32 +46,25 @@ const INLINE_CONTENT = new Set([
     "Strong",
     "Strikethrough",
     "Link",
-    "Embedded"
+    "Embed"
 ]);
 
-function taskMarkers(tree) {
-    return [...tree.matchAll(/^.*ListItem scope=.* marker=("(?:[^"\\]|\\.)*") /gm)].map((match) =>
-        JSON.parse(match[1])
-    );
-}
-
 const stateValidators = {
-    "directiveBlock.name.null": (tree) => /DirectiveBlock scope=.* name=null /.test(tree),
     "definition.compact.true": (tree) => /Definition scope=.* compact=true /.test(tree),
     "definition.compact.false": (tree) => /Definition scope=.* compact=false /.test(tree),
     "definition.bodies.multiple": (tree) => /Definition scope=.* children=(?:[2-9]|[1-9]\d+)(?:\n|$)/.test(tree),
     "definition.body.empty": (tree) => /DefinitionBody children=0/.test(tree),
-    "crossEmbedded.dimensions.width": (tree) =>
-        /CrossEmbedded scope=.* dimensions=\(width=[1-9][0-9]*,height=null\) /.test(tree),
-    "crossEmbedded.dimensions.width-height": (tree) =>
-        /CrossEmbedded scope=.* dimensions=\(width=[1-9][0-9]*,height=[1-9][0-9]*\) /.test(tree),
-    "crossEmbedded.dimensions.null": (tree) => /CrossEmbedded scope=.* dimensions=null /.test(tree),
+    "crossEmbed.dimensions.width": (tree) =>
+        /CrossEmbed scope=.* dimensions=\(width=[1-9][0-9]*,height=null\) /.test(tree),
+    "crossEmbed.dimensions.width-height": (tree) =>
+        /CrossEmbed scope=.* dimensions=\(width=[1-9][0-9]*,height=[1-9][0-9]*\) /.test(tree),
+    "crossEmbed.dimensions.null": (tree) => /CrossEmbed scope=.* dimensions=null /.test(tree),
     "crossLink.label.null": (tree) => /CrossLink scope=.* label=null /.test(tree),
     "crossLink.label.empty": (tree) => /CrossLink scope=.* label="" /.test(tree),
     "crossLink.label.value": (tree) => /CrossLink scope=.* label="[^"\n]+" /.test(tree),
-    "crossEmbedded.label.null": (tree) => /CrossEmbedded scope=.* label=null /.test(tree),
-    "crossEmbedded.label.empty": (tree) => /CrossEmbedded scope=.* label="" /.test(tree),
-    "crossEmbedded.label.value": (tree) => /CrossEmbedded scope=.* label="[^"\n]+" /.test(tree),
+    "crossEmbed.label.null": (tree) => /CrossEmbed scope=.* label=null /.test(tree),
+    "crossEmbed.label.empty": (tree) => /CrossEmbed scope=.* label="" /.test(tree),
+    "crossEmbed.label.value": (tree) => /CrossEmbed scope=.* label="[^"\n]+" /.test(tree),
     "destination.cross.path": (tree) => / dest=cross\(path="[^"\n]+",anchor=/.test(tree),
     "destination.cross.current-document": (tree) => / dest=cross\(path="",anchor="/.test(tree),
     "destination.cross.anchor.null": (tree) => / dest=cross\(path="[^"\n]*",anchor=null\)/.test(tree),
@@ -84,16 +77,13 @@ const stateValidators = {
     "list.start.value": (tree) => /^.*List scope=.* start=-?\d+ /m.test(tree),
     "list.tight.false": (tree) => /^.*List scope=.* tight=false /m.test(tree),
     "list.tight.true": (tree) => /^.*List scope=.* tight=true /m.test(tree),
-    "listItem.marker.null": (tree) => /^.*ListItem scope=.* marker=null /m.test(tree),
-    "listItem.marker.space": (tree) => /^.*ListItem scope=.* marker=" " /m.test(tree),
-    "listItem.marker.value": (tree) => taskMarkers(tree).some((marker) => [...marker].length === 1 && marker !== " "),
-    "listItem.marker.custom": (tree) =>
-        taskMarkers(tree).some((marker) => [...marker].length === 1 && ![" ", "x", "X"].includes(marker)),
-    "list.variant.decimal": (tree) => /^.*List scope=.* variant=decimal /m.test(tree),
-    "list.variant.null": (tree) => /^.*List scope=.* variant=null /m.test(tree),
+    "listItem.status.null": (tree) => /^.*ListItem scope=.* status=null /m.test(tree),
+    "listItem.status.open": (tree) => /^.*ListItem scope=.* status=open /m.test(tree),
+    "listItem.status.done": (tree) => /^.*ListItem scope=.* status=done /m.test(tree),
+    "listItem.status.question": (tree) => /^.*ListItem scope=.* status=question /m.test(tree),
+    "listItem.status.cancelled": (tree) => /^.*ListItem scope=.* status=cancelled /m.test(tree),
     "list.delimiter.period": (tree) => /^.*List scope=.* delimiter=period /m.test(tree),
-    "list.delimiter.parenthesis.unclosed": (tree) =>
-        /^.*List scope=.* delimiter=parenthesis\(closed=false\) /m.test(tree),
+    "list.delimiter.parenthesis": (tree) => /^.*List scope=.* delimiter=parenthesis /m.test(tree),
     "codeBlock.info.null": (tree) => /^.*CodeBlock scope=.* info=null /m.test(tree),
     "codeBlock.info.value": (tree) => /^.*CodeBlock scope=.* info="/m.test(tree),
     "codeBlock.language.null": (tree) => /^.*CodeBlock scope=.* language=null /m.test(tree),
@@ -132,10 +122,10 @@ const stateValidators = {
     "metadata.list.empty": (tree) => /Metadata scope=.*[a-z]=list\(\[\]\)/.test(tree),
     "metadata.list.populated": (tree) => /Metadata scope=.*[a-z]=list\(\[(?:text|number)\(/.test(tree),
     "document.metadata.null": (tree) => !/Metadata scope=/.test(tree),
-    "embedded.dimensions.width": (tree) => /Embedded scope=.* dimensions=\(width=[1-9][0-9]*,height=null\) /.test(tree),
-    "embedded.dimensions.width-height": (tree) =>
-        /Embedded scope=.* dimensions=\(width=[1-9][0-9]*,height=[1-9][0-9]*\) /.test(tree),
-    "embedded.dimensions.null": (tree) => /Embedded scope=.* dimensions=null /.test(tree),
+    "embed.dimensions.width": (tree) => /Embed scope=.* dimensions=\(width=[1-9][0-9]*,height=null\) /.test(tree),
+    "embed.dimensions.width-height": (tree) =>
+        /Embed scope=.* dimensions=\(width=[1-9][0-9]*,height=[1-9][0-9]*\) /.test(tree),
+    "embed.dimensions.null": (tree) => /Embed scope=.* dimensions=null /.test(tree),
     // The dump visualizes the DirectiveLabel field as a nested Markup node:
     // absent emits no label node, empty has `children=0`, and populated owns
     // inline descendants.
@@ -146,18 +136,17 @@ const stateValidators = {
     "directive.label.empty": (tree) => /DirectiveLabel scope=\S+ anchor=null attributes=\{\} children=0$/m.test(tree),
     "directive.label.populated": (tree) =>
         /DirectiveLabel scope=\S+ anchor=null attributes=\{\} children=[1-9]\d*$/m.test(tree),
-    // A reference occurrence is a `Link` or `Embedded` naming its definition's
+    // A reference occurrence is a `Link` or `Embed` naming its definition's
     // normalized label, and the definition is a `Reference` where it was
     // written, holding the url destination it states.
-    "destination.reference.label": (tree) =>
-        /(?:Link|Embedded) scope=.* dest=reference\("(?:\\.|[^"\\])+"\) /.test(tree),
+    "destination.reference.label": (tree) => /(?:Link|Embed) scope=.* dest=reference\("(?:\\.|[^"\\])+"\) /.test(tree),
     "reference.definition.url": (tree) =>
         /Reference scope=.* label="(?:\\.|[^"\\])+" dest=url\("(?:\\.|[^"\\])*"\) title=/.test(tree),
     "link.title.null": (tree) => /^.*Link scope=.* title=null /m.test(tree),
     "link.title.empty": (tree) => /^.*Link scope=.* title="" /m.test(tree),
     "link.title.value": (tree) => /^.*Link scope=.* title=".+" /m.test(tree),
-    "embedded.title.null": (tree) => /^.*Embedded scope=.* title=null /m.test(tree),
-    "embedded.title.value": (tree) => /^.*Embedded scope=.* title=".+" /m.test(tree),
+    "embed.title.null": (tree) => /^.*Embed scope=.* title=null /m.test(tree),
+    "embed.title.value": (tree) => /^.*Embed scope=.* title=".+" /m.test(tree),
     "scope.positive": (tree) => / scope=[1-9]\d*:[1-9]\d*\.\./.test(tree),
     /* `scope.zero` was here, and it required the canonical corpus to demonstrate
        a node with NO position -- 0:0..0:0. Its only two witnesses in that corpus
@@ -207,13 +196,6 @@ const stateValidators = {
     "footnote.label.value": (tree) =>
         parentEdges(tree).some((edge) => edge.kind === "Footnote" && BLOCK_CONTENT.has(edge.parent)) &&
         /Footnote scope=\S+ anchor=null attributes=\{\} label="[^"\n]*" children=/.test(tree),
-    "list.variant.alpha.lower": (tree) => /^.*List scope=.* variant=alpha\(lowercased=true\) /m.test(tree),
-    "list.variant.alpha.upper": (tree) => /^.*List scope=.* variant=alpha\(lowercased=false\) /m.test(tree),
-    "list.variant.roman.lower": (tree) => /^.*List scope=.* variant=roman\(lowercased=true\) /m.test(tree),
-    "list.variant.roman.upper": (tree) => /^.*List scope=.* variant=roman\(lowercased=false\) /m.test(tree),
-    "list.variant.default": (tree) => /^.*List scope=.* variant=default /m.test(tree),
-    "list.delimiter.default": (tree) => /^.*List scope=.* delimiter=default /m.test(tree),
-    "list.delimiter.parenthesis.closed": (tree) => /^.*List scope=.* delimiter=parenthesis\(closed=true\) /m.test(tree),
     "citation.bib.mode.normal": (tree) =>
         /Citation scope=\S+ anchor=null attributes=\{\} referent=bib\(key="(?:\\.|[^"\\])*",mode=normal\)/.test(tree),
     "citation.bib.mode.authorInText": (tree) =>
@@ -224,15 +206,8 @@ const stateValidators = {
         /Citation scope=\S+ anchor=null attributes=\{\} referent=bib\(key="(?:\\.|[^"\\])*",mode=suppressAuthor\)/.test(
             tree
         ),
-    "citation.referent.specimen": (tree) =>
-        /Citation scope=\S+ anchor=null attributes=\{\} referent=specimen\(label="[^"\n]+"\)/.test(tree),
     "citation.prefix.populated": (tree) => /CitationPrefix children=[1-9]\d*/.test(tree),
     "citation.suffix.populated": (tree) => /CitationSuffix children=[1-9]\d*/.test(tree),
-    "specimen.label.null": (tree) => /Specimen scope=\S+ anchor=null attributes=\{\} label=null /.test(tree),
-    "specimen.label.value": (tree) => /Specimen scope=\S+ anchor=null attributes=\{\} label="[^"\n]+" /.test(tree),
-    "specimen.start.null": (tree) => /Specimen scope=\S+ anchor=null attributes=\{\} label=\S+ start=null /.test(tree),
-    "specimen.start.value": (tree) =>
-        /Specimen scope=\S+ anchor=null attributes=\{\} label=\S+ start=[1-9]\d* /.test(tree),
     "span.content.empty": (tree) => /Span scope=.* children=0(?:\n|$)/.test(tree),
     "span.content.populated": (tree) => /Span scope=.* children=[1-9]\d*(?:\n|$)/.test(tree)
 };

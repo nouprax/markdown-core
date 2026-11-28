@@ -11,7 +11,8 @@ Markdown
 
 The result is a `DefinitionList` containing one `Definition`. Its term is
 inline text, its body contains a paragraph, and `compact=true` because no blank
-line separates the term from its first body. A `~` marker can replace `:`.
+line separates the term from its first body. Only `:` is a marker: Pandoc's `~`
+is text.
 
 ## Multiple definitions and terms
 

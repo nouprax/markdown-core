@@ -10,12 +10,6 @@ public enum class ErrorCode {
 
     /** A value was read as another kind: the engine's code, shared by every binding; typed nodes never reach it. */
     KIND_MISMATCH,
-
-    /** A [MarkdownSession] was asked to append or flush after it was flushed. */
-    SESSION_FLUSHED,
-
-    /** A [MarkdownSession] was asked to edit before it was flushed. */
-    SESSION_STREAMING,
 }
 
 /**

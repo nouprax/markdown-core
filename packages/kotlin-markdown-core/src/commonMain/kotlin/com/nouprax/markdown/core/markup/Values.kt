@@ -63,32 +63,11 @@ public data class Scope(
 
 public enum class ListFlavor { BULLET, ORDERED }
 
-public sealed interface OrderedListVariant {
-    public data object Decimal : OrderedListVariant
+/** The status a list item's task check gives it: `[ ]`, `[x]` or `[X]`, `[?]` and `[-]`. */
+public enum class TaskStatus { OPEN, DONE, QUESTION, CANCELLED }
 
-    @ConsistentCopyVisibility
-    public data class Alpha internal constructor(
-        public val lowercased: Boolean,
-    ) : OrderedListVariant
-
-    @ConsistentCopyVisibility
-    public data class Roman internal constructor(
-        public val lowercased: Boolean,
-    ) : OrderedListVariant
-
-    public data object Default : OrderedListVariant
-}
-
-public sealed interface OrderedListDelimiter {
-    public data object Period : OrderedListDelimiter
-
-    @ConsistentCopyVisibility
-    public data class Parenthesis internal constructor(
-        public val closed: Boolean,
-    ) : OrderedListDelimiter
-
-    public data object Default : OrderedListDelimiter
-}
+/** The punctuation after an ordered-list number: `1.` or `1)`. */
+public enum class OrderedListDelimiter { PERIOD, PARENTHESIS }
 
 public enum class Placement { EMBEDDED, STANDALONE }
 

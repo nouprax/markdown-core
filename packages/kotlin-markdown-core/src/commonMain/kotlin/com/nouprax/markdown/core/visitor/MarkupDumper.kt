@@ -152,14 +152,6 @@ private fun describe(node: Markup): Line =
             Line("Footnote", node.content.size, listOf("label=${optional(node.label)}"))
         }
 
-        is Specimen -> {
-            Line(
-                "Specimen",
-                node.content.size,
-                listOf("label=${optional(node.label)}", "start=${node.start ?: "null"}"),
-            )
-        }
-
         is Callout -> {
             Line(
                 "Callout",
@@ -187,7 +179,6 @@ private fun describe(node: Markup): Line =
                 listOf(
                     "flavor=${node.flavor.token()}",
                     "start=${node.start ?: "null"}",
-                    "variant=${node.variant?.token() ?: "null"}",
                     "delimiter=${node.delimiter?.token() ?: "null"}",
                     "tight=${node.tight}",
                 ),
@@ -195,7 +186,7 @@ private fun describe(node: Markup): Line =
         }
 
         is ListItem -> {
-            Line("ListItem", node.content.size, listOf("marker=${optional(node.marker)}"))
+            Line("ListItem", node.content.size, listOf("status=${node.status?.name?.lowercase() ?: "null"}"))
         }
 
         is CodeBlock -> {
@@ -234,7 +225,7 @@ private fun describe(node: Markup): Line =
         }
 
         is DirectiveBlock -> {
-            Line("DirectiveBlock", node.content.size, listOf("name=${optional(node.name)}"))
+            Line("DirectiveBlock", node.content.size, listOf("name=${escaped(node.name)}"))
         }
 
         is DirectiveLabel -> {
@@ -265,9 +256,9 @@ private fun describe(node: Markup): Line =
             Line("CrossLink", 0, listOf("dest=${destination(node.dest)}", "label=${optional(node.label)}"))
         }
 
-        is CrossEmbedded -> {
+        is CrossEmbed -> {
             Line(
-                "CrossEmbedded",
+                "CrossEmbed",
                 0,
                 listOf(
                     "dest=${destination(node.dest)}",
@@ -333,9 +324,9 @@ private fun describe(node: Markup): Line =
             )
         }
 
-        is Embedded -> {
+        is Embed -> {
             Line(
-                "Embedded",
+                "Embed",
                 node.content.size,
                 listOf(
                     "dest=${destination(node.dest)}",
@@ -399,10 +390,6 @@ private fun referent(value: CitationReferent): String =
                 is FootnoteTarget.Note -> "footnote(note)"
             }
         }
-
-        is CitationReferent.Specimen -> {
-            "specimen(label=${escaped(value.label)})"
-        }
     }
 
 private fun BibMode.token(): String =
@@ -416,20 +403,7 @@ private fun Placement.token(): String = name.lowercase()
 
 private fun ListFlavor.token(): String = name.lowercase()
 
-private fun OrderedListVariant.token(): String =
-    when (this) {
-        OrderedListVariant.Decimal -> "decimal"
-        is OrderedListVariant.Alpha -> "alpha(lowercased=$lowercased)"
-        is OrderedListVariant.Roman -> "roman(lowercased=$lowercased)"
-        OrderedListVariant.Default -> "default"
-    }
-
-private fun OrderedListDelimiter.token(): String =
-    when (this) {
-        OrderedListDelimiter.Period -> "period"
-        is OrderedListDelimiter.Parenthesis -> "parenthesis(closed=$closed)"
-        OrderedListDelimiter.Default -> "default"
-    }
+private fun OrderedListDelimiter.token(): String = name.lowercase()
 
 private fun Flow.token(): String = name.lowercase()
 

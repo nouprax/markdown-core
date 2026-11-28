@@ -89,14 +89,12 @@ private class MessageWriter {
     fun root(
         content: Int,
         footnotes: kotlin.collections.List<Long> = emptyList(),
-        specimens: kotlin.collections.List<Long> = emptyList(),
         references: kotlin.collections.List<Long> = emptyList(),
         labels: kotlin.collections.List<Pair<String, Long>> = emptyList(),
     ) = record(NodeKind.DOCUMENT)
         .u32(content)
         .bool(false)
         .table(footnotes)
-        .table(specimens)
         .table(references)
         .apply {
             u32(labels.size)
@@ -137,8 +135,6 @@ class WireDecoderTest {
         assertEquals(ErrorCode.ALLOCATION_FAILED, failure(1).code)
         assertEquals(ErrorCode.OUT_OF_BOUNDS, failure(2).code)
         assertEquals(ErrorCode.KIND_MISMATCH, failure(3).code)
-        assertEquals(ErrorCode.SESSION_FLUSHED, failure(4).code)
-        assertEquals(ErrorCode.SESSION_STREAMING, failure(5).code)
     }
 
     @Test
@@ -173,8 +169,7 @@ class WireDecoderTest {
 
     @Test
     fun everyBranchOfAnOrderedListSurvivesDecoding() {
-        // Variant and delimiter branches in the contract's declaration order,
-        // with the Bool payloads the Alpha, Roman and Parenthesis branches carry.
+        // Delimiter branches in the contract's declaration order.
         fun list(write: MessageWriter.() -> Unit): List =
             assertIs<List>(
                 decode(
@@ -188,39 +183,12 @@ class WireDecoderTest {
                         .root(1),
                 ).content.single(),
             )
-        for ((branch, expected) in listOf(0 to OrderedListVariant.Decimal, 3 to OrderedListVariant.Default)) {
-            val decoded = list { bool(true).u8(branch).bool(false) }
-            assertSame(expected, decoded.variant)
-            assertNull(decoded.delimiter)
-            assertEquals(ListFlavor.ORDERED, decoded.flavor)
-            assertEquals(7L, decoded.start)
-        }
-        for (lowercased in listOf(false, true)) {
-            assertEquals(
-                lowercased,
-                assertIs<OrderedListVariant.Alpha>(
-                    list {
-                        bool(true).u8(1).bool(lowercased).bool(false)
-                    }.variant,
-                ).lowercased,
-            )
-            assertEquals(
-                lowercased,
-                assertIs<OrderedListVariant.Roman>(
-                    list {
-                        bool(true).u8(2).bool(lowercased).bool(false)
-                    }.variant,
-                ).lowercased,
-            )
-            assertEquals(
-                lowercased,
-                assertIs<OrderedListDelimiter.Parenthesis>(
-                    list { bool(false).bool(true).u8(1).bool(lowercased) }.delimiter,
-                ).closed,
-            )
-        }
-        assertSame(OrderedListDelimiter.Period, list { bool(false).bool(true).u8(0) }.delimiter)
-        assertSame(OrderedListDelimiter.Default, list { bool(false).bool(true).u8(2) }.delimiter)
+        val decoded = list { bool(false) }
+        assertNull(decoded.delimiter)
+        assertEquals(ListFlavor.ORDERED, decoded.flavor)
+        assertEquals(7L, decoded.start)
+        assertSame(OrderedListDelimiter.PERIOD, list { bool(true).u8(0) }.delimiter)
+        assertSame(OrderedListDelimiter.PARENTHESIS, list { bool(true).u8(1) }.delimiter)
     }
 
     @Test
@@ -243,7 +211,7 @@ class WireDecoderTest {
                     .string("r")
                     .optional<String>(null) { string(it) }
                     .u32(0)
-                    .record(NodeKind.EMBEDDED)
+                    .record(NodeKind.EMBED)
                     .u8(2)
                     .string("r")
                     .optional<String>(null) { string(it) }
@@ -269,7 +237,7 @@ class WireDecoderTest {
         assertNull(occurrence.title)
         assertEquals("own", occurrence.anchor)
         assertEquals(listOf("mine"), occurrence.attributes.classes)
-        val image = assertIs<Embedded>(inlines[2])
+        val image = assertIs<Embed>(inlines[2])
         assertEquals(Destination.Reference("r"), image.dest)
         assertNull(image.title)
         assertNull(image.dimensions)
@@ -286,9 +254,9 @@ class WireDecoderTest {
     }
 
     @Test
-    fun theLabelTableNamesAReferenceOrASectionTitle() {
-        // A label resolves to the Heading its id names; an id naming any
-        // other kind is an invalid message.
+    fun theLabelTableNamesOnlyAReference() {
+        // A label resolves to the Reference its id names; an id naming any
+        // other kind, a heading's say, is an invalid message.
         fun document(id: Long) =
             decode(
                 MessageWriter()
@@ -296,16 +264,18 @@ class WireDecoderTest {
                     .record(NodeKind.HEADING)
                     .int(1)
                     .u32(1)
-                    .text("p")
-                    .record(NodeKind.PARAGRAPH)
-                    .u32(1)
-                    .root(2, labels = listOf("t" to id)),
+                    .record(NodeKind.REFERENCE)
+                    .string("t")
+                    .u8(0)
+                    .string("/t")
+                    .bool(false)
+                    .root(2, references = listOf(3), labels = listOf("t" to id)),
             )
-        val valid = document(2)
-        assertSame<Markup?>(valid.content[0], valid.reference("t"))
-        assertTrue(valid.references.isEmpty())
+        val valid = document(3)
+        assertSame(valid.references.single(), valid.reference("t"))
+        assertSame<Markup?>(valid.content[1], valid.reference("t"))
         assertNull(valid.reference("p"))
-        assertFailsWith<NoSuchElementException> { document(4) }
+        assertFailsWith<NoSuchElementException> { document(2) }
     }
 
     @Test
@@ -369,25 +339,25 @@ class WireDecoderTest {
     fun definitionTablesNameDefinitionsOfTheirKind() {
         fun document(
             footnotes: kotlin.collections.List<Long>,
-            specimens: kotlin.collections.List<Long>,
+            references: kotlin.collections.List<Long>,
         ) = decode(
             MessageWriter()
                 .record(NodeKind.FOOTNOTE)
                 .optional("a") { string(it) }
                 .u32(0)
-                .record(NodeKind.SPECIMEN)
-                .optional("s") { string(it) }
-                .optional(3L) { int(it) }
-                .u32(0)
+                .record(NodeKind.REFERENCE)
+                .string("r")
+                .u8(0)
+                .string("/r")
+                .bool(false)
                 .record(NodeKind.FOOTNOTE)
                 .optional("a") { string(it) }
                 .u32(0)
-                .root(3, footnotes, specimens),
+                .root(3, footnotes, references),
         )
         val valid = document(listOf(1, 3), listOf(2))
         assertEquals(valid.content.filterIsInstance<Footnote>(), valid.footnotes)
         assertSame<Markup?>(valid.content[0], valid.footnote("a"))
-        assertSame<Markup?>(valid.content[1], valid.specimen("s"))
-        assertEquals(3L, valid.specimens.single().start)
+        assertSame<Markup?>(valid.content[1], valid.references.single())
     }
 }

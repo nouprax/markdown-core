@@ -63,11 +63,9 @@ typedef struct markdown_core_block_start_context {
 } block_start_context;
 
 /* WHAT THE SCAN FOUND: the claiming owner's own record of what its scan
- * read, which its open builds from -- a list's marker, a specimen's label, a
- * callout's header -- in a layout only the element knows. The scan writes it
- * before its `open` reads it, and the engine never reads it. An element
- * names it as its type with MARKDOWN_CORE_BLOCK_FOUND, and holds at build
- * time that the type fits (MARKDOWN_CORE_BLOCK_FOUND_FITS). */
+ * read, which its open builds from -- a list's marker, a callout's header -- in a layout only the element knows. The
+ * scan writes it before its `open` reads it, and the engine never reads it. An element names it as its type with
+ * MARKDOWN_CORE_BLOCK_FOUND, and holds at build time that the type fits (MARKDOWN_CORE_BLOCK_FOUND_FITS). */
 #define MARKDOWN_CORE_BLOCK_FOUND_SIZE 64
 #define MARKDOWN_CORE_BLOCK_FOUND(start, type) ((type *)(void *)(start)->found.bytes)
 /* C99 has no _Static_assert: an array of negative size fails the build. */

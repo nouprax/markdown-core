@@ -39,24 +39,6 @@ The native C document is freed before `parse` returns. See
 [Swift storage](docs/architecture/swift-storage.md) for ownership and lifecycle
 details.
 
-The `MarkdownCoreLSP` product is the language engine, the semantics of the
-Language Server Protocol 3.17 over the parser, called in process.
-`MarkdownCoreLSP.Server` has one method per protocol method, and answers as
-the C engine and the JSON-RPC adapter `markdown-core-server` do; Kotlin's
-`com.nouprax.markdown.core.lsp.Server` and the ECMAScript entry point
-`@nouprax/es-markdown-core/lsp` are the same server.
-
-```swift
-import MarkdownCoreLSP
-
-let server = try Server()
-_ = try server.initialize([.utf8, .utf16])  // UTF-8 when offered
-try server.open("file:///note.md", version: 1, text: "# Title\n\n[a](")
-let end = Position(line: 2, character: 4)
-try server.update("file:///note.md", version: 2, edits: [Edit(scope: Scope(start: end, end: end), text: "/url)")])
-let completions = try server.complete("file:///note.md", at: end)  // completions.version == 2
-```
-
 ### Kotlin Multiplatform
 
 Add the dependency to a Kotlin Multiplatform source set:
@@ -124,7 +106,7 @@ for the complete API and ownership rules.
 ## Development
 
 Start with the [toolchain and environment guide](docs/toolchains.md), validate
-your setup with `scripts/tooling/setup-environment.sh --check`, then install dependencies:
+your setup with `scripts/tools/setup-environment.sh --check`, then install dependencies:
 
 ```sh
 pnpm install --frozen-lockfile
@@ -135,7 +117,7 @@ Build the package you are working on:
 ```sh
 pnpm build:c
 pnpm build:swift
-scripts/tooling/run-gradle.sh :packages:kotlin-markdown-core:jvmJar
+scripts/tools/run-gradle.sh :packages:kotlin-markdown-core:jvmJar
 pnpm --dir packages/es-markdown-core build
 ```
 

@@ -5,8 +5,7 @@ const utf8Encoder = new TextEncoder();
 /**
  * THE LINES OF A SOURCE, over its UTF-8 bytes: the offset each line begins
  * at. A line ends after LF, after CR, or after CRLF, which is one terminator.
- * Built per query from the caller's source, or from a session's text as its
- * bytes, and converts between byte offsets and editor coordinates in either
+ * Built per query from the caller's source, and converts between byte offsets and editor coordinates in either
  * unit.
  */
 export class SourceLines {

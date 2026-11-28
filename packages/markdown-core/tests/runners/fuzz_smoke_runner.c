@@ -25,7 +25,7 @@ static int inspect_node(const markdown_core_node *node, ts_ast_range range, void
     int32_t level;
     bool flag;
     markdown_core_string literal;
-    markdown_core_optional_string optional;
+    markdown_core_task_status task;
     const char *name;
     markdown_core_node_kind kind = markdown_core_node_get_kind(node);
     markdown_core_status status = markdown_core_node_kind_name(kind, &name);
@@ -46,11 +46,11 @@ static int inspect_node(const markdown_core_node *node, ts_ast_range range, void
         status = markdown_core_node_heading_level(node, &level);
         break;
     case MARKDOWN_CORE_KIND_LIST_ITEM:
-        status = markdown_core_node_list_item_marker(node, &optional);
+        status = markdown_core_node_list_item_status(node, &task);
         break;
     case MARKDOWN_CORE_KIND_DIRECTIVE:
     case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
-        status = markdown_core_node_directive_properties(node, &optional);
+        status = markdown_core_node_directive_properties(node, &literal);
         break;
     case MARKDOWN_CORE_KIND_DEFINITION:
         status = markdown_core_node_definition_compact(node, &flag);
@@ -132,7 +132,6 @@ static const struct {
     PROBE("[\xe4]\n\n[\xe4]: /u\n"),            /* label normal form */
     PROBE("x @\xe4 y\n"),                       /* citation key */
     PROBE("\xe4@key y\n"),                      /* citation opener */
-    PROBE("(@\xe4) item\n"),                    /* specimen label */
     PROBE("| a |\n| - |\n| b |\n:\xe4\n"),      /* table row without a pipe */
     PROBE("| \xe4\xb8 |\n| - |\n"),             /* pipe table cell */
     PROBE("- [\xe4] task\n"),                   /* task marker */

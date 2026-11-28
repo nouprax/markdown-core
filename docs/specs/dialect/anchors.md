@@ -2,97 +2,52 @@
 
 [Syntax guide](../dialect.md) · [Documentation](../README.md)
 
-An anchor names a node so an application can link to it. Headings receive
-automatic anchors, and supported syntax can attach an explicit one.
-
-```markdown
-# Getting started
-
-[Jump to the section](#getting-started)
-```
-
-The heading's `anchor` is `getting-started`; the link's destination is
-`#getting-started`. Referring to an anchor does not declare an anchor on the
-link itself. The parser does not navigate to the target.
-
-## Explicit anchors
-
-Use an attribute identifier on a heading or another supported attachment site:
+An anchor names a node so an application can link to it. Every anchor is
+explicit: supported syntax attaches it, and the parser derives none from a
+node's text.
 
 ```markdown
 # Getting started {#start}
+
+[Jump to the section](#start)
 ```
 
-The heading keeps `start` instead of generating an ID. Both `{#start}` and
-`{id=start}` declare the same value. Within one container the last ID wins;
-an empty final `id=` clears the candidate. See [attributes](attributes.md) for
-all attachment sites, and [block identifiers](block-identifiers.md) for the
-`#id#` declaration on other blocks.
+The heading's `anchor` is `start`; the link's destination is `#start`.
+Referring to an anchor does not declare an anchor on the link itself. The
+parser does not navigate to the target.
 
-## Automatic anchors
+## Explicit anchors
+
+Use an attribute identifier on a heading or another supported attachment site.
+Both `{#start}` and `{id=start}` declare the same value. Within one container
+the last ID wins; an empty final `id=` clears the candidate. See
+[attributes](attributes.md) for all attachment sites, and
+[block identifiers](block-identifiers.md) for the `#id#` declaration on other
+blocks.
+
+## Headings without one
 
 ```markdown
 # Hello, World!
-
-# Hello, World!
-
-# !!!
 ```
 
-The anchors are `hello-world`, `hello-world-1`, and `section`. Generation runs
-in source order after explicit anchors have been reserved throughout the
-document, so a later explicit declaration can cause an earlier automatic one
-to receive a suffix. Explicit duplicates are retained without diagnostics.
+A heading that declares no anchor has none: its `anchor` is null. An
+application that wants a link target for every heading computes one from the
+heading's content itself, by whatever rule it chooses; the parser reserves no
+name for it.
 
-The base is computed from parsed heading content:
+## Linking to a heading
 
-1. Project visible inline content to plain text. Formatting, links, images,
-   spans, and directive labels contribute their child text; text, code, and
-   formulas contribute their literals. Breaks contribute spaces. Cross links
-   and embeds contribute their label when present, otherwise their target
-   text. Bibliography citations contribute affixes and `@key`; specimen
-   citations contribute `@id`; topics contribute `#name`. HTML, comments,
-   and footnote calls contribute nothing.
-2. Apply Unicode 17 simple lowercase mapping, without normalization or full
-   case-fold expansion.
-3. Replace each Unicode `White_Space` scalar with one hyphen, without merging
-   adjacent replacements.
-4. Retain letters, numbers, combining marks, connector punctuation, hyphens,
-   and underscores; remove everything else.
-5. Use `section` if the result is empty.
-
-For a collision, append `-N` with the smallest available positive integer.
-Leading digits are retained. `A.B` becomes `ab`; `:tada:` becomes `tada`, with
-no emoji expansion. Generated strings add no source position.
-
-## Implicit heading references
-
-Reference a heading by its authored text:
-
-```markdown
-# First chapter
-
-[First chapter] [First chapter][] [go there][First chapter]
-```
-
-All three links name the label `first chapter`, which resolves to the
-heading, whose anchor is `first-chapter`. References may appear before the
-heading. The heading label excludes its opening/closing marker and attached
-attributes, then follows ordinary reference-label normalization. Inline markup
-remains part of that label: `# *Foo*` is referenced by `[*Foo*]`, not `[Foo]`.
-
-An explicit link definition wins over a heading with the same normalized label.
-Repeated heading labels target the first heading in source order. Labels that
-cannot be expressed as reference labels contribute no implicit definition.
-Reference images can use these definitions too. A reference occurrence has
-only the attributes written on it.
+Link to a heading by the anchor it declares: `[First chapter](#chapter)` for
+`# First chapter {#chapter}`. A bracketed heading text such as
+`[First chapter]` is no reference; only a link reference definition declares a
+label.
 
 ## Anchor ownership
 
 A link reference definition is a `Reference` with the anchor and attributes
 the definition states, and a reference occurrence has the ones written on it.
-Every explicit anchor reserves its name, a `Reference`'s included. Two explicit
-declarations may keep the same anchor.
+Two explicit declarations may keep the same anchor, without diagnostics.
 
 Cross-link anchors remain raw; the application chooses how to match them to
 these declarations. See [cross links](cross-links.md#headings-and-blocks) and

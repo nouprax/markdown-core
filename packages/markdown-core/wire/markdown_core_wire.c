@@ -150,12 +150,7 @@ static void put_attributes(wire_buffer *buffer, const markdown_core_attribute_va
     size_t classes = markdown_core_attribute_value_class_count(attributes);
     size_t records = markdown_core_attribute_value_record_count(attributes);
     size_t index;
-    markdown_core_optional_string anchor;
-    if (markdown_core_attribute_value_anchor(attributes, &anchor) != MARKDOWN_CORE_OK) {
-        buffer->failed = true;
-        return;
-    }
-    put_optional_string(buffer, anchor);
+    put_optional_string(buffer, markdown_core_attribute_value_anchor(attributes));
     put_count(buffer, classes);
     for (index = 0; index < classes && !buffer->failed; ++index) {
         markdown_core_string value;
@@ -190,7 +185,7 @@ static void put_destination(wire_buffer *buffer, const markdown_core_node *node)
     }
 }
 
-/* `dest`, then `title`: a Link's, an Embedded's or a Reference's. */
+/* `dest`, then `title`: a Link's, an Embed's or a Reference's. */
 static void put_resource(wire_buffer *buffer, const markdown_core_node *node) {
     markdown_core_optional_string title;
     put_destination(buffer, node);
@@ -357,9 +352,6 @@ static size_t node_edges(const markdown_core_node *node, markdown_core_node_kind
     case MARKDOWN_CORE_KIND_FOOTNOTE:
         edges[0] = sequence_edge(node, markdown_core_footnote_content);
         return 1;
-    case MARKDOWN_CORE_KIND_SPECIMEN:
-        edges[0] = sequence_edge(node, markdown_core_specimen_content);
-        return 1;
     case MARKDOWN_CORE_KIND_THEMATIC_BREAK:
     case MARKDOWN_CORE_KIND_CODE_BLOCK:
     case MARKDOWN_CORE_KIND_HTML_BLOCK:
@@ -373,7 +365,7 @@ static size_t node_edges(const markdown_core_node *node, markdown_core_node_kind
     case MARKDOWN_CORE_KIND_COMMENT:
     case MARKDOWN_CORE_KIND_TOPIC:
     case MARKDOWN_CORE_KIND_CROSS_LINK:
-    case MARKDOWN_CORE_KIND_CROSS_EMBEDDED:
+    case MARKDOWN_CORE_KIND_CROSS_EMBED:
     case MARKDOWN_CORE_KIND_METADATA:
     case MARKDOWN_CORE_KIND_REFERENCE:
         return 0;
@@ -393,7 +385,7 @@ static size_t node_edges(const markdown_core_node *node, markdown_core_node_kind
     case MARKDOWN_CORE_KIND_SUPERSCRIPT:
     case MARKDOWN_CORE_KIND_SUBSCRIPT:
     case MARKDOWN_CORE_KIND_LINK:
-    case MARKDOWN_CORE_KIND_EMBEDDED:
+    case MARKDOWN_CORE_KIND_EMBED:
     case MARKDOWN_CORE_KIND_DEFINITION_LIST:
         /* The one node-valued field is the children. */
         edges[0] = nodes_edge(children);
@@ -428,27 +420,15 @@ static void put_bodies_counts(wire_buffer *buffer, const wire_edge *edge) {
 static void put_list_fields(wire_buffer *buffer, const markdown_core_node *node) {
     markdown_core_list_flavor flavor;
     markdown_core_optional_i64 start;
-    markdown_core_ordered_list_variant variant;
     markdown_core_ordered_list_delimiter delimiter;
     bool tight;
-    markdown_core_node_list_properties(node, &flavor, &start, &variant, &delimiter, &tight);
+    markdown_core_node_list_properties(node, &flavor, &start, &delimiter, &tight);
     put_index(buffer, flavor, MARKDOWN_CORE_LIST_FLAVOR_BULLET);
     put_optional_int(buffer, start);
-    /* The ordered-marker facts exist exactly when the list has a start. */
+    /* The delimiter exists exactly when the list has a start. */
     put_bool(buffer, start.has_value);
     if (start.has_value) {
-        put_index(buffer, variant.kind, MARKDOWN_CORE_ORDERED_LIST_VARIANT_DECIMAL);
-        if (variant.kind == MARKDOWN_CORE_ORDERED_LIST_VARIANT_ALPHA ||
-            variant.kind == MARKDOWN_CORE_ORDERED_LIST_VARIANT_ROMAN) {
-            put_bool(buffer, variant.lowercased);
-        }
-    }
-    put_bool(buffer, start.has_value);
-    if (start.has_value) {
-        put_index(buffer, delimiter.kind, MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD);
-        if (delimiter.kind == MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PARENTHESIS) {
-            put_bool(buffer, delimiter.closed);
-        }
+        put_index(buffer, delimiter, MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD);
     }
     put_bool(buffer, tight);
 }
@@ -471,8 +451,8 @@ static void put_table_fields(wire_buffer *buffer, const markdown_core_node *node
 enum { WIRE_FOOTNOTE_LABEL = 0, WIRE_FOOTNOTE_NOTE = 1 };
 
 static void put_citation_fields(wire_buffer *buffer, const markdown_core_node *node, const wire_edge *edges) {
-    /* CitationReferent: bib { key, mode: BibMode } | footnote { target: FootnoteTarget } |
-     * specimen { label }, where FootnoteTarget is label { value } | note { footnote: Footnote }. */
+    /* CitationReferent: bib { key, mode: BibMode } | footnote { target: FootnoteTarget }, where
+     * FootnoteTarget is label { value } | note { footnote: Footnote }. */
     markdown_core_referent referent;
     markdown_core_citation_referent(node, &referent);
     put_index(buffer, referent.kind, MARKDOWN_CORE_REFERENT_BIB);
@@ -482,10 +462,8 @@ static void put_citation_fields(wire_buffer *buffer, const markdown_core_node *n
     } else if (referent.kind == MARKDOWN_CORE_REFERENT_FOOTNOTE && referent.note != NULL) {
         /* The note is a node-valued field: its record is on the stack. */
         put_u8(buffer, WIRE_FOOTNOTE_NOTE);
-    } else if (referent.kind == MARKDOWN_CORE_REFERENT_FOOTNOTE) {
-        put_u8(buffer, WIRE_FOOTNOTE_LABEL);
-        put_string(buffer, referent.label);
     } else {
+        put_u8(buffer, WIRE_FOOTNOTE_LABEL);
         put_string(buffer, referent.label);
     }
     put_nodes_count(buffer, &edges[1]);
@@ -540,11 +518,16 @@ static void put_record(wire_buffer *buffer, const markdown_core_node *node) {
         put_list_fields(buffer, node);
         put_nodes_count(buffer, &edges[0]);
         break;
-    case MARKDOWN_CORE_KIND_LIST_ITEM:
-        markdown_core_node_list_item_marker(node, &first);
-        put_optional_string(buffer, first);
+    case MARKDOWN_CORE_KIND_LIST_ITEM: {
+        markdown_core_task_status status;
+        markdown_core_node_list_item_status(node, &status);
+        put_bool(buffer, status != MARKDOWN_CORE_TASK_STATUS_NONE);
+        if (status != MARKDOWN_CORE_TASK_STATUS_NONE) {
+            put_index(buffer, status, MARKDOWN_CORE_TASK_STATUS_OPEN);
+        }
         put_nodes_count(buffer, &edges[0]);
         break;
+    }
     case MARKDOWN_CORE_KIND_CODE_BLOCK: {
         bool fenced, closed;
         if (markdown_core_node_code_block_properties(node, &first, &second, &literal, &fenced, &closed) !=
@@ -593,30 +576,27 @@ static void put_record(wire_buffer *buffer, const markdown_core_node *node) {
         break;
     case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
     case MARKDOWN_CORE_KIND_DIRECTIVE:
-        markdown_core_node_directive_properties(node, &first);
-        if (kind == MARKDOWN_CORE_KIND_DIRECTIVE) {
-            /* An inline directive's name is required and it has no content. */
-            put_string(buffer, first.value);
-            put_node_presence(buffer, &edges[0]);
-        } else {
-            put_optional_string(buffer, first);
-            put_node_presence(buffer, &edges[0]);
+        markdown_core_node_directive_properties(node, &first.value);
+        put_string(buffer, first.value);
+        put_node_presence(buffer, &edges[0]);
+        /* An inline directive has no content. */
+        if (kind == MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK) {
             put_nodes_count(buffer, &edges[1]);
         }
         break;
     case MARKDOWN_CORE_KIND_CROSS_LINK:
-    case MARKDOWN_CORE_KIND_CROSS_EMBEDDED:
+    case MARKDOWN_CORE_KIND_CROSS_EMBED:
         put_destination(buffer, node);
         markdown_core_node_cross_label(node, &first);
         put_optional_string(buffer, first);
-        if (kind == MARKDOWN_CORE_KIND_CROSS_EMBEDDED) {
+        if (kind == MARKDOWN_CORE_KIND_CROSS_EMBED) {
             put_dimensions(buffer, node);
         }
         break;
     case MARKDOWN_CORE_KIND_LINK:
-    case MARKDOWN_CORE_KIND_EMBEDDED:
+    case MARKDOWN_CORE_KIND_EMBED:
         put_resource(buffer, node);
-        if (kind == MARKDOWN_CORE_KIND_EMBEDDED) {
+        if (kind == MARKDOWN_CORE_KIND_EMBED) {
             put_dimensions(buffer, node);
         }
         put_nodes_count(buffer, &edges[0]);
@@ -640,14 +620,6 @@ static void put_record(wire_buffer *buffer, const markdown_core_node *node) {
         put_optional_string(buffer, first);
         put_nodes_count(buffer, &edges[0]);
         break;
-    case MARKDOWN_CORE_KIND_SPECIMEN: {
-        markdown_core_optional_i64 start;
-        markdown_core_specimen_properties(node, &first, &start);
-        put_optional_string(buffer, first);
-        put_optional_int(buffer, start);
-        put_nodes_count(buffer, &edges[0]);
-        break;
-    }
     case MARKDOWN_CORE_KIND_METADATA:
         put_metadata(buffer, node);
         break;
@@ -798,7 +770,7 @@ static void put_tree(wire_buffer *buffer, const markdown_core_node *root) {
     free(stack.actions);
 }
 
-/* The document's footnote, specimen and Reference tables: each a count,
+/* The document's footnote and Reference tables: each a count,
  * then the id of every definition in source order. */
 typedef markdown_core_status (*definition_at)(const markdown_core_document *, size_t, const markdown_core_node **);
 
@@ -814,8 +786,7 @@ static void put_definition_table(wire_buffer *buffer, const markdown_core_docume
 }
 
 /* The document's reference label table: a count, then each label that
- * resolves, in byte order, and the id of the Reference or Heading it
- * resolves to. */
+ * resolves, in byte order, and the id of the Reference it resolves to. */
 static void put_reference_labels(wire_buffer *buffer, const markdown_core_document *document) {
     size_t count = markdown_core_document_reference_label_count(document), index;
     put_count(buffer, count);
@@ -831,8 +802,6 @@ static void put_reference_labels(wire_buffer *buffer, const markdown_core_docume
 static void put_definitions(wire_buffer *buffer, const markdown_core_document *document) {
     put_definition_table(buffer, document, markdown_core_document_footnote_count(document),
                          markdown_core_document_footnote_at);
-    put_definition_table(buffer, document, markdown_core_document_specimen_count(document),
-                         markdown_core_document_specimen_at);
     put_definition_table(buffer, document, markdown_core_document_reference_count(document),
                          markdown_core_document_reference_at);
     put_reference_labels(buffer, document);
@@ -889,11 +858,6 @@ static uint8_t *document_message(const markdown_core_document *document) {
     return message ? message : error_message(MARKDOWN_CORE_ALLOCATION_FAILED);
 }
 
-/* The message a session's step answers with: its document, or its failure. */
-static uint8_t *step_message(markdown_core_status status, const markdown_core_document *document) {
-    return status == MARKDOWN_CORE_OK ? document_message(document) : error_message(status);
-}
-
 uint8_t *markdown_core_wire_parse(const uint8_t *source, size_t length) {
     markdown_core_document *document;
     /* Extents are bytes whatever the unit; the unit only counts scope queries,
@@ -905,228 +869,6 @@ uint8_t *markdown_core_wire_parse(const uint8_t *source, size_t length) {
     uint8_t *message = document_message(document);
     markdown_core_document_free(document);
     return message;
-}
-
-uint8_t *markdown_core_wire_session_new(const uint8_t *source, size_t length, markdown_core_text_unit unit,
-                                        markdown_core_session **session) {
-    markdown_core_session *made = NULL;
-    markdown_core_status status = markdown_core_session_new(source, length, unit, &made);
-    *session = NULL;
-    if (status != MARKDOWN_CORE_OK) {
-        return error_message(status);
-    }
-    /* The session is the caller's only with its document's message. */
-    uint8_t *message = document_bytes(markdown_core_session_document(made));
-    if (!message) {
-        markdown_core_session_close(made);
-        return error_message(MARKDOWN_CORE_ALLOCATION_FAILED);
-    }
-    *session = made;
-    return message;
-}
-
-uint8_t *markdown_core_wire_session_append(markdown_core_session *session, const uint8_t *text, size_t size) {
-    const markdown_core_document *document = NULL;
-    markdown_core_status status = markdown_core_session_append(session, text, size, &document);
-    return step_message(status, document);
-}
-
-uint8_t *markdown_core_wire_session_flush(markdown_core_session *session) {
-    const markdown_core_document *document = NULL;
-    markdown_core_status status = markdown_core_session_flush(session, &document);
-    return step_message(status, document);
-}
-
-uint8_t *markdown_core_wire_session_edit(markdown_core_session *session, markdown_core_position start,
-                                         markdown_core_position end, const uint8_t *text, size_t size) {
-    const markdown_core_document *document = NULL;
-    markdown_core_status status = markdown_core_session_edit(session, start, end, text, size, &document);
-    return step_message(status, document);
-}
-
-/* ---- Queries ------------------------------------------------------------- */
-
-/* The message `buffer` holds, or ALLOCATION_FAILED's when it could not be
- * made. */
-static uint8_t *answer_message(wire_buffer *buffer) {
-    seal(buffer);
-    if (!buffer->failed) {
-        return buffer->data;
-    }
-    free(buffer->data);
-    return error_message(MARKDOWN_CORE_ALLOCATION_FAILED);
-}
-
-/* Scope { start, end }, each Position { line: Int32, column: Int32 }. */
-static void put_scope(wire_buffer *buffer, markdown_core_scope scope) {
-    put_i32(buffer, scope.start.line);
-    put_i32(buffer, scope.start.column);
-    put_i32(buffer, scope.end.line);
-    put_i32(buffer, scope.end.column);
-}
-
-static void put_scopes(wire_buffer *buffer, const markdown_core_scope *scopes, size_t count) {
-    size_t index;
-    put_count(buffer, count);
-    for (index = 0; index < count && !buffer->failed; ++index) {
-        put_scope(buffer, scopes[index]);
-    }
-}
-
-/* Opener { kind: u8 ordinal, 0 while still open; scope: Scope }. */
-static void put_opener(wire_buffer *buffer, markdown_core_opener opener) {
-    put_u8(buffer, (uint8_t)opener.kind);
-    put_scope(buffer, opener.scope);
-}
-
-/* Each block opener, or each inline one, as `at` reads them. */
-typedef size_t (*opener_count)(const markdown_core_context *);
-typedef markdown_core_status (*opener_at)(const markdown_core_context *, size_t, markdown_core_opener *);
-
-static void put_openers(wire_buffer *buffer, const markdown_core_context *context, opener_count count, opener_at at) {
-    size_t total = count(context), index;
-    put_count(buffer, total);
-    for (index = 0; index < total && !buffer->failed; ++index) {
-        markdown_core_opener opener;
-        at(context, index, &opener);
-        put_opener(buffer, opener);
-    }
-}
-
-/* Slot { kind: u8 ordinal, owner: u8 ordinal, before: Scope, after: Scope,
- * closed: Bool, prefix: [String] }. */
-static void put_slots(wire_buffer *buffer, const markdown_core_context *context) {
-    size_t total = markdown_core_context_slot_count(context), index, part;
-    put_count(buffer, total);
-    for (index = 0; index < total && !buffer->failed; ++index) {
-        markdown_core_slot slot;
-        markdown_core_context_slot_at(context, index, &slot);
-        put_u8(buffer, (uint8_t)slot.kind);
-        put_u8(buffer, (uint8_t)slot.owner);
-        put_scope(buffer, slot.before);
-        put_scope(buffer, slot.after);
-        put_bool(buffer, slot.closed);
-        put_count(buffer, slot.prefix_count);
-        for (part = 0; part < slot.prefix_count && !buffer->failed; ++part) {
-            markdown_core_string prefix;
-            markdown_core_context_slot_prefix_at(context, index, part, &prefix);
-            put_string(buffer, prefix);
-        }
-    }
-}
-
-/* A copy of the session's text, which a query reads as its source, in
- * `*text`; NULL in `*text` when it cannot be allocated. A query copies it
- * because the facade hands the text out only as a copy. */
-static size_t session_text(const markdown_core_session *session, uint8_t **text) {
-    size_t size = markdown_core_session_text_size(session);
-    /* One byte more, so an empty text is an allocation too. */
-    *text = (uint8_t *)malloc(size + 1);
-    if (*text != NULL) {
-        markdown_core_session_text(session, *text);
-    }
-    return size;
-}
-
-uint8_t *markdown_core_wire_dialect(void) {
-    wire_buffer buffer = {0};
-    size_t count = markdown_core_metadata_field_count(), index;
-    /* fields: [String], cues: String. */
-    put_header(&buffer, WIRE_STATUS_DOCUMENT);
-    put_count(&buffer, count);
-    for (index = 0; index < count; ++index) {
-        markdown_core_string name;
-        markdown_core_metadata_field_at(index, &name);
-        put_string(&buffer, name);
-    }
-    put_string(&buffer, markdown_core_slot_cues());
-    return answer_message(&buffer);
-}
-
-uint8_t *markdown_core_wire_locate(markdown_core_session *session, markdown_core_position position) {
-    wire_buffer buffer = {0};
-    const markdown_core_context *context = markdown_core_session_context(session);
-    markdown_core_status status = markdown_core_session_locate(session, position);
-    if (status != MARKDOWN_CORE_OK) {
-        return error_message(status);
-    }
-    put_header(&buffer, WIRE_STATUS_DOCUMENT);
-    put_openers(&buffer, context, markdown_core_context_block_count, markdown_core_context_block_at);
-    put_openers(&buffer, context, markdown_core_context_inline_count, markdown_core_context_inline_at);
-    put_slots(&buffer, context);
-    return answer_message(&buffer);
-}
-
-uint8_t *markdown_core_wire_spell(const markdown_core_session *session, size_t slot, const uint8_t *value,
-                                  size_t size) {
-    wire_buffer buffer = {0};
-    markdown_core_insertion *insertion = NULL;
-    markdown_core_status status =
-        markdown_core_slot_spell(markdown_core_session_context(session), slot, value, size, &insertion);
-    if (status != MARKDOWN_CORE_OK) {
-        return error_message(status);
-    }
-    /* Insertion? { text: String, cursor: u32 bytes of the text before the caret }. */
-    put_header(&buffer, WIRE_STATUS_DOCUMENT);
-    put_bool(&buffer, insertion != NULL);
-    if (insertion != NULL) {
-        markdown_core_string text = {insertion->text, insertion->size};
-        put_string(&buffer, text);
-        put_count(&buffer, insertion->cursor);
-        markdown_core_insertion_free(insertion);
-    }
-    return answer_message(&buffer);
-}
-
-/* A field or marker query of the node with identifier `id` that holds the
- * byte at `position`: the field of slot kind `slot`, or the markers when
- * `markers` is set. */
-static uint8_t *part_message(const markdown_core_session *session, uint64_t id, markdown_core_position position,
-                             markdown_core_slot_kind slot, bool markers) {
-    const markdown_core_document *document = markdown_core_session_document(session);
-    wire_buffer buffer = {0};
-    const markdown_core_node **path = NULL, *node = NULL;
-    markdown_core_scope *scopes = NULL;
-    size_t count = 0, index;
-    uint8_t *text;
-    size_t size = session_text(session, &text);
-    markdown_core_status status;
-    if (text == NULL) {
-        return error_message(MARKDOWN_CORE_ALLOCATION_FAILED);
-    }
-    status = markdown_core_document_path(document, position, text, size, &path, &count);
-    for (index = 0; status == MARKDOWN_CORE_OK && index < count; ++index) {
-        if (markdown_core_node_id(path[index]) == id) {
-            node = path[index];
-        }
-    }
-    markdown_core_path_free(path);
-    if (status == MARKDOWN_CORE_OK && node == NULL) {
-        status = MARKDOWN_CORE_OUT_OF_BOUNDS;
-    }
-    if (status == MARKDOWN_CORE_OK) {
-        status = markers ? markdown_core_document_markers(document, node, text, size, &scopes, &count)
-                         : markdown_core_document_field(document, node, slot, text, size, &scopes, &count);
-    }
-    free(text);
-    if (status != MARKDOWN_CORE_OK) {
-        return error_message(status);
-    }
-    /* [Scope]. */
-    put_header(&buffer, WIRE_STATUS_DOCUMENT);
-    put_scopes(&buffer, scopes, count);
-    markdown_core_scopes_free(scopes);
-    return answer_message(&buffer);
-}
-
-uint8_t *markdown_core_wire_field(const markdown_core_session *session, uint64_t id, markdown_core_position position,
-                                  markdown_core_slot_kind slot) {
-    return part_message(session, id, position, slot, false);
-}
-
-uint8_t *markdown_core_wire_markers(const markdown_core_session *session, uint64_t id,
-                                    markdown_core_position position) {
-    return part_message(session, id, position, MARKDOWN_CORE_SLOT_NONE, true);
 }
 
 void markdown_core_wire_free(uint8_t *message) { free(message); }

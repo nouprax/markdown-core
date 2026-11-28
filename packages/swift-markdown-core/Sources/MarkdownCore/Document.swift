@@ -2,8 +2,8 @@ import MarkdownCoreC
 
 /// Why a call of the library failed.
 public enum ErrorCode: Sendable, Hashable {
-    /// An allocation failed, or the source or a session's text exceeds the
-    /// engine's 1 GiB capacity. The parse is abandoned rather than
+    /// An allocation failed, or the source exceeds the engine's 1 GiB
+    /// capacity. The parse is abandoned rather than
     /// returning a document with something missing from it.
     case allocationFailed
     /// The source is too short for the node a scope or dump reads, or a
@@ -12,11 +12,6 @@ public enum ErrorCode: Sendable, Hashable {
     /// A value was read as another kind. It is the engine's code, shared by
     /// every binding; typed Swift nodes never reach it.
     case kindMismatch
-    /// A ``MarkdownSession`` was asked to append or flush after it was
-    /// flushed.
-    case sessionFlushed
-    /// A ``MarkdownSession`` was asked to edit before it was flushed.
-    case sessionStreaming
 }
 
 /// The library's one error: a call that cannot answer without crashing or
@@ -29,7 +24,7 @@ public struct MarkdownCoreError: Error, Sendable, Hashable {
 
 /// The immutable semantic root returned by a parse.
 ///
-/// Every footnote, specimen and reference definition stays in the tree where
+/// Every footnote and reference definition stays in the tree where
 /// it was written. The document lists them in source order and looks a label
 /// up in those lists; it owns no definition of its own.
 public struct Document: Markup {
@@ -59,8 +54,6 @@ public struct Document: Markup {
     /// Every footnote in source order: each definition where it was written,
     /// and each inline note at its call site.
     public var footnotes: MarkupCollection<Footnote> { MarkupCollection(records: record.footnotes[...]) }
-    /// Every specimen definition in source order.
-    public var specimens: MarkupCollection<Specimen> { MarkupCollection(records: record.specimens[...]) }
     /// Every link reference definition in source order, duplicates and unused
     /// ones included.
     public var references: MarkupCollection<Reference> { MarkupCollection(records: record.references[...]) }
@@ -71,18 +64,11 @@ public struct Document: Markup {
         record.footnoteLabels[Array(label.utf8)].map { Footnote(record: $0) }
     }
 
-    /// The first specimen in source order whose label equals `label` byte for
-    /// byte, or `nil`. An anonymous definition is never found.
-    public func specimen(for label: String) -> Specimen? {
-        record.specimenLabels[Array(label.utf8)].map { Specimen(record: $0) }
-    }
-
-    /// The node a ``Destination/reference(label:)`` naming `label`, a
+    /// The definition a ``Destination/reference(label:)`` naming `label`, a
     /// normalized label, resolves to, byte for byte: the first ``Reference``
-    /// in source order whose label equals it, or else the first ``Heading``
-    /// in source order whose text declares it; `nil` when none does.
-    public func reference(for label: String) -> (any Markup)? {
-        record.referenceLabels[Array(label.utf8)]?.markup
+    /// in source order whose label equals it; `nil` when none does.
+    public func reference(for label: String) -> Reference? {
+        record.referenceLabels[Array(label.utf8)].map { Reference(record: $0) }
     }
 
     /// Parses `source` and returns the whole tree as values.
@@ -112,7 +98,7 @@ public struct Document: Markup {
 }
 
 extension Document {
-    /// The value copy of a native document, from a parse or a session. It
+    /// The value copy of a native document, from a parse. It
     /// borrows nothing from `native`, which may be released right after.
     ///
     /// - Throws: ``MarkdownCoreError`` with ``ErrorCode/allocationFailed``
@@ -131,11 +117,9 @@ final class DocumentRecord: MarkupRecord, @unchecked Sendable {
     let unit: TextUnit
     let metadataCount: Int
     let footnotes: [MarkupRecord]
-    let specimens: [MarkupRecord]
     let references: [MarkupRecord]
     let footnoteLabels: [[UInt8]: FootnoteRecord]
-    let specimenLabels: [[UInt8]: SpecimenRecord]
-    let referenceLabels: [[UInt8]: MarkupRecord]
+    let referenceLabels: [[UInt8]: ReferenceRecord]
 
     init(
         _ fields: InheritedFields,
@@ -143,19 +127,16 @@ final class DocumentRecord: MarkupRecord, @unchecked Sendable {
         metadata: MetadataRecord?,
         content: [MarkupRecord],
         footnotes: [FootnoteRecord],
-        specimens: [SpecimenRecord],
         references: [ReferenceRecord],
-        referenceLabels: [[UInt8]: MarkupRecord]
+        referenceLabels: [[UInt8]: ReferenceRecord]
     ) {
         let metadatas: [MarkupRecord] = metadata.map { [$0] } ?? []
         self.unit = unit
         metadataCount = metadatas.count
         self.footnotes = footnotes
-        self.specimens = specimens
         self.references = references
         self.referenceLabels = referenceLabels
         footnoteLabels = DocumentRecord.labels(of: footnotes, \.label)
-        specimenLabels = DocumentRecord.labels(of: specimens, \.label)
         super.init(fields, children: metadatas + content)
     }
 

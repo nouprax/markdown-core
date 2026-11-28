@@ -11,7 +11,6 @@ struct KindVisitor: MarkupVisitor {
 
     mutating func visit(_ node: Citation, phase: MarkupVisitPhase) { record(kindName(node), phase: phase) }
     mutating func visit(_ node: Footnote, phase: MarkupVisitPhase) { record(kindName(node), phase: phase) }
-    mutating func visit(_ node: Specimen, phase: MarkupVisitPhase) { record(kindName(node), phase: phase) }
     mutating func visit(_ node: Metadata, phase: MarkupVisitPhase) { record(kindName(node), phase: phase) }
     mutating func visit(_ node: Reference, phase: MarkupVisitPhase) { record(kindName(node), phase: phase) }
 
@@ -38,7 +37,7 @@ struct KindVisitor: MarkupVisitor {
     mutating func visit(_ node: MarkdownCore.CrossLink, phase: MarkupVisitPhase) {
         record(kindName(node), phase: phase)
     }
-    mutating func visit(_ node: MarkdownCore.CrossEmbedded, phase: MarkupVisitPhase) {
+    mutating func visit(_ node: MarkdownCore.CrossEmbed, phase: MarkupVisitPhase) {
         record(kindName(node), phase: phase)
     }
     mutating func visit(_ node: Formula, phase: MarkupVisitPhase) { record(kindName(node), phase: phase) }
@@ -53,7 +52,7 @@ struct KindVisitor: MarkupVisitor {
     mutating func visit(_ node: DefinitionList, phase: MarkupVisitPhase) { record(kindName(node), phase: phase) }
     mutating func visit(_ node: Definition, phase: MarkupVisitPhase) { record(kindName(node), phase: phase) }
     mutating func visit(_ node: Link, phase: MarkupVisitPhase) { record(kindName(node), phase: phase) }
-    mutating func visit(_ node: Embedded, phase: MarkupVisitPhase) { record(kindName(node), phase: phase) }
+    mutating func visit(_ node: Embed, phase: MarkupVisitPhase) { record(kindName(node), phase: phase) }
     mutating func visit(_ node: Directive, phase: MarkupVisitPhase) { record(kindName(node), phase: phase) }
     mutating func visit(_ node: Cite, phase: MarkupVisitPhase) { record(kindName(node), phase: phase) }
     mutating func visit(_ node: Topic, phase: MarkupVisitPhase) { record(kindName(node), phase: phase) }
@@ -110,7 +109,7 @@ struct RecordingWalkingVisitor: MarkupVisitor {
     mutating func visit(_ node: HTML, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: MarkdownCore.Comment, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: MarkdownCore.CrossLink, phase: MarkupVisitPhase) { record(node, phase) }
-    mutating func visit(_ node: MarkdownCore.CrossEmbedded, phase: MarkupVisitPhase) { record(node, phase) }
+    mutating func visit(_ node: MarkdownCore.CrossEmbed, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: Formula, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: Emphasis, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: Strong, phase: MarkupVisitPhase) { record(node, phase) }
@@ -123,7 +122,7 @@ struct RecordingWalkingVisitor: MarkupVisitor {
     mutating func visit(_ node: DefinitionList, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: Definition, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: Link, phase: MarkupVisitPhase) { record(node, phase) }
-    mutating func visit(_ node: Embedded, phase: MarkupVisitPhase) { record(node, phase) }
+    mutating func visit(_ node: Embed, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: Directive, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: Cite, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: Topic, phase: MarkupVisitPhase) { record(node, phase) }
@@ -134,7 +133,6 @@ struct RecordingWalkingVisitor: MarkupVisitor {
     mutating func visit(_ node: TableCell, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: Citation, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: Footnote, phase: MarkupVisitPhase) { record(node, phase) }
-    mutating func visit(_ node: Specimen, phase: MarkupVisitPhase) { record(node, phase) }
 }
 
 /// The canonical dump of `source`, as the conformance runner reads it.

@@ -1,7 +1,7 @@
 # Kotlin Markdown Core
 
 Cross links (`[[Note#Heading|Label]]`) and embeds (`![[Image.png|100x145]]`)
-produce `CrossLink(dest, label)` and `CrossEmbedded(dest, label, dimensions)`,
+produce `CrossLink(dest, label)` and `CrossEmbed(dest, label, dimensions)`,
 respectively. `dest` is a cross destination with
 raw path and optional anchor; the label is null when no separator was authored
 and an empty string for `[[Note|]]`. These are leaves with exhaustive visit and
@@ -51,11 +51,11 @@ must implement `visit(metadata: Metadata, phase: MarkupVisitPhase)`; the node's
 scalar/list values do not receive separate Markup callbacks.
 Numbers retain exact decimal strings. Missing fields are null; an authored null
 is a present scalar value. No field order or individual field scope is stored.
-`Embedded.dimensions: Dimensions?` reads complete `W`, `WxH`, `alt|W` and
+`Embed.dimensions: Dimensions?` reads complete `W`, `WxH`, `alt|W` and
 `alt|WxH` suffixes on direct and resolved images. Values range from 1 to
 2147483647 without leading zeros; malformed suffixes remain parsed alt content.
 Numeric-only labels have empty alt content. Embedded cross links use the same
-size grammar in `CrossEmbedded.dimensions`, retaining the raw label prefix (empty
+size grammar in `CrossEmbed.dimensions`, retaining the raw label prefix (empty
 for size-only labels). Ordinary cross-link labels and invalid suffixes stay raw.
 `Dimensions` is a node-independent value with required `width` and optional
 `height`; it has no scope or visitor callbacks.
@@ -76,75 +76,8 @@ println(document.dump(source))
 dialect, in which every feature is always recognized: footnotes, tables,
 strikethrough, autolinks, task lists, formulas, and directives, on the
 CommonMark base. Quotation marks, hyphens, and periods are stored as written.
-The result is an immutable value tree. The package exposes parsing, appending
-through a session, and typed AST inspection, not rendering.
-
-### Sessions
-
-A `MarkdownSession` holds a text and the document parsed from it, and extends
-both with each append, as text streams in. The new document continues the
-previous one: a node that continues an old node keeps its id, so a Compose
-`key` survives the append.
-
-```kotlin
-MarkdownSession("# Title\n\nfir").use { session ->   // TextUnit.UTF16 by default
-    session.append("st\n")
-    session.append("\n> quote\n")
-    val document = session.document             // a snapshot of the text so far
-    val final = session.flush()              // the tree of Document.parse(session.text), ids aside
-}
-```
-
-Until `flush`, each document is a snapshot of the text so far: a lookup of
-a reference, footnote or specimen sees only the definitions that start before
-the inline root asking. A session's `unit` is how its documents count scope
-columns. The caller ends the text with `flush`, which returns the final
-document; afterwards `append` and `flush` throw
-`ErrorCode.SESSION_FLUSHED`, and `document` and `text` stay readable.
-`close` releases the engine's session; the documents it returned stay complete
-values.
-
-After `flush`, `edit(start, end, text)` replaces the text between two
-cursors, positions in the session's unit, and returns the parse of the new
-text. The session reads again only the blocks the edit reaches: a node the
-edit did not reach is the old node, and one it read again keeps its id. An
-edit before `flush` throws `ErrorCode.SESSION_STREAMING`.
-
-```kotlin
-MarkdownSession("# Title\n\nfirst\n").use { session ->
-    session.flush()
-    session.edit(Position(3, 6), Position(3, 6), " line")   // "first" becomes "first line"
-}
-```
-
-A session also answers an editor's queries from the engine's parse of its
-text, which it holds, so no query parses the text again or takes the source.
-An editor holds one flushed session per open text and edits it as the text
-changes.
-
-```kotlin
-MarkdownSession("See [[Field notes]]\n").use { session ->
-    session.flush()
-    session.locate(Position(1, 12))                          // the session's cursor moves there
-    val slot = session.context.slots.single()                // SlotKind.DEST of a NodeKind.CROSS_LINK
-    session.spell(slot, "Old notes")                         // Insertion(text = "Old notes", cursor = 9)
-    val link = session.path(Position(1, 8)).last()           // the cross link, under the root and paragraph
-    session.scope(link, SlotKind.DEST)                       // [1:7..1:17]
-    session.markers(link)                                    // [1:5..1:6, 1:18..1:19], the `[[` and the `]]`
-}
-```
-
-The `context` is the session's state at its cursor: `locate` moves the cursor
-and updates it in place to the blocks and inline constructs the text before
-the cursor leaves open and the `Slot`s the cursor may be writing, and an append,
-`flush` or an edit clears it. `session.spell(slot, value)` writes a value in a slot
-of the current context in the slot's own syntax, with the closer an open
-construct needs, and its caret counts columns in the session's unit; a slot of
-a context a later step replaced throws `OUT_OF_BOUNDS`. Nothing is handed out
-to free: the context lives and goes with the session. `scope` and `markers` take a node of the
-current document, or one an append left unchanged. `Metadata.fields` names the
-properties fields and `Slot.cues` the characters after which a slot may begin
-empty, an editor's completion triggers.
+The result is an immutable value tree. The package exposes parsing and typed AST
+inspection, not rendering.
 
 ### Identity, equality and scopes
 
@@ -187,46 +120,16 @@ scalar. The canonical dump always prints UTF-8 columns.
 The library throws one exception, `MarkdownCoreException`, whose `code` says
 why:
 
-- `ErrorCode.ALLOCATION_FAILED`: `Document.parse` or a session step could not
-  allocate, or the text exceeds 1 GiB of UTF-8, or its tree exceeds a byte
-  array's capacity.
+- `ErrorCode.ALLOCATION_FAILED`: `Document.parse` could not allocate, or the
+  text exceeds 1 GiB of UTF-8, or its tree exceeds a byte array's capacity.
 - `ErrorCode.OUT_OF_BOUNDS`: `scope` or `dump` got a source that ends before
   a node's last range does, or `node` got a position whose line or column is below 1. A
   position past the source, or one no node holds, answers `null`.
 - `ErrorCode.KIND_MISMATCH`: the engine's code for a value read as the wrong
   kind. It is shared by every binding; the typed Kotlin nodes never reach it.
-- `ErrorCode.SESSION_FLUSHED`: a session's `append` or `flush` after its
-  `flush`.
 
 A node of another document is not checked, and the answer for it means
 nothing.
-
-### Language server
-
-`com.nouprax.markdown.core.lsp.Server` is the language engine, the
-semantics of the Language Server Protocol 3.17 over the parser, called in
-process: each method is one protocol method, and answers as the C engine and
-the JSON-RPC adapter `markdown-core-server` do. Completion answers an empty
-list until the providers land.
-
-```kotlin
-Server().use { server ->
-    val capabilities = server.initialize(listOf(TextUnit.UTF8, TextUnit.UTF16))  // UTF-8 when offered
-    server.open("file:///note.md", 1, "# Title\n\n[a](")
-    val end = Position(2, 4)
-    server.update("file:///note.md", 2, listOf(Edit(Scope(end, end), "/url)")))
-    val completions = server.complete("file:///note.md", Position(2, 4))   // completions.version == 2
-    server.close("file:///note.md")
-    server.shutdown()
-}
-```
-
-Positions count from 0 in the negotiated `capabilities.unit`; an `Edit` with
-no scope replaces the whole text. A method that fails throws
-`ServerException`, whose `code` is the protocol's error: `NOT_INITIALIZED`,
-`INVALID_REQUEST`, `INVALID_PARAMS` or `INTERNAL_ERROR`. An update checks
-every edit before the first applies, so a refused one leaves the document as
-it was. `close()` releases the server; `close(uri)` is didClose.
 
 ### Compose
 
@@ -240,14 +143,13 @@ composeCompiler {
     stabilityConfigurationFiles.add(layout.projectDirectory.file("compose-stability.conf"))
 }
 ```
-Ordered lists expose their `variant` and `delimiter`.
+Ordered lists expose their `delimiter`, `PERIOD` for `1.` and `PARENTHESIS` for `1)`.
 
-Task prefixes accept exactly one authored Unicode scalar, such as `- [?]`,
-`- [✓]`, or `- [🚀]`, followed by a space, tab, vertical tab, or form feed.
-The item preserves that scalar in `marker`; completion is derived. Recognition
-is limited to the item's opening line and removes the prefix before deciding
-its first block. Empty or multi-scalar markers and a missing separator remain
-literal text.
+A task prefix is `[ ]`, `[x]` or `[X]`, `[?]` or `[-]`, followed by a space or
+tab; the item's `status` is open, done, question or cancelled, and null for
+an ordinary item. Recognition is limited to the item's opening line and
+removes the prefix before deciding its first block. Any other character
+between the brackets, and a missing separator, remain literal text.
 
 [Block identifiers](../../docs/specs/dialect/block-identifiers.md) use `text #id#` to populate
 `Paragraph.anchor`, or `- [✓] task #id#` to populate `ListItem.anchor`.
@@ -274,25 +176,24 @@ nest (`++++text++++`), and an odd leftover plus stays outside the matching
 pairs (`+++text+++`). Insertion participates in exhaustive visitor callbacks;
 its scope includes the delimiters. Escapes and opaque bodies retain literal plus signs.
 
-Footnote and specimen definitions stay in the tree where they were written. A
+Footnote definitions stay in the tree where they were written. A
 referenced definition `[^x]: body` is a `Footnote` block with its normalized
 `label`. `^[inline note]` produces a one-item `Cite` whose citation owns its
 note: `CitationReferent.Footnote(FootnoteTarget.Note(footnote))`, a `Footnote`
 with a null label whose content holds the parsed inline body directly, visited
-before the citation's prefix and suffix. `Document.footnotes` and
-`Document.specimens` list every definition, inline notes included, in source
-order, and `document.footnote(label)` and `document.specimen(label)` return the
-first one whose label equals the referent's; an inline note is never found by
-label.
+before the citation's prefix and suffix. `Document.footnotes` lists every
+footnote, inline notes included, in source order, and
+`document.footnote(label)` returns the first one whose label equals the
+referent's; an inline note is never found by label.
 
 A link reference definition `[label]: /url "title"` is a `Reference` block where
 it was written, with its normalized `label`, a `Destination.Url` `dest`, its
 `title`, and the anchor and attributes it states. A reference occurrence --
 `[text][label]`, `[label][]`, `[label]` or `![alt][label]` -- is a `Link` or
-`Embedded` whose `dest` is `Destination.Reference(label)` with a null title.
+`Embed` whose `dest` is `Destination.Reference(label)` with a null title.
 `Document.references` lists every definition in source order, and
-`document.reference(label)` returns the node the label resolves to: the first
-`Reference` with that label, else the first `Heading` whose text declares it.
+`document.reference(label)` returns the `Reference` the label resolves to: the
+first one with that label.
 
 `%%comment%%` produces `Comment`, the kind an HTML comment already produces,
 inline or as a block when both `%%` fences stand on lines of their own under
@@ -305,9 +206,8 @@ parsed inline content; their bodies must be non-empty and contain no raw
 whitespace. An escaped ASCII space within a completed body becomes NBSP.
 Strikethrough uses `~~text~~`. All three kinds support typed visitor callbacks, and their scopes include their authored delimiters.
 
-Nameless fenced containers (`::: {.class}` or `::: class`) expose
-`DirectiveBlock.name` as null; named and nameless forms share closing and nesting
-rules. A term followed by `: body` or `~ body` produces `DefinitionList` with
+Every fenced container is named (`:::name`), and `DirectiveBlock.name` is
+never null. A term followed by `: body` produces `DefinitionList` with
 ordered `definitions`. Each `Definition` has an inline `term`, ordered block-body
 arrays in `content`, and `compact` determined by the blank line before its first
 body. A body can be empty. Walking visits the term and then the bodies without
@@ -325,7 +225,7 @@ all `MarkupVisitor` callbacks. Each required overload receives a concrete node a
 node's descendants and `EXIT` after them. Consumers accumulate results in
 visitor state; there is no separate single-node dispatch API.
 
-`MarkupVisitor` requires a `fun visit(embedded: Embedded, phase: MarkupVisitPhase): Unit`
+`MarkupVisitor` requires a `fun visit(embed: Embed, phase: MarkupVisitPhase): Unit`
 overload for every concrete kind. Implementations use the declared parameter
 names, including `paragraph`, `tableRow`, and `citation`. Adding a kind makes
 incomplete implementations fail to compile. Visitors process callbacks without
@@ -333,7 +233,7 @@ recursively visiting descendants; the dumper uses this same traversal.
 
 Traversal schedules each node's typed fields in canonical order. A directive
 label remains the named `label` field, outside directive content. Metadata,
-citations, footnotes and specimens are Markup and use the same callbacks.
+citations and footnotes are Markup and use the same callbacks.
 
 A dump prints scopes, so it takes the source like a scope query:
 `document.dump(source)` and `document.dump(node, source)` delegate to the
@@ -365,23 +265,18 @@ definition's. Image dimension suffixes and dimension attribute records
 remain independent. All returned values use the binding's native collections
 and remain usable after parsing finishes.
 
-Parsed headings receive automatic anchors: `# Hello World` declares
-`hello-world`, with `-1`, `-2`, and later suffixes for collisions. Explicit
-anchors anywhere in the document are reserved first. `[Hello World]`,
-`[Hello World][]`, and `[go][Hello World]` name `reference("hello world")`, and
-`document.reference("hello world")` answers the heading, including before the
-heading; an explicit reference definition takes priority. Labels
-use authored heading text, so `# *Title*` is referenced by `[*Title*]`.
-Heading attributes stay on the heading, and generated targets add no scope.
+A heading's anchor is the one its attributes write, `# Hello World {#hello}`
+declaring `hello`, which `[go](#hello)` links to; a heading without one has no
+anchor, and the parser derives none from its text. Heading attributes stay on
+the heading.
 
 ### Pandoc-derived syntax
 
 The always-on dialect includes inline code, heading, fenced code and link
-attributes; automatic anchors and implicit heading references; bracketed spans;
-superscript and subscript; bibliography citations; named and nameless fenced
-containers; fancy ordered lists and example lists; and definition lists. These 14
-feature groups use
-one immutable AST and the same behavior on every binding. The
-[dialect contract](../../docs/specs/dialect.md) specifies syntax, precedence and intentional differences
-from the pinned Pandoc reader. Citation numbering, example-list resolution,
-table coordinate expansion and rendering remain consumer responsibilities.
+attributes; bracketed spans; superscript and subscript;
+bibliography citations; and definition
+lists. These feature groups use one immutable AST and the same behavior on
+every binding. The [dialect contract](../../docs/specs/dialect.md) specifies
+syntax, precedence and intentional differences from the pinned Pandoc reader.
+Citation numbering, table coordinate expansion and rendering remain consumer
+responsibilities.

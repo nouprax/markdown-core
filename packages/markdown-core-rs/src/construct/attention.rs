@@ -1,0 +1,751 @@
+//! Attention (emphasis, strong, optionally GFM strikethrough) occurs in the
+//! [text][] content type.
+//!
+//! ## Grammar
+//!
+//! Attention sequences form with the following BNF
+//! (<small>see [construct][crate::construct] for character groups</small>):
+//!
+//! ```bnf
+//! attention_sequence ::= 1*'*' | 1*'_'
+//! gfm_attention_sequence ::= 1*'~'
+//! ```
+//!
+//! Sequences are matched together to form attention based on which character
+//! they contain, how long they are, and what character occurs before and after
+//! each sequence.
+//! Otherwise they are turned into data.
+//!
+//! ## HTML
+//!
+//! When asterisk/underscore sequences match, and two markers can be “taken”
+//! from them, they together relate to the `<strong>` element in HTML.
+//! When one marker can be taken, they relate to the `<em>` element.
+//! See [*§ 4.5.2 The `em` element*][html-em] and
+//! [*§ 4.5.3 The `strong` element*][html-strong] in the HTML spec for more
+//! info.
+//!
+//! When tilde sequences match, they together relate to the `<del>` element in
+//! HTML.
+//! See [*§ 4.7.2 The `del` element*][html-del] in the HTML spec for more info.
+//!
+//! ## Recommendation
+//!
+//! It is recommended to use asterisks for emphasis/strong attention when
+//! writing markdown.
+//!
+//! There are some small differences in whether sequences can open and/or close
+//! based on whether they are formed with asterisks or underscores.
+//! Because underscores also frequently occur in natural language inside words,
+//! while asterisks typically never do, `CommonMark` prohibits underscore
+//! sequences from opening or closing when *inside* a word.
+//!
+//! Because asterisks can be used to form the most markdown constructs, using
+//! them has the added benefit of making it easier to gloss over markdown: you
+//! can look for asterisks to find syntax while not worrying about other
+//! characters.
+//!
+//! For strikethrough attention, it is recommended to use two markers.
+//! While `github.com` allows single tildes too, it technically prohibits it in
+//! their spec.
+//!
+//! ## Tokens
+//!
+//! * [`Emphasis`][Name::Emphasis]
+//! * [`EmphasisSequence`][Name::EmphasisSequence]
+//! * [`EmphasisText`][Name::EmphasisText]
+//! * [`Strikethrough`][Name::Strikethrough]
+//! * [`StrikethroughSequence`][Name::StrikethroughSequence]
+//! * [`StrikethroughText`][Name::StrikethroughText]
+//! * [`Strong`][Name::Strong]
+//! * [`StrongSequence`][Name::StrongSequence]
+//! * [`StrongText`][Name::StrongText]
+//!
+//! > 👉 **Note**: while parsing, [`AttentionSequence`][Name::AttentionSequence]
+//! > is used, which is later compiled away.
+//!
+//! ## References
+//!
+//! * [`attention.js` in `micromark`](https://github.com/micromark/micromark/blob/main/packages/micromark-core-commonmark/dev/lib/attention.js)
+//! * [`micromark-extension-gfm-strikethrough`](https://github.com/micromark/micromark-extension-gfm-strikethrough)
+//! * [*§ 6.2 Emphasis and strong emphasis* in `CommonMark`](https://spec.commonmark.org/0.31/#emphasis-and-strong-emphasis)
+//! * [*§ 6.5 Strikethrough (extension)* in `GFM`](https://github.github.com/gfm/#strikethrough-extension-)
+//!
+//! [text]: crate::construct::text
+//! [html-em]: https://html.spec.whatwg.org/multipage/text-level-semantics.html#the-em-element
+//! [html-bold]: https://html.spec.whatwg.org/multipage/text-level-semantics.html#the-strong-element
+//! [html-del]: https://html.spec.whatwg.org/multipage/edits.html#the-del-element
+
+use crate::choice::Starts;
+use crate::construct::text;
+use crate::event::{Content, Event, Kind, Name, Point};
+use crate::parser::ParseState;
+use crate::resolve::Name as ResolveName;
+use crate::state::{Name as StateName, State};
+use crate::subtokenize::{feed, Subresult};
+use crate::tokenizer::Tokenizer;
+use crate::util::char::{
+    after_index as char_after_index, before_index as char_before_index, class_opt,
+    Kind as CharacterKind,
+};
+use std::collections::BTreeMap;
+
+/// Bytes this construct can start at.
+pub const STARTS: Starts = Starts::Bytes(b"*+=^_~");
+
+/// Byte that is transparent when looking at the neighbours of a run: the
+/// character before or after a run is found past any of these.
+const TRANSPARENT: u8 = b'~';
+
+/// What a run of markers can pair into.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum Rule {
+    /// `*`: emphasis, strong.
+    Asterisk,
+    /// `_`: emphasis, strong.
+    Underscore,
+    /// `~~`: strikethrough.
+    Strikethrough,
+    /// `~`: subscript.
+    Subscript,
+    /// `^`: superscript.
+    Superscript,
+    /// `++`: insertion.
+    Insertion,
+    /// `==`: mark.
+    Mark,
+}
+
+/// Which neighbours let a run open or close.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Flank {
+    /// Left-flanking opens, right-flanking closes.
+    Free,
+    /// Like [`Flank::Free`][], but a run flanking both sides only opens
+    /// after punctuation and only closes before punctuation.
+    Bound,
+}
+
+/// What a body may contain.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Inner {
+    /// Any inline content; the neighbours decide (see [`Flank`][]).
+    Inline,
+    /// No whitespace; every run can open and close.
+    Word,
+}
+
+/// Event names of a node formed by a rule.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Names {
+    whole: Name,
+    sequence: Name,
+    text: Name,
+}
+
+/// The grammar of a rule.
+#[derive(Clone, Copy, Debug)]
+struct Spec {
+    /// Fewest markers a pair takes from each run.
+    min: usize,
+    /// Most markers a pair takes from each run.
+    max: usize,
+    /// Whether the rule of three applies.
+    three: bool,
+    /// Whether a run must be exactly `min` markers.
+    exact: bool,
+    flank: Flank,
+    inner: Inner,
+    /// Node of a pair taking one marker of each run.
+    lone: Option<Names>,
+    /// Node of a pair taking two markers of each run.
+    double: Option<Names>,
+}
+
+const EMPHASIS: Names = Names {
+    whole: Name::Emphasis,
+    sequence: Name::EmphasisSequence,
+    text: Name::EmphasisText,
+};
+
+const STRONG: Names = Names {
+    whole: Name::Strong,
+    sequence: Name::StrongSequence,
+    text: Name::StrongText,
+};
+
+impl Rule {
+    /// The rule of a run of `size` markers `marker`.
+    fn of(marker: u8, size: usize) -> Rule {
+        match marker {
+            b'*' => Rule::Asterisk,
+            b'_' => Rule::Underscore,
+            b'~' if size == 1 => Rule::Subscript,
+            b'~' => Rule::Strikethrough,
+            b'^' => Rule::Superscript,
+            b'+' => Rule::Insertion,
+            b'=' => Rule::Mark,
+            _ => unreachable!("expected attention marker"),
+        }
+    }
+
+    /// The grammar of this rule.
+    fn spec(self) -> Spec {
+        let pair = |names| Spec {
+            min: 2,
+            max: 2,
+            three: false,
+            exact: false,
+            flank: Flank::Free,
+            inner: Inner::Inline,
+            lone: None,
+            double: Some(names),
+        };
+        let word = |names| Spec {
+            min: 1,
+            max: 1,
+            three: false,
+            exact: false,
+            flank: Flank::Free,
+            inner: Inner::Word,
+            lone: Some(names),
+            double: None,
+        };
+        match self {
+            Rule::Asterisk | Rule::Underscore => Spec {
+                min: 1,
+                max: 2,
+                three: true,
+                exact: false,
+                flank: if self == Rule::Asterisk {
+                    Flank::Free
+                } else {
+                    Flank::Bound
+                },
+                inner: Inner::Inline,
+                lone: Some(EMPHASIS),
+                double: Some(STRONG),
+            },
+            Rule::Strikethrough => Spec {
+                exact: true,
+                ..pair(Names {
+                    whole: Name::Strikethrough,
+                    sequence: Name::StrikethroughSequence,
+                    text: Name::StrikethroughText,
+                })
+            },
+            Rule::Insertion => pair(Names {
+                whole: Name::Insertion,
+                sequence: Name::InsertionSequence,
+                text: Name::InsertionText,
+            }),
+            Rule::Mark => pair(Names {
+                whole: Name::Mark,
+                sequence: Name::MarkSequence,
+                text: Name::MarkText,
+            }),
+            Rule::Subscript => word(Names {
+                whole: Name::Subscript,
+                sequence: Name::SubscriptSequence,
+                text: Name::SubscriptText,
+            }),
+            Rule::Superscript => word(Names {
+                whole: Name::Superscript,
+                sequence: Name::SuperscriptSequence,
+                text: Name::SuperscriptText,
+            }),
+        }
+    }
+}
+
+/// Attention sequence that we can take markers from.
+#[derive(Debug)]
+struct Sequence {
+    rule: Rule,
+    /// We track whether sequences are in balanced events, and where the
+    /// innermost of those starts (`NONE` in none), so that one attention
+    /// doesn’t start in say, one link, and end in another: events nest, so
+    /// the innermost decides all of them.
+    stack: usize,
+    /// Whitespace seen in text before this sequence; a word body cannot
+    /// pair across whitespace.
+    spaces: usize,
+    /// The index into events where this sequence’s `Enter` currently resides.
+    index: usize,
+    /// The (shifted) point where this sequence starts.
+    start_point: Point,
+    /// The (shifted) point where this sequence end.
+    end_point: Point,
+    /// The number of markers we can still use.
+    size: usize,
+    /// The number of markers in the run as written, which the rule of three
+    /// counts.
+    run: usize,
+    /// Whether this sequence can open attention.
+    open: bool,
+    /// Whether this sequence can close attention.
+    close: bool,
+}
+
+/// At start of attention.
+///
+/// ```markdown
+/// > | **
+///     ^
+/// ```
+fn start(tokenizer: &mut Tokenizer) -> State {
+    match tokenizer.current {
+        Some(marker @ (b'*' | b'+' | b'=' | b'^' | b'_' | b'~')) => {
+            tokenizer.enter(Name::AttentionSequence);
+            State::Redo(StateName::Attention(Step::Inside { marker, size: 0 }))
+        }
+        _ => State::Nok,
+    }
+}
+
+/// In sequence.
+///
+/// A `^` is a sequence on its own: superscripts pair single markers.
+///
+/// ```markdown
+/// > | **
+///     ^^
+/// ```
+fn inside(tokenizer: &mut Tokenizer, marker: u8, size: usize) -> State {
+    if tokenizer.current == Some(marker) && !(marker == b'^' && size == 1) {
+        tokenizer.consume();
+        State::Next(StateName::Attention(Step::Inside {
+            marker,
+            size: size + 1,
+        }))
+    } else {
+        tokenizer.exit(Name::AttentionSequence);
+        tokenizer.register_resolver(ResolveName::Attention);
+        State::Ok
+    }
+}
+
+/// Resolve sequences.
+pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
+    // Find all sequences, gather info about them.
+    let mut sequences = read_sequences(tokenizer);
+    // The sequences before the current one that can still open, in order: a
+    // match takes the openers between its two sequences away, as attention
+    // nests, so they are a stack, and what a match takes is its top.
+    let mut openers: Vec<usize> = vec![];
+    // Where the search down the openers stops, per what a closer looks for:
+    // the openers below where an earlier search for the same failed fail
+    // for this one too, as matching only ever takes openers away.
+    let mut bottoms = BTreeMap::new();
+
+    for close in 0..sequences.len() {
+        while sequences[close].close {
+            let sequence_close = &sequences[close];
+            let spec = sequence_close.rule.spec();
+            let key = (
+                sequence_close.rule,
+                sequence_close.stack,
+                sequence_close.open,
+                sequence_close.run % 3,
+            );
+            let bottom = bottoms.get(&key).copied().unwrap_or(0);
+            let mut found = None;
+            let mut depth = openers.len();
+
+            // Now walk down to find an opener.
+            while depth > 0 && openers[depth - 1] >= bottom {
+                depth -= 1;
+                let sequence_open = &sequences[openers[depth]];
+
+                // A word body cannot reach past whitespace.
+                if spec.inner == Inner::Word && sequence_open.spaces != sequence_close.spaces {
+                    break;
+                }
+
+                // An opener matching our closer:
+                if sequence_close.rule == sequence_open.rule
+                    && sequence_close.stack == sequence_open.stack
+                {
+                    // If the opening can close or the closing can open,
+                    // and the closing run *is not* a multiple of three,
+                    // but the sum of the opening and closing runs *is*
+                    // multiple of three, then **don’t** match: the runs
+                    // as written, not what earlier matches left of them.
+                    if spec.three
+                        && (sequence_open.close || sequence_close.open)
+                        && !sequence_close.run.is_multiple_of(3)
+                        && (sequence_open.run + sequence_close.run).is_multiple_of(3)
+                    {
+                        continue;
+                    }
+
+                    found = Some(depth);
+                    break;
+                }
+            }
+
+            let Some(depth) = found else {
+                bottoms.insert(key, close);
+                break;
+            };
+
+            // We found a match! The openers above it are between the two.
+            openers.truncate(depth + 1);
+            let open = openers[depth];
+            match_sequences(tokenizer, &mut sequences, open, close);
+            if !sequences[open].open {
+                openers.pop();
+            }
+        }
+
+        if sequences[close].open {
+            openers.push(close);
+        }
+    }
+
+    // Mark remaining sequences as data: those taken out have no markers
+    // left.
+    for sequence in sequences.iter().filter(|sequence| sequence.size > 0) {
+        tokenizer.events[sequence.index].name = Name::Data;
+        tokenizer.events[sequence.index + 1].name = Name::Data;
+    }
+
+    tokenizer.map.consume(&mut tokenizer.events);
+    None
+}
+
+/// Classify the character next to a run, past transparent bytes; the
+/// edges of the text, `bounds`, are whitespace, as for a directive label
+/// or a table cell, whose text is its own.
+fn near(bytes: &[u8], bounds: (usize, usize), index: usize, after: bool) -> CharacterKind {
+    let mut index = index;
+    if after {
+        while index < bytes.len() && bytes[index] == TRANSPARENT {
+            index += 1;
+        }
+        if index >= bounds.1 {
+            return CharacterKind::Whitespace;
+        }
+        class_opt(char_after_index(bytes, index))
+    } else {
+        while index > 0 && bytes[index - 1] == TRANSPARENT {
+            index -= 1;
+        }
+        if index <= bounds.0 {
+            return CharacterKind::Whitespace;
+        }
+        class_opt(char_before_index(bytes, index))
+    }
+}
+
+/// Whether a run with these neighbours can open and close.
+fn flanks(flank: Flank, before: &CharacterKind, after: &CharacterKind) -> (bool, bool) {
+    let space_before = *before == CharacterKind::Whitespace;
+    let space_after = *after == CharacterKind::Whitespace;
+    let punct_before = *before == CharacterKind::Punctuation;
+    let punct_after = *after == CharacterKind::Punctuation;
+    let left = !space_after && (!punct_after || space_before || punct_before);
+    let right = !space_before && (!punct_before || space_after || punct_after);
+    match flank {
+        Flank::Free => (left, right),
+        Flank::Bound => (
+            left && (!right || punct_before),
+            right && (!left || punct_after),
+        ),
+    }
+}
+
+/// Whether the bytes in an event are not text: a resource or reference,
+/// attributes, or a token that owns a literal body.
+fn hides(name: Name) -> bool {
+    matches!(
+        name,
+        Name::Resource
+            | Name::Reference
+            | Name::CodeText
+            | Name::Formula
+            | Name::HtmlText
+            | Name::Comment
+            | Name::CrossLink
+            | Name::Attributes
+    )
+}
+
+/// Count whitespace in the text of an event in `events`: data with a space,
+/// tab, or line ending, and line endings.
+/// A space after a backslash is not whitespace: it is how a word body holds
+/// one.
+/// The chunks of a nested field, such as a directive label, are text to be
+/// parsed: their whitespace is that of their own text.
+fn spaces(parse_state: &ParseState, events: &[Event], index: usize) -> usize {
+    let event = &events[index];
+    match event.name {
+        Name::LineEnding => 1,
+        _ if event.link.is_some() => {
+            let link = event.link.as_ref().expect("expected link");
+            if link.previous.is_some() || !matches!(link.content, Content::Text | Content::Cell) {
+                return 0;
+            }
+            let mut field = Tokenizer::new(event.point.clone(), parse_state);
+            let state = feed(
+                &mut field,
+                events,
+                index,
+                State::Next(StateName::Text(text::Step::Before)),
+            );
+            field.flush(state, false);
+            text_spaces(parse_state, &field.events)
+        }
+        Name::Data => {
+            let end = events[index + 1].point.index;
+            let bytes = &parse_state.bytes[event.point.index..end];
+            usize::from(bytes.iter().enumerate().any(|(at, byte)| match byte {
+                b'\t' | b'\n' => true,
+                b' ' => at == 0 || bytes[at - 1] != b'\\',
+                _ => false,
+            }))
+        }
+        _ => 0,
+    }
+}
+
+/// Count whitespace in the text of `events`, past what [`hides`][] hides.
+fn text_spaces(parse_state: &ParseState, events: &[Event]) -> usize {
+    let mut hidden = 0;
+    let mut seen = 0;
+    for (index, event) in events.iter().enumerate() {
+        if hides(event.name) {
+            if event.kind == Kind::Enter {
+                hidden += 1;
+            } else {
+                hidden -= 1;
+            }
+        } else if hidden == 0 && event.kind == Kind::Enter {
+            seen += spaces(parse_state, events, index);
+        }
+    }
+    seen
+}
+
+/// Get sequences.
+fn read_sequences(tokenizer: &mut Tokenizer) -> Vec<Sequence> {
+    let bytes = tokenizer.parse_state.bytes;
+    let bounds = match (tokenizer.events.first(), tokenizer.events.last()) {
+        (Some(first), Some(last)) => (first.point.index, last.point.index),
+        _ => (0, bytes.len()),
+    };
+    let mut index = 0;
+    let mut stack = vec![];
+    let mut sequences = vec![];
+    let mut seen = 0;
+    // Inside a resource, a reference, or a literal body, data is not text.
+    let mut hidden = 0;
+
+    while index < tokenizer.events.len() {
+        let enter = &tokenizer.events[index];
+
+        if enter.name == Name::AttentionSequence {
+            if enter.kind == Kind::Enter {
+                let end = index + 1;
+                let exit = &tokenizer.events[end];
+                let marker = bytes[enter.point.index];
+                let size = exit.point.index - enter.point.index;
+                let rule = Rule::of(marker, size);
+                let spec = rule.spec();
+                let (open, close) = if spec.inner == Inner::Word {
+                    (true, true)
+                } else if size < spec.min || (spec.exact && size != spec.min) {
+                    (false, false)
+                } else {
+                    let before = near(bytes, bounds, enter.point.index, false);
+                    let after = near(bytes, bounds, exit.point.index, true);
+                    flanks(spec.flank, &before, &after)
+                };
+
+                sequences.push(Sequence {
+                    rule,
+                    index,
+                    stack: stack.last().copied().unwrap_or(NONE),
+                    spaces: seen,
+                    start_point: enter.point.clone(),
+                    end_point: exit.point.clone(),
+                    size,
+                    run: size,
+                    open,
+                    close,
+                });
+            }
+        } else if enter.kind == Kind::Enter {
+            if hides(enter.name) {
+                hidden += 1;
+            } else if hidden == 0 {
+                seen += spaces(tokenizer.parse_state, &tokenizer.events, index);
+            }
+            stack.push(index);
+        } else {
+            if hides(enter.name) {
+                hidden -= 1;
+            }
+            stack.pop();
+        }
+
+        index += 1;
+    }
+
+    sequences
+}
+
+/// Match two sequences.
+#[allow(clippy::too_many_lines)]
+fn match_sequences(
+    tokenizer: &mut Tokenizer,
+    sequences: &mut [Sequence],
+    open: usize,
+    close: usize,
+) {
+    let spec = sequences[close].rule.spec();
+
+    // Number of markers to use from the sequence.
+    let take = if sequences[open].size >= spec.max && sequences[close].size >= spec.max {
+        spec.max
+    } else {
+        spec.min
+    };
+
+    let names = if take == 1 { spec.lone } else { spec.double }
+        .expect("expected a node for the markers taken");
+    let (group_name, seq_name, text_name) = (names.whole, names.sequence, names.text);
+    let open_index = sequences[open].index;
+    let close_index = sequences[close].index;
+    let open_exit = sequences[open].end_point.clone();
+    let close_enter = sequences[close].start_point.clone();
+
+    // No need to worry about `VS`, because sequences are only actual characters.
+    sequences[open].size -= take;
+    sequences[close].size -= take;
+    sequences[open].end_point.column -= take;
+    sequences[open].end_point.index -= take;
+    sequences[close].start_point.column += take;
+    sequences[close].start_point.index += take;
+
+    // A remainder too short to pair again is text.
+    if sequences[close].size > 0 && sequences[close].size < spec.min {
+        sequences[close].open = false;
+        sequences[close].close = false;
+    }
+
+    if sequences[open].size > 0 && sequences[open].size < spec.min {
+        sequences[open].open = false;
+        sequences[open].close = false;
+    }
+
+    // Opening.
+    tokenizer.map.add_before(
+        // Add after the current sequence (it might remain).
+        open_index + 2,
+        0,
+        vec![
+            Event {
+                kind: Kind::Enter,
+                name: group_name,
+                point: sequences[open].end_point.clone(),
+                link: None,
+            },
+            Event {
+                kind: Kind::Enter,
+                name: seq_name,
+                point: sequences[open].end_point.clone(),
+                link: None,
+            },
+            Event {
+                kind: Kind::Exit,
+                name: seq_name,
+                point: open_exit.clone(),
+                link: None,
+            },
+            Event {
+                kind: Kind::Enter,
+                name: text_name,
+                point: open_exit,
+                link: None,
+            },
+        ],
+    );
+    // Closing.
+    tokenizer.map.add(
+        close_index,
+        0,
+        vec![
+            Event {
+                kind: Kind::Exit,
+                name: text_name,
+                point: close_enter.clone(),
+                link: None,
+            },
+            Event {
+                kind: Kind::Enter,
+                name: seq_name,
+                point: close_enter,
+                link: None,
+            },
+            Event {
+                kind: Kind::Exit,
+                name: seq_name,
+                point: sequences[close].start_point.clone(),
+                link: None,
+            },
+            Event {
+                kind: Kind::Exit,
+                name: group_name,
+                point: sequences[close].start_point.clone(),
+                link: None,
+            },
+        ],
+    );
+
+    // A sequence with no markers left is taken out: it opens and closes
+    // nothing more.
+    if sequences[close].size == 0 {
+        sequences[close].open = false;
+        sequences[close].close = false;
+        tokenizer.map.add(close_index, 2, vec![]);
+    } else {
+        // Shift remaining closing sequence forward.
+        // Do it here because a sequence can open and close different
+        // other sequences, and the remainder can be on any side or
+        // somewhere in the middle.
+        tokenizer.events[close_index].point = sequences[close].start_point.clone();
+    }
+
+    if sequences[open].size == 0 {
+        sequences[open].open = false;
+        sequences[open].close = false;
+        tokenizer.map.add(open_index, 2, vec![]);
+    } else {
+        tokenizer.events[open_index + 1].point = sequences[open].end_point.clone();
+    }
+}
+
+/// No index: the innermost balanced event of a sequence in none.
+const NONE: usize = usize::MAX;
+
+/// Steps of this construct.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Step {
+    Start,
+    Inside { marker: u8, size: usize },
+}
+
+impl From<Step> for StateName {
+    fn from(step: Step) -> StateName {
+        StateName::Attention(step)
+    }
+}
+
+/// Run a step.
+pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
+    match step {
+        Step::Start => start(tokenizer),
+        Step::Inside { marker, size } => inside(tokenizer, marker, size),
+    }
+}

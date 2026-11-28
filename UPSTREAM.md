@@ -24,6 +24,21 @@ parser product. Its current reconstruction:
 - maintaining immutable Swift, Kotlin, and ECMAScript/TypeScript bindings at
   the same commit as the C engine.
 
+## Rust core lineage
+
+The Rust core under `packages/markdown-core-rs` starts from markdown-rs
+(<https://github.com/wooorm/markdown-rs>, MIT), a Rust port of micromark by
+micromark's author. The exact baseline is tag `1.0.0`, commit
+`1506572f9b406431402928f3a8b3df0b4ae2d8f5` (committed on 2025-04-23),
+imported verbatim without upstream history or tags.
+
+The Rust core continues from that base as an independent implementation and
+does not track upstream. Its rewrite removes the configuration switches, MDX,
+and the HTML and mdast outputs; gives each construct its own typed state in
+place of the shared tokenizer state; produces the canonical AST; and adds the
+repository dialect and incremental editing. The C implementation and its
+fixtures are its correctness oracle until the Rust core replaces it.
+
 ## Upstream synchronization policy
 
 The historical fork does not make dormant cmark-gfm the authority for all

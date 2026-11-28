@@ -3,8 +3,8 @@ package com.nouprax.markdown.core
 /**
  * THE LINES OF A SOURCE: its UTF-8 bytes and the offset each line begins at.
  * A line ends after LF, after CR, or after CRLF, which is one terminator.
- * Scope queries build one per call from the caller's source or the session's
- * text; a document keeps none.
+ * Scope queries build one per call from the caller's source; a document
+ * keeps none.
  */
 internal class SourceLines(
     val bytes: ByteArray,

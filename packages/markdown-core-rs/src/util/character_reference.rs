@@ -1,0 +1,164 @@
+//! Helpers for character references.
+
+use crate::util::constant::{
+    CHARACTER_REFERENCES, CHARACTER_REFERENCE_DECIMAL_SIZE_MAX,
+    CHARACTER_REFERENCE_HEXADECIMAL_SIZE_MAX, CHARACTER_REFERENCE_NAMED_SIZE_MAX,
+};
+use core::str;
+
+/// Decode named character references.
+///
+/// Turn the name coming from a named character reference (without the `&` or
+/// `;`) into a string.
+/// This looks the given string up at `0` in the tuples of
+/// `CHARACTER_REFERENCES` (the 2125 names of HTML 5)
+/// and then takes the corresponding value from `1`.
+///
+/// The result is `String` instead of `char` because named character references
+/// can expand into multiple characters.
+///
+/// ## Examples
+///
+/// ```rust ignore
+/// use markdown_core::util::decode_character_reference::decode_named;
+///
+/// assert_eq!(decode_named("amp"), "&");
+/// assert_eq!(decode_named("AElig"), "Æ");
+/// assert_eq!(decode_named("aelig"), "æ");
+/// ```
+///
+/// ## References
+///
+/// * [`wooorm/decode-named-character-reference`](https://github.com/wooorm/decode-named-character-reference)
+/// * [*§ 2.5 Entity and numeric character references* in `CommonMark`](https://spec.commonmark.org/0.31/#entity-and-numeric-character-references)
+pub fn decode_named(value: &str) -> Option<String> {
+    CHARACTER_REFERENCES
+        .iter()
+        .find(|d| d.0 == value)
+        .map(|d| d.1.into())
+}
+
+/// Decode numeric character references.
+///
+/// Turn the number (in string form as either hexadecimal or decimal) coming
+/// from a numeric character reference into a string.
+/// The base of the string form must be passed as the `radix` parameter, as
+/// `10` (decimal) or `16` (hexadecimal).
+///
+/// This returns a `String` form of the associated character or a replacement
+/// character for C0 control characters (except for ASCII whitespace), C1
+/// control characters, lone surrogates, noncharacters, and out of span
+/// characters.
+///
+/// ## Examples
+///
+/// ```rust ignore
+/// use markdown_core::util::decode_character_reference::decode_numeric;
+///
+/// assert_eq!(decode_numeric("123", 10), "{");
+/// assert_eq!(decode_numeric("9", 16), "\t");
+/// assert_eq!(decode_numeric("0", 10), "�"); // Not allowed.
+/// ```
+///
+/// ## Panics
+///
+/// This function panics if a invalid string or an out of bounds valid string
+/// is given.
+/// It is expected that figuring out whether a number is allowed is handled in
+/// the parser.
+/// When `markdown-rs` is used, this function never panics.
+///
+/// ## References
+///
+/// * [`micromark-util-decode-numeric-character-reference` in `micromark`](https://github.com/micromark/micromark/tree/main/packages/micromark-util-decode-numeric-character-reference)
+/// * [*§ 2.5 Entity and numeric character references* in `CommonMark`](https://spec.commonmark.org/0.31/#entity-and-numeric-character-references)
+pub fn decode_numeric(value: &str, radix: u32) -> String {
+    // An invalid code point, a surrogate or one past U+10FFFF, is none, and
+    // U+0000 is replaced too (CommonMark 2.5); controls are kept.
+    if let Some(char) = char::from_u32(u32::from_str_radix(value, radix).unwrap()) {
+        if char != '\0' {
+            return char.into();
+        }
+    }
+
+    char::REPLACEMENT_CHARACTER.into()
+}
+
+/// Decode a character reference.
+///
+/// This turns the number (in string form as either hexadecimal or decimal) or
+/// name from a character reference into a string.
+///
+/// The marker specifies the format: `#` for hexadecimal, `x` for decimal, and
+/// `&` for named.
+///
+/// ## Panics
+///
+/// Panics if `marker` is not `b'&'`, `b'x'`, or `b'#'`.
+pub fn decode(value: &str, marker: u8) -> Option<String> {
+    match marker {
+        b'#' => Some(decode_numeric(value, 10)),
+        b'x' => Some(decode_numeric(value, 16)),
+        b'&' => decode_named(value),
+        _ => unreachable!("Unexpected marker `{}`", marker),
+    }
+}
+
+/// Get the maximum size of a value for different kinds of references.
+///
+/// The value is the stuff after the markers, before the `;`.
+///
+/// ## Panics
+///
+/// Panics if `marker` is not `b'&'`, `b'x'`, or `b'#'`.
+pub fn value_max(marker: u8) -> usize {
+    match marker {
+        b'&' => CHARACTER_REFERENCE_NAMED_SIZE_MAX,
+        b'x' => CHARACTER_REFERENCE_HEXADECIMAL_SIZE_MAX,
+        b'#' => CHARACTER_REFERENCE_DECIMAL_SIZE_MAX,
+        _ => unreachable!("Unexpected marker `{}`", marker),
+    }
+}
+
+/// Get a test to check if a byte is allowed as a value for different kinds of
+/// references.
+///
+/// The value is the stuff after the markers, before the `;`.
+///
+/// ## Panics
+///
+/// Panics if `marker` is not `b'&'`, `b'x'`, or `b'#'`.
+pub fn value_test(marker: u8) -> fn(&u8) -> bool {
+    match marker {
+        b'&' => u8::is_ascii_alphanumeric,
+        b'x' => u8::is_ascii_hexdigit,
+        b'#' => u8::is_ascii_digit,
+        _ => unreachable!("Unexpected marker `{}`", marker),
+    }
+}
+
+/// The decoded value of the character reference whose `&` is at `start` in
+/// `text`, and the place one past its `;`.
+pub fn decode_at(text: &str, start: usize) -> Option<(String, usize)> {
+    let bytes = text.as_bytes();
+    let mut index = start + 1;
+    let mut marker = b'&';
+    if bytes.get(index) == Some(&b'#') {
+        index += 1;
+        marker = b'#';
+        if matches!(bytes.get(index), Some(b'x' | b'X')) {
+            index += 1;
+            marker = b'x';
+        }
+    }
+    let value_start = index;
+    let allowed = value_test(marker);
+    while index < bytes.len() && index - value_start < value_max(marker) && allowed(&bytes[index]) {
+        index += 1;
+    }
+    if index == value_start || bytes.get(index) != Some(&b';') {
+        return None;
+    }
+    let value = decode(&text[value_start..index], marker)?;
+    Some((value, index + 1))
+}

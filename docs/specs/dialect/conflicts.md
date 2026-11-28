@@ -18,15 +18,15 @@ differences and explains overlapping syntax.
 | Block IDs | Declare with `#id#`; refer through a cross link with `#^id`. |
 | Topics | `#name` after a non-name character is a `Topic`; inherited CommonMark keeps it as text. |
 | Internal links | Target comes before the pipe, raw label after it. Labels are not parsed as Markdown. |
-| Heading links | Automatic anchors are generated, while cross-link targets stay raw; applications match them. |
+| Heading links | Headings have only the anchors they declare, and cross-link targets stay raw; applications match them. |
 | Properties | One initial `---` envelope with ten known fields. Unsupported members, including `...`, are ignored. |
 | Attributes | One grammar at every site; a bare name such as `{disabled}` records `disabled="true"`. Ordered duplicate classes/records survive. |
-| Colon containers | Named directives and nameless fenced divs share one model and one minimum closing-fence length. |
+| Colon containers | Every container is named, `:::name`; a container closes at a colon run at least as long as its opener. |
 | Formula brackets | Two authored backslashes open `\\(...\\)` or `\\[...\\]`; a single backslash remains a Markdown escape. |
-| Task markers | Exactly one Unicode scalar plus a following separator; the authored marker is retained. |
+| Task markers | One of `[ ]`, `[x]`, `[X]`, `[?]`, `[-]` plus a following separator; the item records its status. |
 | Comments | HTML and percent comments remain `Comment` nodes. |
 | Raw HTML | Block content is opaque, but text between separate inline tags still parses as Markdown. |
-| Ordered lists | The first marker always sets the start; nested ordered lists must start at one. |
+| Ordered lists | The first marker always sets the start; only decimal markers with `.` or `)` are ordered. |
 | Footnote duplicates | All definitions survive; references select the first normalized ID. |
 | Presentation | No smart punctuation, emoji shortcode expansion, code execution, math rendering, resource loading, or citation formatting. |
 
@@ -42,8 +42,8 @@ block start, the effective precedence is:
 
 1. Code and HTML forms, including HTML comments.
 2. Formula blocks, then percent-comment blocks.
-3. Quotes/callouts, list and specimen markers with optional task prefixes.
-4. Leaf, named-container, and nameless-container directives.
+3. Quotes/callouts and list markers with optional task prefixes.
+4. Leaf and container directives.
 5. ATX headings, then Setext headings.
 6. Table candidates.
 7. Thematic breaks, then footnote and link reference definitions.
@@ -69,8 +69,8 @@ line's other possible meanings.
 
 At a given position, recognized literal tokens own their entire extent. Escapes,
 code spans, HTML/autolink tokens, formulas, percent comments, cross links,
-inline footnotes, citation keys, specimen references, directives, topics, and
-character references participate in that order. At a backslash, the
+inline footnotes, citation keys, directives, topics, and character references
+participate in that order. At a backslash, the
 doubled-backslash formula openers are checked before ordinary escaping.
 
 Brackets use the [ordered bracket alternatives](links-and-images.md#bracket-precedence).

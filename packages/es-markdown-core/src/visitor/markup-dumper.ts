@@ -5,13 +5,7 @@ import { SourceLines } from "../common/source-lines.js";
 import type { Document } from "../markup/document.js";
 import type { MetadataValue } from "../markup/metadata.js";
 import type { Markup } from "../markup/markup.js";
-import type {
-    CitationReferent,
-    Destination,
-    OrderedListDelimiter,
-    OrderedListVariant,
-    Scope
-} from "../markup/values.js";
+import type { CitationReferent, Destination, OrderedListDelimiter, Scope } from "../markup/values.js";
 import { walkTree } from "./markup-walker.js";
 import type { MarkupVisitor } from "./markup-visitor.js";
 
@@ -114,7 +108,6 @@ class State {
                 [
                     `flavor=${node.flavor}`,
                     `start=${node.start ?? "null"}`,
-                    `variant=${variant(node.variant)}`,
                     `delimiter=${delimiter(node.delimiter)}`,
                     `tight=${node.tight}`
                 ],
@@ -127,7 +120,7 @@ class State {
                 return;
             }
             this.start();
-            this.container("ListItem", node, [`marker=${optional(node.marker)}`], node.content);
+            this.container("ListItem", node, [`status=${node.status ?? "null"}`], node.content);
         },
         codeBlock: (node, phase) => {
             if (phase === "exit") {
@@ -212,7 +205,7 @@ class State {
                 return;
             }
             this.start();
-            this.line("DirectiveBlock", node, [`name=${optional(node.name)}`], node.content.length, [
+            this.line("DirectiveBlock", node, [`name=${escaped(node.name)}`], node.content.length, [
                 { name: null, count: node.content.length + (node.label === null ? 0 : 1) }
             ]);
         },
@@ -272,13 +265,13 @@ class State {
             this.start();
             this.line("CrossLink", node, [`dest=${destination(node.dest)}`, `label=${optional(node.label)}`]);
         },
-        crossEmbedded: (node, phase) => {
+        crossEmbed: (node, phase) => {
             if (phase === "exit") {
                 this.end();
                 return;
             }
             this.start();
-            this.line("CrossEmbedded", node, [
+            this.line("CrossEmbed", node, [
                 `dest=${destination(node.dest)}`,
                 `label=${optional(node.label)}`,
                 `dimensions=${dimensions(node.dimensions)}`
@@ -377,14 +370,14 @@ class State {
                 node.content
             );
         },
-        embedded: (node, phase) => {
+        embed: (node, phase) => {
             if (phase === "exit") {
                 this.end();
                 return;
             }
             this.start();
             this.container(
-                "Embedded",
+                "Embed",
                 node,
                 [
                     `dest=${destination(node.dest)}`,
@@ -464,19 +457,6 @@ class State {
             }
             this.start();
             this.line("Footnote", node, [`label=${optional(node.label)}`], node.content.length);
-        },
-        specimen: (node, phase) => {
-            if (phase === "exit") {
-                this.end();
-                return;
-            }
-            this.start();
-            this.line(
-                "Specimen",
-                node,
-                [`label=${optional(node.label)}`, `start=${node.start ?? "null"}`],
-                node.content.length
-            );
         },
         reference: (node, phase) => {
             if (phase === "exit") {
@@ -598,13 +578,7 @@ function optional(value: string | null): string {
 }
 
 function delimiter(value: OrderedListDelimiter | null): string {
-    if (value === null || typeof value === "string") return value ?? "null";
-    return `parenthesis(closed=${value.closed})`;
-}
-
-function variant(value: OrderedListVariant | null): string {
-    if (value === null || typeof value === "string") return value ?? "null";
-    return `${value.kind}(lowercased=${value.lowercased})`;
+    return value ?? "null";
 }
 
 /** A tagged value prints its branch and its named fields with no spaces. */
@@ -614,8 +588,6 @@ function referent(value: CitationReferent): string {
             return `bib(key=${escaped(value.key)},mode=${value.mode})`;
         case "footnote":
             return value.target.kind === "label" ? `footnote(label=${escaped(value.target.value)})` : "footnote(note)";
-        case "specimen":
-            return `specimen(label=${escaped(value.label)})`;
     }
 }
 

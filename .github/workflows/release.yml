@@ -87,7 +87,7 @@ jobs:
               with:
                   xcode-version: "26.6"
             - name: Check prepared Swift release environment
-              run: scripts/tooling/setup-environment.sh --check wrappers swift
+              run: scripts/tools/setup-environment.sh --check wrappers swift
             - name: Validate Swift source archive and product consumer
               run: scripts/release/check-swift-source-archive.sh build/release-swift
             - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -114,7 +114,7 @@ jobs:
                   version: 6.0.9
             - run: pnpm install --frozen-lockfile
             - name: Check prepared npm release environment
-              run: scripts/tooling/setup-environment.sh --check node emscripten dependencies
+              run: scripts/tools/setup-environment.sh --check node emscripten dependencies
             - name: Build, pack, and run the npm artifact consumer
               run: scripts/release/stage-npm.sh build/release-npm
             - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -148,7 +148,7 @@ jobs:
                   packages: platform-tools
             - run: sdkmanager "platforms;android-36" "cmake;3.22.1" "ndk;28.2.13676358"
             - name: Check prepared Android release environment
-              run: scripts/tooling/setup-environment.sh --check java wrappers android
+              run: scripts/tools/setup-environment.sh --check java wrappers android
             - name: Build Linux, root, JVM, and Android Maven publications
               run: scripts/release/stage-maven-publications.sh build/release-maven-linux linux-release
             - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -170,7 +170,7 @@ jobs:
                   distribution: temurin
                   java-version: 26
             - name: Check prepared macOS publication environment
-              run: scripts/tooling/setup-environment.sh --check java wrappers
+              run: scripts/tools/setup-environment.sh --check java wrappers
             - name: Build macOS Native publication and JVM payload
               run: scripts/release/stage-maven-publications.sh build/release-maven-macos macos-native
             - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -202,7 +202,7 @@ jobs:
                   packages: platform-tools
             - run: sdkmanager "platforms;android-36" "cmake;3.22.1" "ndk;28.2.13676358"
             - name: Check prepared staged-consumer environment
-              run: scripts/tooling/setup-environment.sh --check java wrappers android
+              run: scripts/tools/setup-environment.sh --check java wrappers android
             - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
               with:
                   name: release-maven-linux

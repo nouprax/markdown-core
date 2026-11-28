@@ -3,7 +3,6 @@ package com.nouprax.markdown.core
 public class List internal constructor(
     public val flavor: ListFlavor,
     public val start: Long?,
-    public val variant: OrderedListVariant?,
     public val delimiter: OrderedListDelimiter?,
     public val tight: Boolean,
     public val items: kotlin.collections.List<ListItem>,
@@ -15,14 +14,11 @@ public class List internal constructor(
 ) : Markup()
 
 public class ListItem internal constructor(
-    public val marker: String?,
+    public val status: TaskStatus?,
     public val content: kotlin.collections.List<Markup>,
     override val id: MarkupID,
     override val extent: Extent,
     override val runs: kotlin.collections.List<Run>,
     override val anchor: String?,
     override val attributes: Attributes,
-) : Markup() {
-    public val tasked: Boolean get() = marker != null
-    public val completed: Boolean get() = marker != null && marker != " "
-}
+) : Markup()

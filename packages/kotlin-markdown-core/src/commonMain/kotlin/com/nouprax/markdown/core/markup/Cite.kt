@@ -45,12 +45,6 @@ public sealed interface CitationReferent {
     public data class Footnote internal constructor(
         public val target: FootnoteTarget,
     ) : CitationReferent
-
-    /** A specimen call: [Document.specimen] answers the first specimen whose label is [label]. */
-    @ConsistentCopyVisibility
-    public data class Specimen internal constructor(
-        public val label: String,
-    ) : CitationReferent
 }
 
 /** The footnote a [CitationReferent.Footnote] names. */

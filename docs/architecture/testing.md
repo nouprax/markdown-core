@@ -36,7 +36,7 @@ explicitly. There is no cross-host aggregate and no public stress task.
 | --- | --- | --- |
 | C | One CMake/CTest graph with presets and labels | `ctest --test-dir build/cmake -N`; `ctest --preset correctness -L spec`; `ctest --preset correctness -R pathological_backticks` |
 | Swift | SwiftPM correctness and conformance test targets; xcodebuild on iOS | `swift test list`; `swift test --filter`; xcodebuild `-only-testing` |
-| Kotlin | Gradle/KMP named platform tasks; instrumentation class selection on Android | `scripts/tooling/run-gradle.sh :packages:kotlin-markdown-core:tasks --group verification`; native `--tests` or runner arguments |
+| Kotlin | Gradle/KMP named platform tasks; instrumentation class selection on Android | `scripts/tools/run-gradle.sh :packages:kotlin-markdown-core:tasks --group verification`; native `--tests` or runner arguments |
 | ECMAScript | Package-native Node/browser correctness runner and separate conformance runner | `node packages/es-markdown-core/scripts/run-tests.mjs --list`; `--target` and `--suite`; Node `--test-name-pattern` |
 
 Root `pnpm` tasks map task families to execution platforms in one step. Do not
@@ -57,14 +57,8 @@ consistent suite names across platforms: `api`, `ast`, `consumer`, `errors`,
 platform-specific categories where needed.
 
 C labels are `api`, `facade`, `consumer`, `spec`, `elements`, `regression`,
-`pathological`, `fuzz`, `packaging`, and `incremental`. Each registered test has
-one label. The independent `conformance` label is excluded from correctness
-presets. `incremental` runs the
-[incremental correctness set](../../specs/incremental/README.md) as one test
-per family its manifest declares, side by side, in its own release
-`incremental` preset; the correctness presets exclude it. A family that runs
-long is one test per shard instead (`incremental_runner --shard K/N`), and its
-shards deal its cases round, so together they check each case once.
+`pathological`, `fuzz`, and `packaging`. Each registered test has one label.
+The independent `conformance` label is excluded from correctness presets.
 The [C test graph](../../packages/markdown-core/tests/CMakeLists.txt) owns exact
 case names and timeouts; documentation does not duplicate that registry.
 

@@ -6,58 +6,7 @@ export interface NativeExports extends WebAssembly.Exports {
      * when not even a failure message can be allocated. A failed parse is a
      * failure message carrying its status. */
     markdown_core_wire_parse(source: number, length: number): number;
-    /** A session's steps, each answering with one owned MCB3 message as
-     * `markdown_core_wire_parse` does. `session` receives the new session, or
-     * zero with a failure message. */
-    markdown_core_wire_session_new(source: number, length: number, unit: number, session: number): number;
-    markdown_core_wire_session_append(session: number, text: number, size: number): number;
-    markdown_core_wire_session_flush(session: number): number;
-    /** Replaces the text from the cursor at `start` to the cursor at `end`,
-     * each the address of its two i32s, with `size` bytes at `text`. */
-    markdown_core_wire_session_edit(session: number, start: number, end: number, text: number, size: number): number;
-    /** The answers of a session's queries (docs/architecture/wire-format.md,
-     * Queries), each one owned MCB3 message as a step's is. A position is
-     * passed as the address of its two i32s. A locate moves the session's
-     * cursor and answers the context it leaves as the session's state, which
-     * a spelling reads. */
-    markdown_core_wire_dialect(): number;
-    markdown_core_wire_locate(session: number, position: number): number;
-    markdown_core_wire_spell(session: number, slot: number, value: number, size: number): number;
-    markdown_core_wire_field(session: number, id: bigint, position: number, slot: number): number;
-    markdown_core_wire_markers(session: number, id: bigint, position: number): number;
     markdown_core_wire_free(message: number): void;
-    markdown_core_session_text_size(session: number): number;
-    markdown_core_session_text(session: number, bytes: number): void;
-    markdown_core_session_close(session: number): void;
-    /** The language engine (packages/markdown-core/lsp), each call answering
-     * its `markdown_core_lsp_status`: 0, or the protocol's error code. A
-     * position is passed as the address of its two u32s. */
-    markdown_core_lsp_server_new(server: number): number;
-    markdown_core_lsp_server_free(server: number): void;
-    markdown_core_lsp_server_phase(server: number): number;
-    markdown_core_lsp_initialize(server: number, units: number, count: number, capabilities: number): number;
-    markdown_core_lsp_shutdown(server: number): number;
-    markdown_core_lsp_open(
-        server: number,
-        uri: number,
-        uriSize: number,
-        version: number,
-        text: number,
-        size: number
-    ): number;
-    markdown_core_lsp_update(
-        server: number,
-        uri: number,
-        uriSize: number,
-        version: number,
-        edits: number,
-        count: number
-    ): number;
-    markdown_core_lsp_close(server: number, uri: number, uriSize: number): number;
-    markdown_core_lsp_complete(server: number, uri: number, uriSize: number, position: number, list: number): number;
-    markdown_core_lsp_list_version(list: number): number;
-    markdown_core_lsp_list_count(list: number): number;
-    markdown_core_lsp_list_free(list: number): void;
 }
 
 const wasmURL = new URL("../markdown-core.wasm", import.meta.url);

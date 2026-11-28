@@ -22,7 +22,7 @@ private typealias Comment = Testing.Comment
             "[[Note]] ![[#^block|]]\n",
             "Term\n: body\n",
             "Revisit #pricing\n",
-            "---\ntitle: Example\n---\n(@sample) Body\n",
+            "---\ntitle: Example\n---\nBody\n",
             ":plain :empty[]{} :attrs{#kept .a class=\"b a\" k=1 k=2}\n\n| none |\n| ---- |\n| cell |\n",
         ]
         let documents = try sources.map { try Document.parse($0) }
@@ -33,10 +33,10 @@ private typealias Comment = Testing.Comment
             "ListItem", "CodeBlock", "HTMLBlock", "FormulaBlock", "Table",
             "DirectiveBlock", "DirectiveLabel", "Text", "SoftBreak",
             "LineBreak",
-            "Code", "HTML", "Comment", "CrossLink", "CrossEmbedded", "Formula", "Emphasis", "Strong",
+            "Code", "HTML", "Comment", "CrossLink", "CrossEmbed", "Formula", "Emphasis", "Strong",
             "Strikethrough", "Mark", "Insertion", "Span", "Superscript", "Subscript", "DefinitionList", "Definition",
-            "Link", "Embedded", "Directive",
-            "Cite", "Topic", "Citation", "Footnote", "Specimen", "Metadata", "Reference",
+            "Link", "Embed", "Directive",
+            "Cite", "Topic", "Citation", "Footnote", "Metadata", "Reference",
             "TableRow", "TableCell",
         ]
         #expect(kinds == expected)
@@ -53,14 +53,11 @@ private typealias Comment = Testing.Comment
         let ordered = try #require(document.content[0] as? MarkdownCore.List)
         #expect(ordered.flavor == .ordered)
         #expect(ordered.start == 3)
-        #expect(ordered.variant == .decimal)
         #expect(ordered.delimiter == .period)
         let parenthesized = try #require(try Document.parse("1) item\n").content[0] as? MarkdownCore.List)
-        #expect(parenthesized.delimiter == .parenthesis(closed: false))
+        #expect(parenthesized.delimiter == .parenthesis)
         let task = try #require(document.content[1] as? MarkdownCore.List)
-        #expect(task.items.first?.marker == "x")
-        #expect(task.items.first?.tasked == true)
-        #expect(task.items.first?.completed == true)
+        #expect(task.items.first?.status == .done)
         let table = try #require(document.content[2] as? Table)
         #expect(table.columns.map(\.flow) == [.center])
         #expect(table.head.count == 1)
@@ -68,24 +65,24 @@ private typealias Comment = Testing.Comment
         #expect(table.head[0].cells.count == 1)
         let paragraph = try #require(document.content[3] as? Paragraph)
         let link = try #require(paragraph.content[0] as? Link)
-        let image = try #require(paragraph.content[2] as? Embedded)
+        let image = try #require(paragraph.content[2] as? Embed)
         #expect(link.dest == .url("/go") && link.title == nil)
         #expect(image.dest == .url("/image") && image.title == "title")
     }
 
-    @Test("task markers preserve scalars and derive completion")
-    func taskMarkers() throws {
-        for marker in [" ", "x", "X", "?", "é", "✓", "🚀", "́", "]"] {
+    @Test("task checks give their five statuses, and other scalars stay text")
+    func taskStatuses() throws {
+        let statuses: [(String, TaskStatus)] = [
+            (" ", .open), ("x", .done), ("X", .done), ("?", .question), ("-", .cancelled),
+        ]
+        for (marker, status) in statuses {
             let list = try #require(try Document.parse("- [\(marker)] body\n").content.first as? MarkdownCore.List)
-            let item = try #require(list.items.first)
-            #expect(item.marker == marker)
-            #expect(item.tasked)
-            #expect(item.completed == (marker != " "))
+            #expect(list.items.first?.status == status)
         }
-        let list = try #require(try Document.parse("- [é] body\n").content.first as? MarkdownCore.List)
-        #expect(list.items.first?.marker == nil)
-        #expect(list.items.first?.tasked == false)
-        #expect(list.items.first?.completed == false)
+        for marker in ["é", "✓", "🚀", "!", "]"] {
+            let list = try #require(try Document.parse("- [\(marker)] body\n").content.first as? MarkdownCore.List)
+            #expect(list.items.first?.status == nil)
+        }
     }
 
     @Test("all manifest cases match the shared canonical AST spec")
@@ -181,7 +178,7 @@ struct IdentifierVisitor: MarkupVisitor {
     mutating func visit(_ node: HTML, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: MarkdownCore.Comment, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: CrossLink, phase: MarkupVisitPhase) { record(node, phase) }
-    mutating func visit(_ node: CrossEmbedded, phase: MarkupVisitPhase) { record(node, phase) }
+    mutating func visit(_ node: CrossEmbed, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: Formula, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: Emphasis, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: Strong, phase: MarkupVisitPhase) { record(node, phase) }
@@ -194,7 +191,7 @@ struct IdentifierVisitor: MarkupVisitor {
     mutating func visit(_ node: DefinitionList, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: Definition, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: Link, phase: MarkupVisitPhase) { record(node, phase) }
-    mutating func visit(_ node: Embedded, phase: MarkupVisitPhase) { record(node, phase) }
+    mutating func visit(_ node: Embed, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: Directive, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: Cite, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: Topic, phase: MarkupVisitPhase) { record(node, phase) }
@@ -202,7 +199,6 @@ struct IdentifierVisitor: MarkupVisitor {
     mutating func visit(_ node: TableCell, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: Citation, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: Footnote, phase: MarkupVisitPhase) { record(node, phase) }
-    mutating func visit(_ node: Specimen, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: Metadata, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: Reference, phase: MarkupVisitPhase) { record(node, phase) }
 }

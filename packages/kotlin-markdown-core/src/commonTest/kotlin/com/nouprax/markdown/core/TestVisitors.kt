@@ -21,11 +21,6 @@ internal class KindVisitor : MarkupVisitor {
     ): Unit = record(name(footnote), phase)
 
     override fun visit(
-        specimen: Specimen,
-        phase: MarkupVisitPhase,
-    ): Unit = record(name(specimen), phase)
-
-    override fun visit(
         metadata: Metadata,
         phase: MarkupVisitPhase,
     ): Unit = record(name(metadata), phase)
@@ -151,9 +146,9 @@ internal class KindVisitor : MarkupVisitor {
     ): Unit = record(name(crossLink), phase)
 
     override fun visit(
-        crossEmbedded: CrossEmbedded,
+        crossEmbed: CrossEmbed,
         phase: MarkupVisitPhase,
-    ): Unit = record(name(crossEmbedded), phase)
+    ): Unit = record(name(crossEmbed), phase)
 
     override fun visit(
         formula: Formula,
@@ -216,9 +211,9 @@ internal class KindVisitor : MarkupVisitor {
     ): Unit = record(name(link), phase)
 
     override fun visit(
-        embedded: Embedded,
+        embed: Embed,
         phase: MarkupVisitPhase,
-    ): Unit = record(name(embedded), phase)
+    ): Unit = record(name(embed), phase)
 
     override fun visit(
         directive: Directive,
@@ -241,11 +236,6 @@ internal class RecordingVisitor : MarkupVisitor {
         footnote: Footnote,
         phase: MarkupVisitPhase,
     ): Unit = if (phase == MarkupVisitPhase.ENTER) record(footnote) else Unit
-
-    override fun visit(
-        specimen: Specimen,
-        phase: MarkupVisitPhase,
-    ): Unit = if (phase == MarkupVisitPhase.ENTER) record(specimen) else Unit
 
     override fun visit(
         metadata: Metadata,
@@ -375,9 +365,9 @@ internal class RecordingVisitor : MarkupVisitor {
     ): Unit = if (phase == MarkupVisitPhase.ENTER) record(crossLink) else Unit
 
     override fun visit(
-        crossEmbedded: CrossEmbedded,
+        crossEmbed: CrossEmbed,
         phase: MarkupVisitPhase,
-    ): Unit = if (phase == MarkupVisitPhase.ENTER) record(crossEmbedded) else Unit
+    ): Unit = if (phase == MarkupVisitPhase.ENTER) record(crossEmbed) else Unit
 
     override fun visit(
         formula: Formula,
@@ -440,9 +430,9 @@ internal class RecordingVisitor : MarkupVisitor {
     ): Unit = if (phase == MarkupVisitPhase.ENTER) record(link) else Unit
 
     override fun visit(
-        embedded: Embedded,
+        embed: Embed,
         phase: MarkupVisitPhase,
-    ): Unit = if (phase == MarkupVisitPhase.ENTER) record(embedded) else Unit
+    ): Unit = if (phase == MarkupVisitPhase.ENTER) record(embed) else Unit
 
     override fun visit(
         directive: Directive,
@@ -618,9 +608,9 @@ internal class RecordingWalkingVisitor(
     ): Unit = record(crossLink, phase)
 
     override fun visit(
-        crossEmbedded: CrossEmbedded,
+        crossEmbed: CrossEmbed,
         phase: MarkupVisitPhase,
-    ): Unit = record(crossEmbedded, phase)
+    ): Unit = record(crossEmbed, phase)
 
     override fun visit(
         formula: Formula,
@@ -683,9 +673,9 @@ internal class RecordingWalkingVisitor(
     ): Unit = record(link, phase)
 
     override fun visit(
-        embedded: Embedded,
+        embed: Embed,
         phase: MarkupVisitPhase,
-    ): Unit = record(embedded, phase)
+    ): Unit = record(embed, phase)
 
     override fun visit(
         directive: Directive,
@@ -701,11 +691,6 @@ internal class RecordingWalkingVisitor(
         citation: Citation,
         phase: MarkupVisitPhase,
     ): Unit = record("Citation", phase)
-
-    override fun visit(
-        specimen: Specimen,
-        phase: MarkupVisitPhase,
-    ): Unit = record("Specimen", phase)
 
     override fun visit(
         footnote: Footnote,
@@ -840,9 +825,9 @@ internal class NodeVisitor : MarkupVisitor {
     ): Unit = record(crossLink, phase)
 
     override fun visit(
-        crossEmbedded: CrossEmbedded,
+        crossEmbed: CrossEmbed,
         phase: MarkupVisitPhase,
-    ): Unit = record(crossEmbedded, phase)
+    ): Unit = record(crossEmbed, phase)
 
     override fun visit(
         formula: Formula,
@@ -905,9 +890,9 @@ internal class NodeVisitor : MarkupVisitor {
     ): Unit = record(link, phase)
 
     override fun visit(
-        embedded: Embedded,
+        embed: Embed,
         phase: MarkupVisitPhase,
-    ): Unit = record(embedded, phase)
+    ): Unit = record(embed, phase)
 
     override fun visit(
         directive: Directive,
@@ -928,11 +913,6 @@ internal class NodeVisitor : MarkupVisitor {
         footnote: Footnote,
         phase: MarkupVisitPhase,
     ): Unit = record(footnote, phase)
-
-    override fun visit(
-        specimen: Specimen,
-        phase: MarkupVisitPhase,
-    ): Unit = record(specimen, phase)
 
     override fun visit(
         metadata: Metadata,

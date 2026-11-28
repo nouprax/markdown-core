@@ -31,7 +31,7 @@ duplicate/stale exceptions, changed digests, and exceptions that now agree.
 - All 11 normative module examples, byte for byte.
 - 30 composition and failure-boundary inputs: Unicode and punctuation,
   odd runs with both roles, escapes/entities, crossed and nested delimiters,
-  CrossLink/CrossEmbedded, Cite, links/media, every opaque context, separate
+  CrossLink/CrossEmbed, Cite, links/media, every opaque context, separate
   inline containers, table unescaping, named inline fields and failed scanners.
   The Unicode cases include astral symbols, astral punctuation and non-ASCII
   whitespace retained at paragraph/heading boundaries.

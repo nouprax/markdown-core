@@ -92,12 +92,12 @@ test("Pandoc projection distinguishes absent anchors from the authored string nu
     assert.equal(parse('"null"'), "null");
 });
 
-test("list variants and table columns compare as values rather than wire spellings", () => {
-    const list = fromPandoc({ blocks: [{ t: "OrderedList", c: [[9, { t: "LowerRoman" }, { t: "OneParen" }], []] }] });
+test("list delimiters and table columns compare as values rather than wire spellings", () => {
+    const list = fromPandoc({ blocks: [{ t: "OrderedList", c: [[9, { t: "Decimal" }, { t: "OneParen" }], []] }] });
     const canonical = fromCanonical(
         parseCanonicalDump(
             "Document scope=1:1..1:1 anchor=null attributes={} children=1\n" +
-                "└── List scope=1:1..1:1 anchor=null attributes={} flavor=ordered start=9 variant=roman(lowercased=true) delimiter=parenthesis(closed=false) tight=true children=0\n"
+                "└── List scope=1:1..1:1 anchor=null attributes={} flavor=ordered start=9 delimiter=parenthesis tight=true children=0\n"
         )
     );
     assert.deepEqual(canonical, list);
@@ -158,7 +158,7 @@ test("citation projection compares keys, modes and ordered affixes without fallb
     }
 });
 
-test("footnote and specimen referents keep their label or the note their citation owns", () => {
+test("footnote referents keep their label or the note their citation owns", () => {
     const cite = (referent, note = "") =>
         fromCanonical(
             parseCanonicalDump(
@@ -175,9 +175,8 @@ test("footnote and specimen referents keep their label or the note their citatio
         "            ├── Footnote scope=1:1..1:9 anchor=null attributes={} label=null children=1\n" +
         `            │   └── Text scope=1:3..1:8 anchor=null attributes={} literal="${literal}" children=0\n`;
     assert.deepEqual(cite('footnote(label="x")'), { referent: "footnote", label: "x", prefix: [], suffix: [] });
-    assert.deepEqual(cite('specimen(label="x")'), { referent: "specimen", label: "x", prefix: [], suffix: [] });
     assert.notDeepEqual(cite('footnote(label="x")'), cite('footnote(label="y")'));
-    assert.notDeepEqual(cite('footnote(label="x")'), cite('specimen(label="x")'));
+    assert.throws(() => cite('specimen(label="x")'), /unknown citation referent/u);
     const inline = cite("footnote(note)", note("body"));
     assert.equal(inline.referent, "footnote");
     assert.equal(inline.note.kind, "Footnote");

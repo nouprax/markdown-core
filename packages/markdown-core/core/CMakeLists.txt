@@ -22,7 +22,6 @@ set(HEADERS
     metadata.h
     roster.h
     tree.h
-    index.h
     map.h
     utf8.h
     inlines.h
@@ -34,10 +33,7 @@ set(HEADERS
     bracket.h
     ahead.h
     array.h
-    seam.h
-    measure.h
-    claim.h
-    sink.h)
+    claim.h)
 set(LIBRARY_SOURCES
     alloc.c
     ahead.c
@@ -49,12 +45,9 @@ set(LIBRARY_SOURCES
     bracket.c
     utf8.c
     buffer.c
-    names.c
     roster.c
     map.c
     tree.c
-    index.c
-    sink.c
     markdown_core_ctype.c
     ${HEADERS})
 

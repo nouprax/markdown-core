@@ -1,0 +1,9 @@
+.DS_Store
+*.log
+coverage/
+target/
+fuzz/target
+fuzz/corpus
+fuzz/artifacts
+fuzz/hfuzz_target
+fuzz/hfuzz_workspace

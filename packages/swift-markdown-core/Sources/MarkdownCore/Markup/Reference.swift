@@ -6,7 +6,7 @@ import MarkdownCoreC
 /// Its anchor and attributes are the ones the definition states; the links
 /// and images that name it keep their own. Duplicates and unused definitions
 /// remain. ``Document/references`` lists every definition in source order,
-/// and ``Document/reference(for:)`` finds the node a label resolves to.
+/// and ``Document/reference(for:)`` finds the one a label resolves to.
 public struct Reference: Markup {
     let record: ReferenceRecord
 

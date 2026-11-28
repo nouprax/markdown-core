@@ -95,7 +95,6 @@ const builtinProducts = new Set([
     "cross-embed",
     "inline-directive",
     "leaf-directive",
-    "anonymous-container",
     "loose-definition",
     "class-span",
     "cite-author",
@@ -403,7 +402,7 @@ function parameters(index, letters = alphabets.ascii) {
             word(index + 99, 1 + (index % 5), letters)
         ],
         mode: index % 3,
-        start: 1 + (index % finiteLexicons.ordinal.decimal.length),
+        start: 1 + (index % 26),
         reset: String(index % 3 === 2 ? 999999999 : index + 1)
     };
 }
@@ -493,10 +492,7 @@ export function productGrammar(id) {
         return pair(frame([":", k, "[", label, "]"]), frame(["[", label, "](/", k, ")"]));
     }
     if (id.includes("container"))
-        return pair(
-            [...(id === "named-container" ? [":::", k, "\n"] : ["::: {}\n"]), b, "\n\n", t, "\n:::\n\n"],
-            [...(id === "named-container" ? ["> ", k, "\n>\n"] : []), "> ", b, "\n>\n> ", t, "\n\n"]
-        );
+        return pair([":::", k, "\n", b, "\n\n", t, "\n:::\n\n"], ["> ", k, "\n>\n", "> ", b, "\n>\n> ", t, "\n\n"]);
     if (id === "loose-definition") return pair([literal, "\n\n: ", b, "\n\n"], ["- ", literal, "\n\n  ", b, "\n\n"]);
     if (id === "anchor") return pair(["> ", b, "\n\n#", k, "#\n\n"], ["> ", b, "\n\n[", k, "]: /target\n\n"]);
     throw new Error(`no product grammar: ${id}`);
@@ -658,7 +654,7 @@ function renderHosts(id, p) {
             ["See ![[", target, "|", literal, `|${p.start}x${p.start + 1}]] here.\n\n`],
             ["See ![", literal, "](/", target, ") here.\n\n"]
         );
-    if (id === "task-value") return pair(["- [~] ", b, "\n- [~] ", t, "\n\n"], ["- [x] ", b, "\n- [x] ", t, "\n\n"]);
+    if (id === "task-value") return pair(["- [?] ", b, "\n- [?] ", t, "\n\n"], ["- [x] ", b, "\n- [x] ", t, "\n\n"]);
     if (id === "decimal-list")
         return pair(
             [`${p.start}. `, b, `\n${p.start + 1}. `, t, "\n\n"],
@@ -818,7 +814,7 @@ function grammarDescription(certificate, side) {
         );
     if (directFrames.has(certificate.id))
         return (
-            `Document = Item (LF* Item)* LF+ ; Item = ${certificate.id === "task-value" ? JSON.stringify(side === "dialect" ? "- [~] " : "- [x] ") : "Decimal '. '"} Body LF ; Decimal = [1-9][0-9]{0,8} ; OPEN = CLOSE = '**' ; ` +
+            `Document = Item (LF* Item)* LF+ ; Item = ${certificate.id === "task-value" ? JSON.stringify(side === "dialect" ? "- [?] " : "- [x] ") : "Decimal '. '"} Body LF ; Decimal = [1-9][0-9]{0,8} ; OPEN = CLOSE = '**' ; ` +
             normalForms.inline
         );
     const marker = side === "dialect" ? certificate.dialectMarker : certificate.commonMarker;
@@ -970,7 +966,7 @@ export function recognizePairedDocument(id, side, source) {
             const line = match[1],
                 blankLines = match[2].length;
             if (id === "task-value") {
-                const prefix = side === "dialect" ? "- [~] " : "- [x] ";
+                const prefix = side === "dialect" ? "- [?] " : "- [x] ";
                 assert.ok(line.startsWith(prefix));
                 items.push({ value: "task", body: recognizeBody(line.slice(prefix.length)), blankLines });
             } else {
@@ -1026,7 +1022,7 @@ export function encodePairedDocument(id, side, derivations) {
                 if (id === "task-value") assert.equal(item.value, "task");
                 else assert.match(item.value, /^[1-9][0-9]{0,8}$/u);
                 return (
-                    (id === "task-value" ? (side === "dialect" ? "- [~] " : "- [x] ") : `${item.value}. `) +
+                    (id === "task-value" ? (side === "dialect" ? "- [?] " : "- [x] ") : `${item.value}. `) +
                     renderBody(item.body) +
                     "\n".repeat(item.blankLines + 1)
                 );
@@ -1259,7 +1255,7 @@ export function grammarSourceIdentity(root = fileURLToPath(new URL("../../", imp
         "scripts/benchmark/report.mjs",
         "scripts/shared/element-inventory.mjs",
         "scripts/benchmark/run.mjs",
-        "scripts/tooling/setup-environment.sh",
+        "scripts/tools/setup-environment.sh",
         "docs/architecture/benchmark-grammar-corpus.md",
         "docs/architecture/benchmark-grammar-coverage.md",
         "packages/markdown-core/benchmarks/grammar-corpus.json",

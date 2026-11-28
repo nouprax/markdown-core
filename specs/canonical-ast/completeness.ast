@@ -1,10 +1,10 @@
 Document scope=1:1..18:8 anchor=null attributes={} children=6
 ├── CodeBlock scope=1:5..2:0 anchor=null attributes={} info=null language=null literal="indented\n" fenced=false closed=true children=0
-├── List scope=3:1..8:0 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=false children=2
-│   ├── ListItem scope=3:1..4:0 anchor=null attributes={} marker=" " children=1
+├── List scope=3:1..8:0 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=false children=2
+│   ├── ListItem scope=3:1..4:0 anchor=null attributes={} status=open children=1
 │   │   └── Paragraph scope=3:7..3:15 anchor=null attributes={} children=1
 │   │       └── Text scope=3:7..3:15 anchor=null attributes={} literal="unchecked" children=0
-│   └── ListItem scope=5:1..8:0 anchor=null attributes={} marker=null children=2
+│   └── ListItem scope=5:1..8:0 anchor=null attributes={} status=null children=2
 │       ├── Paragraph scope=5:3..5:11 anchor=null attributes={} children=1
 │       │   └── Text scope=5:3..5:11 anchor=null attributes={} literal="loose one" children=0
 │       └── Paragraph scope=7:3..7:11 anchor=null attributes={} children=1
@@ -16,7 +16,7 @@ Document scope=1:1..18:8 anchor=null attributes={} children=6
 │   ├── Link scope=9:16..9:29 anchor=null attributes={} dest=url("/b") title="" children=1
 │   │   └── Text scope=9:17..9:21 anchor=null attributes={} literal="empty" children=0
 │   ├── Text scope=9:30..9:30 anchor=null attributes={} literal=" " children=0
-│   └── Embedded scope=9:31..9:40 anchor=null attributes={} dest=url("/i") title=null dimensions=null children=1
+│   └── Embed scope=9:31..9:40 anchor=null attributes={} dest=url("/i") title=null dimensions=null children=1
 │       └── Text scope=9:33..9:35 anchor=null attributes={} literal="alt" children=0
 ├── Paragraph scope=11:1..11:54 anchor=null attributes={} children=4
 │   ├── Text scope=11:1..11:7 anchor=null attributes={} literal=":plain " children=0

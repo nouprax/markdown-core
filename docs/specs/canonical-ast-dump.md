@@ -135,7 +135,7 @@ then `TableBody`, including an empty body. The table's `children` counts their
 rows, not the group lines. A row and a cell print no scalar fields.
 
 A `Dimensions` value prints `(width=W,height=H)` with no internal spaces;
-`H` is `null` when only width was authored. `Embedded.dimensions` and `CrossEmbedded.dimensions` print `null`
+`H` is `null` when only width was authored. `Embed.dimensions` and `CrossEmbed.dimensions` print `null`
 when absent, so `dimensions=null` and `dimensions=(width=100,height=null)`
 remain distinct. A present value always has positive width; height without
 width is invalid. The value introduces no node or child line.
@@ -156,8 +156,8 @@ that the dump represents as nested descendants.
 | `Paragraph` | `anchor`, `attributes` |
 | `Heading` | `anchor`, `attributes`, `level` |
 | `ThematicBreak` | `anchor`, `attributes` |
-| `List` | `anchor`, `attributes`, `flavor`, `start`, `variant`, `delimiter`, `tight` |
-| `ListItem` | `anchor`, `attributes`, `marker` |
+| `List` | `anchor`, `attributes`, `flavor`, `start`, `delimiter`, `tight` |
+| `ListItem` | `anchor`, `attributes`, `status` |
 | `CodeBlock` | `anchor`, `attributes`, `info`, `language`, `literal`, `fenced`, `closed` |
 | `HTMLBlock` | `anchor`, `attributes`, `literal` |
 | `FormulaBlock` | `anchor`, `attributes`, `literal` |
@@ -172,7 +172,7 @@ that the dump represents as nested descendants.
 | `Code` | `anchor`, `attributes`, `literal` |
 | `HTML` | `anchor`, `attributes`, `literal` |
 | `CrossLink` | `anchor`, `attributes`, `dest`, `label` |
-| `CrossEmbedded` | `anchor`, `attributes`, `dest`, `label`, `dimensions` |
+| `CrossEmbed` | `anchor`, `attributes`, `dest`, `label`, `dimensions` |
 | `Comment` | `anchor`, `attributes`, `literal` |
 | `Formula` | `anchor`, `attributes`, `mode`, `literal` |
 | `Emphasis` | `anchor`, `attributes` |
@@ -184,7 +184,7 @@ that the dump represents as nested descendants.
 | `Superscript` | `anchor`, `attributes` |
 | `Subscript` | `anchor`, `attributes` |
 | `Link` | `anchor`, `attributes`, `dest`, `title` |
-| `Embedded` | `anchor`, `attributes`, `dest`, `title`, `dimensions` |
+| `Embed` | `anchor`, `attributes`, `dest`, `title`, `dimensions` |
 | `Directive` | `anchor`, `attributes`, `name` |
 | `Cite` | `anchor`, `attributes` |
 | `Topic` | `anchor`, `attributes`, `name` |
@@ -192,7 +192,6 @@ that the dump represents as nested descendants.
 | `Definition` | `anchor`, `attributes`, `compact` |
 | `Citation` | `anchor`, `attributes`, `referent` |
 | `Footnote` | `anchor`, `attributes`, `label` |
-| `Specimen` | `anchor`, `attributes`, `label`, `start` |
 | `Metadata` | `anchor`, `attributes`, `name`, `title`, `subtitle`, `time`, `date`, `authors`, `keywords`, `abstract`, `state`, `comment` |
 | `Reference` | `anchor`, `attributes`, `label`, `dest`, `title` |
 
@@ -221,8 +220,7 @@ list and has no scope or common node fields. Groups are not Markup.
 
 - A tagged value prints its branch and named fields with no spaces, as `dest`
   does: `referent=bib(key="...",mode=normal)`,
-  `referent=footnote(label="...")`, `referent=footnote(note)` and
-  `referent=specimen(label="...")`.
+  `referent=footnote(label="...")` and `referent=footnote(note)`.
 - `Cite` prints one `Citation` node line per item, in source order, with
   `referent` as its one field and a `children` of zero; each item nests the
   `Footnote` of a `footnote(note)` referent, then a `CitationPrefix` group and
@@ -247,7 +245,7 @@ Document scope=1:1..3:10 anchor=null attributes={} children=2
         └── Text scope=3:7..3:10 anchor=null attributes={} literal="note" children=0
 ```
 
-## Metadata and specimen nodes
+## Metadata nodes
 
 A present `Document.metadata` prints one `Metadata` line before document
 content. It prints `scope`, `anchor`, `attributes`, then `name`, `title`, `subtitle`, `time`, `date`,
@@ -256,12 +254,6 @@ A missing field prints `null`. A present field prints `scalar(null)`,
 `scalar(bool(true|false))`, `scalar(number("lexeme"))`, `scalar(text("..."))`,
 or `list([number("lexeme"),text("...")])`; lists may be empty. Metadata is a leaf node with no nested record lines or separate field scopes.
 Absent metadata emits no line.
-
-A specimen definition prints where it was written, as
-`Specimen scope=L:C..L:C anchor=null attributes={} label=<string or null> start=<integer or null> children=N`,
-followed by its block content. A specimen reference prints a `Cite`
-containing a `Citation` with `referent=specimen(label="...")` and empty affix
-groups. No derived display number is printed.
 
 ## Maintaining dump examples
 

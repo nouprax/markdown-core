@@ -78,24 +78,32 @@ const mdastKinds = {
     inlineCode: "Code",
     code: "CodeBlock",
     link: "Link",
-    image: "Embedded",
+    image: "Embed",
     break: "LineBreak",
     thematicBreak: "ThematicBreak",
     wikilink: "CrossLink",
     highlight: "Mark"
 };
 
+/** The dump's status of an Obsidian task character; one the dialect has no
+ * status for keeps its character, so it shows as a difference. */
+function taskStatus(char) {
+    if (char === undefined || char === null) return "null";
+    const statuses = { " ": "open", x: "done", X: "done", "?": "question", "-": "cancelled" };
+    return statuses[char] ?? JSON.stringify(char);
+}
+
 const comparedFields = {
     Heading: ["level"],
     Text: ["literal"],
     List: ["flavor", "start", "tight"],
-    ListItem: ["marker"],
+    ListItem: ["status"],
     Code: ["literal"],
     CodeBlock: ["literal", "info"],
     Link: ["dest", "title"],
-    Embedded: ["dest", "title"],
+    Embed: ["dest", "title"],
     CrossLink: ["dest", "label"],
-    CrossEmbedded: ["dest", "label"]
+    CrossEmbed: ["dest", "label"]
 };
 
 const yamlStringFallback = {
@@ -284,7 +292,7 @@ function normalizeChildren(children) {
 }
 
 function fromMdast(node, unknown, source) {
-    const kind = node.type === "wikilink" && node.embedded ? "CrossEmbedded" : mdastKinds[node.type];
+    const kind = node.type === "wikilink" && node.embedded ? "CrossEmbed" : mdastKinds[node.type];
     if (!kind) {
         unknown.add(node.type);
         return { kind: `?${node.type}`, fields: {}, children: [] };
@@ -299,7 +307,7 @@ function fromMdast(node, unknown, source) {
         fields.tight = String(!node.spread);
     }
     if (node.type === "listItem") {
-        fields.marker = node.data?.taskChar ?? "null";
+        fields.status = taskStatus(node.data?.taskChar);
     }
     if (node.type === "inlineCode") fields.literal = node.value;
     if (node.type === "code") {
@@ -618,7 +626,7 @@ for (const [input, label, dest, kind] of [
         crossDestination("Folder/Note", "Heading#Child"),
         "CrossLink"
     ],
-    ["![[Note#^block-id]]\n", "null", crossDestination("Note", "block-id"), "CrossEmbedded"]
+    ["![[Note#^block-id]]\n", "null", crossDestination("Note", "block-id"), "CrossEmbed"]
 ]) {
     const parsed = processor.runSync(processor.parse(input), input);
     const oracle = fromMdast(parsed, new Set(), input).children[0]?.children[0];

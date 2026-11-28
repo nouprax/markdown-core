@@ -9,9 +9,9 @@ import kotlin.test.assertTrue
 class AstTest {
     @Test
     fun definitionTermsAndOrderedBodiesSurviveNativeReleaseAndWalkWithoutWrappers() {
-        val block = Document.parse("::: box\n*T*\n: one\n~\n\nU\n\n: two\n:::\n").content.single() as DirectiveBlock
-        assertNull(block.name)
-        assertEquals(listOf("box"), block.attributes.classes)
+        val block = Document.parse(":::box\n*T*\n: one\n:\n\nU\n\n: two\n:::\n").content.single() as DirectiveBlock
+        assertEquals("box", block.name)
+        assertEquals(emptyList(), block.attributes.classes)
         val list = block.content.single() as DefinitionList
         assertEquals(2, list.definitions.size)
         val first = list.definitions[0]
@@ -151,7 +151,7 @@ class AstTest {
                 "HTML",
                 "Comment",
                 "CrossLink",
-                "CrossEmbedded",
+                "CrossEmbed",
                 "Formula",
                 "Emphasis",
                 "Strong",
@@ -162,7 +162,7 @@ class AstTest {
                 "Superscript",
                 "Subscript",
                 "Link",
-                "Embedded",
+                "Embed",
                 "Reference",
                 "Directive",
                 "Cite",
@@ -185,7 +185,7 @@ class AstTest {
         val ordered = document.content[0] as List
         assertEquals(ListFlavor.ORDERED, ordered.flavor)
         assertEquals(3, ordered.start)
-        assertEquals("x", (document.content[1] as List).items.single().marker)
+        assertEquals(TaskStatus.DONE, (document.content[1] as List).items.single().status)
         val table = document.content[2] as Table
         assertEquals(listOf(Flow.CENTER), table.columns.map { it.flow })
         assertEquals(1, table.head.size)
@@ -205,7 +205,7 @@ class AstTest {
         )
         val paragraph = document.content[3] as Paragraph
         val link = paragraph.content[0] as Link
-        val image = paragraph.content[2] as Embedded
+        val image = paragraph.content[2] as Embed
         assertEquals("/go", (link.dest as Destination.Url).value)
         assertNull(link.title)
         assertEquals("/image", (image.dest as Destination.Url).value)

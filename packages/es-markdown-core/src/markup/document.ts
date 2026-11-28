@@ -1,8 +1,6 @@
 import type { Metadata } from "./metadata.js";
 import type { MarkupBase } from "./base.js";
-import type { Specimen } from "./specimen.js";
 import type { Footnote } from "./footnote.js";
-import type { Heading } from "./heading.js";
 import type { Reference } from "./reference.js";
 import type { Markup } from "./markup.js";
 import type { Position, Scope, TextUnit } from "./values.js";
@@ -21,21 +19,16 @@ export interface Document extends MarkupBase<"document"> {
     readonly unit: TextUnit;
     /** Every `Footnote` of the document, inline notes included, in source order. */
     readonly footnotes: readonly Footnote[];
-    /** Every `Specimen` of the document, in source order. */
-    readonly specimens: readonly Specimen[];
     /** Every `Reference` of the document, in source order. */
     readonly references: readonly Reference[];
     /** The first footnote whose label equals `label`, or null. An inline note
      * has no label and never matches. */
     readonly footnote: (label: string) => Footnote | null;
-    /** The first specimen whose label equals `label`, or null. */
-    readonly specimen: (label: string) => Specimen | null;
     /**
-     * The node the normalized `label` of a `reference` destination names: the
-     * first `Reference` whose label equals it, else the first `Heading` whose
-     * text declares it, else null.
+     * The `Reference` the normalized `label` of a `reference` destination
+     * names: the first one whose label equals it, else null.
      */
-    readonly reference: (label: string) => Reference | Heading | null;
+    readonly reference: (label: string) => Reference | null;
     /**
      * The scopes of `node`, one per run in source order, computed from its
      * runs and `source`, the text the document was parsed from, with columns

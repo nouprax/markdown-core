@@ -24,13 +24,11 @@ typedef struct {
     int marker_offset;
     int padding;
     int start;
-    markdown_core_ordered_list_variant variant;
     markdown_core_ordered_list_delimiter delimiter;
     unsigned char bullet_char;
     bool tight;
-    /* The authored UTF-8 task marker, owned by the item; absent on ordinary
-     * items. Completion is derived by consumers, not stored by the tree. */
-    markdown_core_optional_chunk task_marker;
+    /* The status of the item's task check; NONE on ordinary items. */
+    markdown_core_task_status task;
 } markdown_core_list;
 
 typedef struct {
@@ -49,29 +47,10 @@ typedef struct {
     int8_t fence_closed;
 } markdown_core_code;
 
-/* A heading's `label` is the normalized reference label its text declares,
- * the one a reference occurrence names when no Reference declares it, in
- * storage the node owns (markdown_core_node_pool_bytes); empty when its text
- * declares none. */
-/* A NODE'S NAME, which the names service computes (names.c, THE NAMES)
- * for a node whose attributes write no anchor: the `base` its text projects
- * to, which an edit that reads it from a seam keeps in two parts (buffer.h,
- * markdown_core_split), and the `suffix` it shows: the name is the base, or
- * the base, a hyphen and the suffix. Empty when it holds none. `shown` is
- * the anchor the name shows, once read, when it is not the base whole
- * (markdown_core_name_anchor): a claim (claim.h), the node's storage. */
-typedef struct markdown_core_name {
-    markdown_core_strbuf base;
-    void *shown;
-    uint32_t suffix;
-} markdown_core_name;
-
 /* The record fits the node's slot (MARKDOWN_CORE_NODE_SLOT_RECORD_BYTES). */
 typedef struct {
     int level;
     bool setext;
-    markdown_core_chunk label;
-    markdown_core_name name;
 } markdown_core_heading;
 
 /* The title has one private inline parsing root throughout its lifetime.
@@ -83,7 +62,7 @@ typedef struct {
     struct markdown_core_node *title;
 } markdown_core_callout;
 
-/* THE RESOURCE a direct Link or Embedded, or a Reference, states: its
+/* THE RESOURCE a direct Link or Embed, or a Reference, states: its
  * destination and title, which the node owns out of its slot. */
 typedef struct markdown_core_resource {
     /* REQUIRED (Q26). `[a]()`, `[a](<>)` and `[a]: <>` wrote a destination
@@ -100,7 +79,7 @@ typedef struct {
     markdown_core_dimensions value;
 } markdown_core_optional_dimensions;
 
-/* A LINK OR EMBEDDED names its destination one of two ways (4.5): a direct
+/* A LINK OR EMBED names its destination one of two ways (4.5): a direct
  * one states it, in `resource`; a reference names the definition it resolves
  * to by its normalized label, in `label`, as a citation names a footnote, and
  * has no resource. The label is in storage the node owns
@@ -121,16 +100,15 @@ typedef struct {
 typedef struct {
     markdown_core_cross_reference reference;
     markdown_core_optional_dimensions dimensions;
-} markdown_core_cross_embedded;
+} markdown_core_cross_embed;
 
 /* THE REFERENT of one citation (M4): a tagged value. A `bib` referent, which
  * the citations module first produces with P7, carries a key and a mode; a
  * `footnote` referent carries the label of the `Footnote` it names, or owns
- * the inline note it stands for; a `specimen` referent carries a label. */
+ * the inline note it stands for. */
 typedef enum {
     MARKDOWN_CORE_NODE_REFERENT_BIB = 1,
-    MARKDOWN_CORE_NODE_REFERENT_FOOTNOTE = 2,
-    MARKDOWN_CORE_NODE_REFERENT_SPECIMEN = 3
+    MARKDOWN_CORE_NODE_REFERENT_FOOTNOTE = 2
 } markdown_core_node_referent_kind;
 
 /* ONE ITEM of a cite (M4): the referent, and the item's owned fields: the
@@ -161,15 +139,6 @@ typedef struct {
 typedef struct {
     markdown_core_optional_chunk label;
 } markdown_core_footnote_value;
-
-/* A specimen owns its optional authored label and effective explicit counter
- * reset. Anonymous definitions and absent resets remain absent; numbering is
- * derived from the document's definition order by consumers. */
-typedef struct {
-    markdown_core_optional_chunk label;
-    int64_t start;
-    bool has_start;
-} markdown_core_specimen_value;
 
 /* A REFERENCE: a link reference definition where it was written. `label` is
  * its normalized label, the one a reference occurrence names, in storage the
@@ -208,12 +177,12 @@ typedef struct markdown_core_node_table {
     markdown_core_table_place *places;
 } markdown_core_node_table;
 
-/* A DEFINITION TABLE of a published document: every Footnote, every
- * Specimen, or every Reference, in source order. */
+/* A DEFINITION TABLE of a published document: every Footnote or every
+ * Reference, in source order. */
 typedef struct markdown_core_definitions {
     markdown_core_node_table all;
     /* The labeled ones by label, in source order among equal labels: the
-     * Footnotes and Specimens a lookup by label answers from, every one, or
+     * Footnotes a lookup by label answers from, every one, or
      * a snapshot's own that no committed definition comes before. A label a
      * reference occurrence names resolves through the reference targets. */
     const struct markdown_core_node **labeled;
@@ -221,17 +190,15 @@ typedef struct markdown_core_definitions {
 } markdown_core_definitions;
 
 /* THE DOCUMENT's own field: the metadata the properties envelope produced.
- * Footnote, specimen and Reference definitions stay in the tree where they
+ * Footnote and Reference definitions stay in the tree where they
  * were written; publishing the document records its definition tables here,
  * and the nodes reference occurrences resolve to, by label: for each label,
- * the first Reference declaring it, or, when none does, the first Heading
- * whose text declares it. A snapshot's document shares the committed parse's
- * tables, `committed`, and lists what it adds to them in room the parse
+ * the first Reference declaring it. A snapshot's document shares the
+ * committed parse's tables, `committed`, and lists what it adds to them in room the parse
  * keeps, so it borrows every table; NULL in any other, which owns them. */
 typedef struct {
     struct markdown_core_node *metadata;
     markdown_core_definitions footnotes;
-    markdown_core_definitions specimens;
     markdown_core_definitions references;
     markdown_core_node_table reference_targets;
     const struct markdown_core_committed_tables *committed;
@@ -383,10 +350,9 @@ typedef union {
     markdown_core_callout *callout;
     markdown_core_link *link;
     markdown_core_cross_reference *cross_link;
-    markdown_core_cross_embedded *cross_embedded;
+    markdown_core_cross_embed *cross_embed;
     markdown_core_citation_item *citation;
     markdown_core_footnote_value *footnote;
-    markdown_core_specimen_value *specimen;
     markdown_core_reference_value *reference;
     markdown_core_document_value *document;
     markdown_core_metadata_fields *metadata;
@@ -430,15 +396,6 @@ struct markdown_core_node {
     markdown_core_place place;
     markdown_core_extent extent;
     int internal_offset;
-    /* WHAT ITS READING READ (blocks.c, THE REACH), in a parse that notes
-     * reach, measured from where it starts, `place.start`, so that text
-     * before it moving moves none of them: its reading began `opened` bytes
-     * before it (a paragraph its definitions were cut from); it was held
-     * open to `closed` past its start, its close's reading (a SPAN); its
-     * element's decisions read up to `look` past its start, and those of
-     * openers on its lines that opened no block of their own (a LOOK). 0
-     * for none. */
-    uint32_t opened, closed, look;
     /* This node's slice of parser-owned content-to-source runs. Zero count
      * means there is no mapped content (for example, an empty cell). */
     markdown_core_content_map content_map;

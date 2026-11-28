@@ -26,8 +26,6 @@ internal object WireDecoder {
             1 to ErrorCode.ALLOCATION_FAILED,
             2 to ErrorCode.OUT_OF_BOUNDS,
             3 to ErrorCode.KIND_MISMATCH,
-            4 to ErrorCode.SESSION_FLUSHED,
-            5 to ErrorCode.SESSION_STREAMING,
         )
 
     /** The failure a message's `u32` [status] code carries. */
@@ -35,6 +33,8 @@ internal object WireDecoder {
 
     // The contract's enums, in the order of their wire indices.
     private val flavors = listOf(ListFlavor.BULLET, ListFlavor.ORDERED)
+    private val delimiters = listOf(OrderedListDelimiter.PERIOD, OrderedListDelimiter.PARENTHESIS)
+    private val statuses = listOf(TaskStatus.OPEN, TaskStatus.DONE, TaskStatus.QUESTION, TaskStatus.CANCELLED)
     private val flows = listOf(Flow.NONE, Flow.LEFT, Flow.CENTER, Flow.RIGHT)
     private val placements = listOf(Placement.EMBEDDED, Placement.STANDALONE)
     private val bibModes = listOf(BibMode.NORMAL, BibMode.AUTHOR_IN_TEXT, BibMode.SUPPRESS_AUTHOR)
@@ -46,13 +46,9 @@ internal object WireDecoder {
         private var offset = 0
         private val nodes = ArrayList<Markup>()
 
-        /** Every footnote, specimen and reference built so far, by id, for the definition tables. */
+        /** Every footnote and reference built so far, by id, for the definition tables. */
         private val footnotes = HashMap<Long, Footnote>()
-        private val specimens = HashMap<Long, Specimen>()
         private val references = HashMap<Long, Reference>()
-
-        /** Every reference and heading built so far, by id, for the reference label table. */
-        private val resolvable = HashMap<Long, Markup>()
 
         fun decode(): Document {
             offset = STATUS_OFFSET
@@ -78,9 +74,7 @@ internal object WireDecoder {
             val children = Children(nodes.size)
             val node = children.fields(kind, id, extent, runs, anchor, attributes)
             if (node is Footnote) footnotes[id.value] = node
-            if (node is Specimen) specimens[id.value] = node
             if (node is Reference) references[id.value] = node
-            if (node is Reference || node is Heading) resolvable[id.value] = node
             nodes.subList(children.start, nodes.size).clear()
             nodes += node
         }
@@ -105,7 +99,6 @@ internal object WireDecoder {
                         optional(metadata),
                         unit,
                         table(footnotes),
-                        table(specimens),
                         table(references),
                         labels(),
                         id,
@@ -151,15 +144,13 @@ internal object WireDecoder {
                 NodeKind.LIST -> {
                     val flavor = index(flavors)
                     val start = optional { int() }
-                    val variant = optional { variant() }
-                    val delimiter = optional { delimiter() }
+                    val delimiter = optional { index(delimiters) }
                     val tight = bool()
                     val items = count()
                     take(items)
                     List(
                         flavor,
                         start,
-                        variant,
                         delimiter,
                         tight,
                         typed(items),
@@ -172,8 +163,8 @@ internal object WireDecoder {
                 }
 
                 NodeKind.LIST_ITEM -> {
-                    val marker = optional { string() }
-                    ListItem(marker, content(), id, extent, runs, anchor, attributes)
+                    val status = optional { index(statuses) }
+                    ListItem(status, content(), id, extent, runs, anchor, attributes)
                 }
 
                 NodeKind.CODE_BLOCK -> {
@@ -217,7 +208,7 @@ internal object WireDecoder {
                 }
 
                 NodeKind.DIRECTIVE_BLOCK -> {
-                    val name = optional { string() }
+                    val name = string()
                     val label = presence()
                     val content = count()
                     take(label, content)
@@ -273,8 +264,8 @@ internal object WireDecoder {
                     Link(destination(), optional { string() }, content(), id, extent, runs, anchor, attributes)
                 }
 
-                NodeKind.EMBEDDED -> {
-                    Embedded(
+                NodeKind.EMBED -> {
+                    Embed(
                         destination(),
                         optional { string() },
                         optional { dimensions() },
@@ -330,8 +321,8 @@ internal object WireDecoder {
                     Mark(content(), id, extent, runs, anchor, attributes)
                 }
 
-                NodeKind.CROSS_EMBEDDED -> {
-                    CrossEmbedded(
+                NodeKind.CROSS_EMBED -> {
+                    CrossEmbed(
                         cross(),
                         optional { string() },
                         optional { dimensions() },
@@ -396,12 +387,6 @@ internal object WireDecoder {
                 NodeKind.FOOTNOTE -> {
                     val label = optional { string() }
                     Footnote(label, content(), id, extent, runs, anchor, attributes)
-                }
-
-                NodeKind.SPECIMEN -> {
-                    val label = optional { string() }
-                    val start = optional { int() }
-                    Specimen(label, start, content(), id, extent, runs, anchor, attributes)
                 }
 
                 NodeKind.METADATA -> {
@@ -476,8 +461,8 @@ internal object WireDecoder {
         private fun <T : Markup> table(definitions: Map<Long, T>): kotlin.collections.List<T> =
             list { definitions.getValue(int()) }
 
-        /** A `u32` count and that many labels, each with the `u64` id of the reference or heading it resolves to. */
-        private fun labels(): Map<String, Markup> = list { string() to resolvable.getValue(int()) }.toMap()
+        /** A `u32` count and that many labels, each with the `u64` id of the reference it resolves to. */
+        private fun labels(): Map<String, Reference> = list { string() to references.getValue(int()) }.toMap()
 
         // ---- Values ------------------------------------------------------------
 
@@ -500,23 +485,7 @@ internal object WireDecoder {
         private fun referent(): CitationReferent? =
             when (u8()) {
                 0 -> CitationReferent.Bib(string(), index(bibModes))
-                1 -> if (u8() == 0) CitationReferent.Footnote(FootnoteTarget.Label(string())) else null
-                else -> CitationReferent.Specimen(string())
-            }
-
-        private fun variant(): OrderedListVariant =
-            when (u8()) {
-                0 -> OrderedListVariant.Decimal
-                1 -> OrderedListVariant.Alpha(bool())
-                2 -> OrderedListVariant.Roman(bool())
-                else -> OrderedListVariant.Default
-            }
-
-        private fun delimiter(): OrderedListDelimiter =
-            when (u8()) {
-                0 -> OrderedListDelimiter.Period
-                1 -> OrderedListDelimiter.Parenthesis(bool())
-                else -> OrderedListDelimiter.Default
+                else -> if (u8() == 0) CitationReferent.Footnote(FootnoteTarget.Label(string())) else null
             }
 
         private fun dimensions(): Dimensions = Dimensions(int().toInt(), optional { int().toInt() })

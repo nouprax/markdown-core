@@ -40,12 +40,6 @@ static inline const struct markdown_core_facet *markdown_core_core_facet(markdow
     return (size_t)kind < MARKDOWN_CORE_FACET_ROOM ? markdown_core_facet_table[kind] : NULL;
 }
 
-/** The anchor a published node shows, in `*anchor`: the one its attributes
- *  write, else the name the names service computed for it (names.h,
- *  markdown_core_name_anchor), as its kind's facet keeps it; empty when it
- *  has neither. False, `*anchor` untouched, when storage could not be had. */
-bool markdown_core_core_anchor(const markdown_core_node *node, markdown_core_chunk *anchor);
-
 /** A parser instance (parser.h) over the complete core dialect, extended by
  *  `setup` when present (see markdown_core_parser_setup_func). The product's
  *  composition root: the one site that selects the core dialect for the
@@ -67,11 +61,6 @@ markdown_core_node *markdown_core_parse_document(const char *buffer, size_t len)
 /** The literal formula payload of a formula element node: owned by the node
  *  and not NUL-terminated. */
 markdown_core_chunk markdown_core_elements_formula_literal(const markdown_core_node *node);
-/* A formula's literal in at most two parts, as a literal block's (node.h, A
- * LITERAL, LAZY): a FormulaBlock a fence became has it pending while its
- * content is in two. */
-void markdown_core_elements_formula_halves(const markdown_core_node *node, const unsigned char **front,
-                                           bufsize_t *front_size, const unsigned char **back, bufsize_t *back_size);
 /* Its bytes, joined if pending: false when storage could not be had. */
 bool markdown_core_elements_formula_read(const markdown_core_node *node, const unsigned char **data, bufsize_t *size);
 
@@ -85,11 +74,11 @@ markdown_core_formula_mode markdown_core_elements_get_formula_mode(markdown_core
 /** Sets the paragraph-internal layout mode of a formula element node. */
 void markdown_core_elements_set_formula_mode(markdown_core_node *node, markdown_core_formula_mode mode);
 
-/** Returns the directive name, or NULL for a nameless block. */
+/** Returns the directive name. */
 const char *markdown_core_elements_get_directive_name(const markdown_core_node *node);
 
 /** Sets the directive name of a directive element node, returning 0 when
- * the copy could not be allocated. NULL makes the directive nameless. */
+ * the copy could not be allocated. */
 int markdown_core_elements_set_directive_name(markdown_core_node *node, const char *name);
 
 #ifdef __cplusplus

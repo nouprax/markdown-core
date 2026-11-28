@@ -403,7 +403,7 @@ implementation; views remain 16 bytes.
 
 ### Fix evidence
 
-- At n=8,192, the combined deep/wide Embedded + email case fell from
+- At n=8,192, the combined deep/wide Embed + email case fell from
   982.437 ms to 3.838 ms; Span took 4.622 ms. Regressions vary depth and width
   independently and check the complete tree. A source-boundary audit prevents
   parser calls to arbitrary reparenting APIs, while existing tests continue to

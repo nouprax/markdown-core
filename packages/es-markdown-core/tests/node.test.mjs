@@ -1,20 +1,10 @@
 import { spawnSync } from "node:child_process";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import {
-    Document,
-    MarkdownCoreError,
-    MarkdownSession,
-    MarkupDumper,
-    Metadata,
-    Slot,
-    markupEquals,
-    walk
-} from "../dist/index.js";
+import { Document, MarkdownCoreError, MarkupDumper, markupEquals, walk } from "../dist/index.js";
 // Past index.js for the instance itself: the heap is what this asserts about,
 // and it is observable without the source carrying anything for the test.
 import { native } from "../dist/runtime/native.js";
-import { Server, ServerError } from "../dist/lsp.js";
 import { parseDocumentWithNative } from "../dist/runtime/parser.js";
 import { Decoder } from "../dist/wire/node-decoder.js";
 import { emptyVisitor } from "./visitor.mjs";
@@ -23,7 +13,7 @@ import { MessageWriter, nativeMessage } from "./wire.mjs";
 test("ast: dimensions belong to each image occurrence while each one names its Reference", () => {
     const source = '![*alt*|2147483647x2][r] ![3][r] ![bad|01][r]\n\n[r]: /shared "title"\n';
     const document = Document.parse(source);
-    const images = document.content[0].content.filter((node) => node.kind === "embedded");
+    const images = document.content[0].content.filter((node) => node.kind === "embed");
     assert.deepEqual(
         images.map((node) => node.dimensions),
         [{ width: 2147483647, height: 2 }, { width: 3, height: null }, null]
@@ -47,12 +37,12 @@ test("ast: dimensions belong to each image occurrence while each one names its R
         walkingVisitor((node, phase) => events.push(`${phase}:${nodeKindName(node)}`))
     );
     assert.deepEqual(events, [
-        "enter:Embedded",
+        "enter:Embed",
         "enter:Emphasis",
         "enter:Text",
         "exit:Text",
         "exit:Emphasis",
-        "exit:Embedded"
+        "exit:Embed"
     ]);
 });
 
@@ -321,7 +311,7 @@ test("api: the dialect has no switches, so a plain parse recognizes every featur
     for (const [source, witness] of [
         ["~~x~~\n", "Strikethrough scope="],
         ["www.example.com\n", "Link scope="],
-        ["- [x] task\n", 'marker="x"'],
+        ["- [x] task\n", "status=done"],
         ["ref[^a]\n\n[^a]: note\n", "Cite scope="],
         ["$x$\n", "Formula scope="],
         [":badge[label]\n", "Directive scope="],
@@ -471,25 +461,25 @@ test("ownership: a definition crosses the boundary once, as its Reference, howev
     assert.equal(document.reference("a"), reference);
 });
 
-test("ownership: forward heading references name their heading without its attributes", () => {
+test("ownership: forward references name their definition without its attributes", () => {
     const count = 5_000;
-    const source = (size) => `${"[Target]\n\n".repeat(count)}# Target {#${"a".repeat(size)} .heading k=1}\n`;
+    const source = (size) => `${"[Target]\n\n".repeat(count)}[Target]: /t {#${"a".repeat(size)} .ref k=1}\n`;
     const size = 1024;
     const anchor = "a".repeat(size);
-    // The anchor crosses once, on the heading, whatever the number of
+    // The anchor crosses once, on the definition, whatever the number of
     // references.
     const growth = nativeMessage(source(size)).length - nativeMessage(source(1)).length;
     assert.ok(growth < 2 * (size - 1), `the message grew ${growth} bytes`);
     const document = Document.parse(source(size));
-    const head = document.content[count];
+    const definition = document.content[count];
     const links = document.content.slice(0, count).map((paragraph) => paragraph.content[0]);
-    assert.equal(head.anchor, anchor);
+    assert.equal(definition.anchor, anchor);
     assert.deepEqual(links[0].dest, { kind: "reference", label: "target" });
     assert.ok(links.every((link) => link.dest.kind === "reference" && link.dest.label === "target"));
     assert.ok(links.every((link) => link.anchor === null && link.title === null));
     assert.deepEqual(links[0].attributes, { classes: [], records: [] });
-    assert.deepEqual(document.references, []);
-    assert.equal(document.reference("target"), head);
+    assert.deepEqual(document.references, [definition]);
+    assert.equal(document.reference("target"), definition);
 });
 
 test("ast: an ordinary quote is a metadata-free callout", () => {
@@ -644,407 +634,6 @@ test("robustness: uncapped list nesting remains traversable", () => {
     assert.equal(node.kind, "paragraph");
 });
 
-test("robustness: a session continues a deep document", () => {
-    // Plan gates 4.8: the deep document of a session, appended to at its
-    // deepest leaf, compares, walks, locates and describes like a fresh parse.
-    const depth = 10_000;
-    const source = "- ".repeat(depth) + "lea";
-    const session = new MarkdownSession(source);
-    try {
-        const first = session.document;
-        assert.ok(markupEquals(first, Document.parse(source)));
-        const appended = session.append("n\n");
-        assert.equal(markupEquals(appended, first), false);
-        assert.equal(appended.content[0].id, first.content[0].id);
-        let entered = 0;
-        walk(
-            appended,
-            walkingVisitor((_node, phase) => {
-                if (phase === "enter") entered += 1;
-            })
-        );
-        assert.equal(entered, depth * 2 + 3);
-        let node = appended.content[0];
-        while (node.kind === "list") node = node.items[0].content[0];
-        const leaf = node.content[0];
-        assert.equal(leaf.literal, "lean");
-        const column = depth * 2 + 1;
-        assert.deepEqual(appended.scope(leaf, session.text), [
-            {
-                start: { line: 1, column },
-                end: { line: 1, column: column + 3 }
-            }
-        ]);
-        assert.equal(appended.nodeAt({ line: 1, column }, session.text), leaf);
-    } finally {
-        session.dispose();
-    }
-});
-
-test("api: a session's flush returns the final document and ends the session", () => {
-    for (const unit of ["utf8", "utf16"]) {
-        const session = new MarkdownSession("[a]\n\n", { unit });
-        try {
-            const snapshot = session.append("[a]: /url\n");
-            // A snapshot's lookup sees only the definitions written before it.
-            assert.notEqual(snapshot.dump(session.text), Document.parse(session.text, { unit }).dump(session.text));
-            const final = session.flush();
-            const text = session.text;
-            assert.equal(final, session.document);
-            assert.equal(final.dump(text), Document.parse(text, { unit }).dump(text));
-            const flushed = (error) => error instanceof MarkdownCoreError && error.code === "sessionFlushed";
-            assert.throws(() => session.append("more"), flushed);
-            assert.throws(() => session.flush(), flushed);
-            assert.equal(session.text, text);
-            assert.equal(session.document, final);
-        } finally {
-            session.dispose();
-        }
-    }
-});
-
-test("api: a session's first document is a snapshot of its source", () => {
-    for (const unit of ["utf8", "utf16"]) {
-        const session = new MarkdownSession("[a]\n\n[a]: /url\n", { unit });
-        try {
-            const text = session.text;
-            // The source is the first append, so the use before its definition stays unresolved.
-            assert.notEqual(session.document.dump(text), Document.parse(text, { unit }).dump(text));
-            assert.equal(session.flush().dump(text), Document.parse(text, { unit }).dump(text));
-        } finally {
-            session.dispose();
-        }
-    }
-});
-
-/** The text every edit sweep starts from: ASCII, so a column is a byte. */
-const sweepSource =
-    "# Title [a]\n\nfirst *one* `code`{.c}\n\n- item\n- second\n\n> quote\n\n<https://a.b>{.e} [a]{k=1}\n\n[a]: /url\n";
-/** What each sweep writes at a cursor, and so removes again. */
-const sweepWrites = ["*", "\n", "- ", "#", "`", "> ", "[a]", "x"];
-
-/** Every cursor of an ASCII `text`: each line's columns, its end included. */
-function cursors(text) {
-    return text
-        .split("\n")
-        .flatMap((content, line) =>
-            Array.from({ length: content.length + 1 }, (_, column) => ({ line: line + 1, column: column + 1 }))
-        );
-}
-
-/** The cursor after the ASCII `written` is written at `cursor`. */
-function cursorAfter(written, cursor) {
-    const lines = written.split("\n");
-    if (lines.length === 1) return { line: cursor.line, column: cursor.column + written.length };
-    return { line: cursor.line + lines.length - 1, column: lines.at(-1).length + 1 };
-}
-
-/** Each definition table of `document` as dumps of its entries, in order. */
-function tables(document, text) {
-    return [document.footnotes, document.specimens, document.references].map((table) =>
-        table.map((item) => MarkupDumper.dump(document, item, text))
-    );
-}
-
-/** A context's openers and slots: what the edit oracle compares of it. */
-function contextFields(context) {
-    const opener = ({ kind, scope }) => ({ kind, scope });
-    return {
-        blocks: context.blocks.map(opener),
-        inlines: context.inlines.map(opener),
-        slots: context.slots.map(({ kind, owner, before, after, closed, prefix }) => ({
-            kind,
-            owner,
-            before,
-            after,
-            closed,
-            prefix: [...prefix]
-        }))
-    };
-}
-
-/**
- * The edit oracle (incremental plan 12.7) on the edited `session`: its
- * document dumps as a fresh parse of its text, its definition tables hold the
- * fresh parse's, and its context after every slot cue of the ASCII text is
- * that of a session opened on the text.
- */
-function assertOracle(session, unit, label) {
-    const text = session.text;
-    const fresh = Document.parse(text, { unit });
-    assert.equal(session.document.dump(text), fresh.dump(text), label);
-    assert.deepEqual(tables(session.document, text), tables(fresh, text), label);
-    const opened = new MarkdownSession(text, { unit });
-    try {
-        opened.flush();
-        let line = 1;
-        let column = 1;
-        for (const character of text) {
-            if (character === "\n") {
-                line++;
-                column = 1;
-            } else {
-                column++;
-            }
-            if (!Slot.cues.includes(character)) continue;
-            const place = { line, column };
-            session.locate(place);
-            opened.locate(place);
-            assert.deepEqual(
-                contextFields(session.context),
-                contextFields(opened.context),
-                `${label} at ${line}:${column}`
-            );
-        }
-    } finally {
-        opened.dispose();
-    }
-}
-
-test("api: an edit at every cursor, and its undoing, hold the edit oracle", () => {
-    for (const unit of ["utf8", "utf16"]) {
-        const session = new MarkdownSession(sweepSource, { unit });
-        try {
-            session.flush();
-            cursors(sweepSource).forEach((place, index) => {
-                const written = sweepWrites[index % sweepWrites.length];
-                const document = session.edit(place, place, written);
-                assert.equal(document, session.document);
-                const where = `${JSON.stringify(written)} at ${place.line}:${place.column}`;
-                assertOracle(session, unit, where);
-                session.edit(place, cursorAfter(written, place), "");
-                assert.equal(session.text, sweepSource);
-                const undone = session.document.dump(sweepSource);
-                assert.equal(undone, Document.parse(sweepSource, { unit }).dump(sweepSource), `${where}, undone`);
-            });
-        } finally {
-            session.dispose();
-        }
-    }
-});
-
-test("api: an edit's cursors count columns in the session's unit", () => {
-    // 🚀 is four UTF-8 bytes and two UTF-16 units.
-    for (const [unit, column] of [
-        ["utf8", 5],
-        ["utf16", 3]
-    ]) {
-        const session = new MarkdownSession("🚀 one\n\ntwo\n", { unit });
-        try {
-            session.flush();
-            session.edit({ line: 1, column }, { line: 1, column: column + 4 }, "*won*");
-            assert.equal(session.text, "🚀*won*\n\ntwo\n");
-            assert.equal(
-                session.document.dump(session.text),
-                Document.parse(session.text, { unit }).dump(session.text)
-            );
-        } finally {
-            session.dispose();
-        }
-    }
-});
-
-test("api: a node an edit did not reach is the old node, and one it read again keeps its id", () => {
-    const session = new MarkdownSession("# Title\n\nfirst\n\nsecond\n");
-    try {
-        const before = session.flush();
-        const end = { line: 5, column: 7 };
-        const after = session.edit(end, end, " one");
-        assert.equal(session.text, "# Title\n\nfirst\n\nsecond one\n");
-        // Each step decodes a new value tree, so an unchanged node is equal, not the same object.
-        assert.ok(markupEquals(after.content[0], before.content[0]));
-        assert.ok(markupEquals(after.content[1], before.content[1]));
-        assert.equal(after.content[0].id, before.content[0].id);
-        assert.equal(after.content[2].id, before.content[2].id);
-        assert.equal(markupEquals(after.content[2], before.content[2]), false);
-    } finally {
-        session.dispose();
-    }
-});
-
-test("errors: an edit before flush, out of bounds or backwards throws and changes nothing", () => {
-    const session = new MarkdownSession("- text\n");
-    try {
-        const start = { line: 1, column: 1 };
-        const inside = { line: 1, column: 4 };
-        const nowhere = { line: 9, column: 1 };
-        assert.throws(() => session.edit(start, start, "x"), { code: "sessionStreaming" });
-        session.append("more\n");
-        const final = session.flush();
-        session.locate(inside);
-        const open = session.context;
-        assert.ok(open.blocks.length > 0);
-        assert.throws(() => session.edit(inside, start, ""), { code: "outOfBounds" });
-        assert.throws(() => session.edit(nowhere, nowhere, ""), { code: "outOfBounds" });
-        assert.throws(() => session.edit({ line: 0, column: 1 }, start, ""), { code: "outOfBounds" });
-        assert.equal(session.text, "- text\nmore\n");
-        assert.equal(session.document, final);
-        assert.equal(session.context, open);
-        // An edit that runs empties the context, since it changes the text.
-        session.edit(start, start, "a ");
-        assert.equal(session.context.blocks.length, 0);
-    } finally {
-        session.dispose();
-    }
-});
-
-test("errors: a disposed session takes no further call", () => {
-    const session = new MarkdownSession("text\n");
-    session.dispose();
-    session.dispose();
-    assert.throws(() => session.append("more"), Error);
-    assert.throws(() => session.flush(), Error);
-    assert.throws(() => session.edit({ line: 1, column: 1 }, { line: 1, column: 1 }, ""), Error);
-    assert.throws(() => session.text, Error);
-    assert.equal(session.document.content.length, 1);
-});
-
-test("api: a session's context lists what the text before the cursor leaves open, and its slots spell", () => {
-    const session = new MarkdownSession("[[No\n");
-    session.flush();
-    session.locate({ line: 1, column: 5 });
-    const context = session.context;
-    assert.deepEqual(context.blocks, [{ kind: "paragraph", scope: scope(1, 1, 1, 4) }]);
-    assert.deepEqual(
-        context.inlines.map((opener) => opener.kind),
-        ["crossLink", null, null]
-    );
-    const [slot] = context.slots;
-    assert.equal(context.slots.length, 1);
-    assert.equal(slot.kind, "dest");
-    assert.equal(slot.owner, "crossLink");
-    assert.deepEqual(
-        [slot.before, slot.after, slot.closed, slot.prefix],
-        [scope(1, 3, 1, 4), scope(1, 5, 1, 4), false, []]
-    );
-    // The closer follows the value and the caret stands before it, in columns
-    // of the session's unit.
-    assert.deepEqual(session.spell(slot, "é🚀"), { text: "é🚀]]", cursor: 3 });
-    assert.deepEqual(session.spell(slot, ["x", "a|b"]), [{ text: "x]]", cursor: 1 }, null]);
-    const bytes = new MarkdownSession("[[No\n", { unit: "utf8" });
-    bytes.locate({ line: 1, column: 5 });
-    assert.deepEqual(bytes.spell(bytes.context.slots[0], "é🚀"), { text: "é🚀]]", cursor: 6 });
-    bytes.dispose();
-    session.dispose();
-});
-
-test("api: the context is the session's state, which a locate replaces and text clears", () => {
-    const session = new MarkdownSession("[[No");
-    assert.deepEqual(session.context, { blocks: [], inlines: [], slots: [] });
-    session.locate({ line: 1, column: 5 });
-    const [slot] = session.context.slots;
-    assert.equal(session.context, session.context);
-    session.locate({ line: 1, column: 1 });
-    assert.deepEqual(session.context.slots, []);
-    assert.throws(() => session.spell(slot, "x"), { code: "outOfBounds" });
-    session.locate({ line: 1, column: 5 });
-    const [next] = session.context.slots;
-    assert.throws(() => session.locate({ line: 3, column: 1 }), { code: "outOfBounds" });
-    assert.equal(session.context.slots[0], next);
-    session.append("te]]\n");
-    assert.deepEqual(session.context.slots, []);
-    assert.throws(() => session.spell(next, "x"), { code: "outOfBounds" });
-    session.locate({ line: 1, column: 5 });
-    assert.equal(session.context.slots[0].closed, true);
-    session.flush();
-    assert.deepEqual(session.context.slots, []);
-    session.locate({ line: 1, column: 5 });
-    const [last] = session.context.slots;
-    assert.throws(() => session.flush(), { code: "sessionFlushed" });
-    assert.equal(session.context.slots[0], last);
-    assert.deepEqual(session.spell(last, "x"), { text: "x", cursor: 1 });
-    const other = new MarkdownSession("[[No te]]\n");
-    other.locate({ line: 1, column: 5 });
-    assert.throws(() => other.spell(last, "x"), { code: "outOfBounds" });
-    other.dispose();
-    session.dispose();
-});
-
-test("api: the lexicons are the dialect's metadata fields and slot cues", () => {
-    assert.deepEqual(Metadata.fields, [
-        "name",
-        "title",
-        "subtitle",
-        "time",
-        "date",
-        "authors",
-        "keywords",
-        "abstract",
-        "state",
-        "comment"
-    ]);
-    assert.ok(Slot.cues.includes("[") && Slot.cues.includes("(") && Slot.cues.includes("\n"));
-    assert.deepEqual([...Slot.cues].sort(), Slot.cues);
-    assert.ok(Slot.cues.every((cue) => cue.length === 1));
-    assert.equal(Slot.cues, Slot.cues);
-});
-
-test("api: a session's path, field and marker queries divide a node's own source", () => {
-    const source = '**a** [t](/x "T")\n';
-    const session = new MarkdownSession(source, { unit: "utf8" });
-    const document = session.flush();
-    const [strong, , link] = document.content[0].content;
-    assert.deepEqual(
-        session.path({ line: 1, column: 2 }).map((node) => node.kind),
-        ["document", "paragraph", "strong"]
-    );
-    assert.deepEqual(session.path({ line: 1, column: 3 }).at(-1), document.nodeAt({ line: 1, column: 3 }, source));
-    assert.deepEqual(session.path({ line: 9, column: 1 }), []);
-    assert.deepEqual(session.markers(strong), [scope(1, 1, 1, 2), scope(1, 4, 1, 5)]);
-    assert.deepEqual(session.scope(strong, null), []);
-    assert.deepEqual(session.scope(link, "dest"), [scope(1, 11, 1, 12)]);
-    assert.deepEqual(session.scope(link, null), [scope(1, 15, 1, 15)]);
-    assert.deepEqual(session.scope(link, "label"), []);
-    session.dispose();
-});
-
-test("api: a node an append left alone is held by the later document", () => {
-    const session = new MarkdownSession("**a**\n\n");
-    const strong = session.document.content[0].content[0];
-    session.append("b\n");
-    assert.deepEqual(session.markers(strong), [scope(1, 1, 1, 2), scope(1, 4, 1, 5)]);
-    session.dispose();
-});
-
-test("errors: the session's queries reject a position, node or slot kind they cannot read", () => {
-    const session = new MarkdownSession("**a**\n");
-    const strong = session.document.content[0].content[0];
-    for (const position of [
-        { line: 0, column: 1 },
-        { line: 1, column: 0 },
-        { line: 1.5, column: 1 },
-        { line: 1, column: 2 ** 31 }
-    ]) {
-        assert.throws(() => session.locate(position), { code: "outOfBounds" });
-        assert.throws(() => session.path(position), { code: "outOfBounds" });
-    }
-    assert.throws(() => session.locate({ line: 3, column: 1 }), { code: "outOfBounds" });
-    const other = new MarkdownSession("*a*\n");
-    // The same id, in a document that holds another node with it.
-    assert.throws(() => session.markers(other.document.content[0].content[0]), { code: "outOfBounds" });
-    other.dispose();
-    assert.throws(() => session.scope(strong, "unknown"), { code: "outOfBounds" });
-    assert.throws(() => session.scope(Document.parse("x").content[0], null), { code: "outOfBounds" });
-    session.dispose();
-});
-
-test("errors: a disposed session answers no query and its slots spell nothing", () => {
-    const session = new MarkdownSession("[[No\n");
-    session.locate({ line: 1, column: 5 });
-    const [slot] = session.context.slots;
-    const node = session.document.content[0];
-    session.dispose();
-    assert.throws(() => session.locate({ line: 1, column: 5 }), /disposed/);
-    assert.throws(() => session.path({ line: 1, column: 1 }), /disposed/);
-    assert.throws(() => session.scope(node, null), /disposed/);
-    assert.throws(() => session.markers(node), /disposed/);
-    assert.throws(() => session.spell(slot, "x"), /disposed/);
-});
-
-function scope(startLine, startColumn, endLine, endColumn) {
-    return { start: { line: startLine, column: startColumn }, end: { line: endLine, column: endColumn } };
-}
-
 function decoder(bytes, unit = "utf16") {
     return new Decoder(bytes, unit);
 }
@@ -1079,7 +668,6 @@ test("ast: inline notes are owned by their referents and definitions stay where 
     // A lookup names the first definition of a label; an inline note has none.
     assert.equal(document.footnote("inline-1"), authored);
     assert.equal(document.footnote("inline-2"), null);
-    assert.deepEqual(document.specimens, []);
     const events = [];
     walk(
         document,
@@ -1271,9 +859,7 @@ test("errors: a native failure maps its status by value across the WASM boundary
     for (const [status, code] of [
         [1, "allocationFailed"],
         [2, "outOfBounds"],
-        [3, "kindMismatch"],
-        [4, "sessionFlushed"],
-        [5, "sessionStreaming"]
+        [3, "kindMismatch"]
     ]) {
         assert.throws(
             () => decoder(new MessageWriter().error(status)).decode(),
@@ -1358,7 +944,7 @@ test("ast: ids up to 2^53 - 1 and definition tables decode exactly", () => {
 test("ast: References, reference destinations and the reference label table decode exactly", () => {
     // Destination: url(0) | cross(1) | reference(2). A Reference record is
     // its label, its destination and its title; the label table pairs each
-    // label that resolves with the id of its Reference or Heading.
+    // label that resolves with the id of its Reference.
     const bytes = new MessageWriter()
         .text("H", { id: 1 })
         .record("heading", { id: 2, anchor: "h" })
@@ -1371,7 +957,7 @@ test("ast: References, reference destinations and the reference label table deco
         .bool(false)
         .u32(1)
         .text("b", { id: 5 })
-        .record("embedded", { id: 6 })
+        .record("embed", { id: 6 })
         .u8(2)
         .string("h")
         .bool(false)
@@ -1392,10 +978,7 @@ test("ast: References, reference destinations and the reference label table deco
         .root(4, {
             id: 10,
             references: [8, 9],
-            labels: [
-                ["h", 2],
-                ["r", 8]
-            ]
+            labels: [["r", 8]]
         })
         .document();
     const document = decoder(bytes).decode();
@@ -1418,7 +1001,8 @@ test("ast: References, reference destinations and the reference label table deco
     assert.deepEqual(first.attributes, { classes: ["c"], records: [] });
     assert.deepEqual(document.references, [first, second]);
     assert.equal(document.reference("r"), first);
-    assert.equal(document.reference("h"), head);
+    assert.equal(document.reference("h"), null);
+    assert.equal(head.kind, "heading");
     assert.equal(document.reference("missing"), null);
     assert.ok(!Object.keys(document).includes("references"));
     const dumped = document.dump("");
@@ -1442,7 +1026,7 @@ test("ast: References, reference destinations and the reference label table deco
     ]);
 });
 
-test("api: Document lists every Reference and resolves a label to the first one, else to a heading", () => {
+test("api: Document lists every Reference and resolves a label to the first one", () => {
     const source = "[x] [Head] [none]\n\n[X]: /first {.a}\n\n[x]: /second\n\n# Head\n\n[head]: /shadow\n";
     const document = Document.parse(source);
     const [block, first, second, head, shadow] = document.content;
@@ -1463,19 +1047,12 @@ test("api: Document lists every Reference and resolves a label to the first one,
     assert.deepEqual(link.dest, { kind: "reference", label: "x" });
     assert.deepEqual(link.attributes, { classes: [], records: [] });
     assert.deepEqual(first.attributes, { classes: ["a"], records: [] });
-    assert.equal(Document.parse("# Only\n\n[Only]\n").reference("only").kind, "heading");
+    assert.equal(Document.parse("# Only\n\n[Only]\n").reference("only"), null);
 });
 
-test("ast: every ordered delimiter and associated numbering value survives decoding", () => {
-    // Branch indexes of OrderedListVariant and OrderedListDelimiter, in the
-    // contract's declaration order.
-    const delimiters = [
-        [0, null, "period"],
-        [1, false, { kind: "parenthesis", closed: false }],
-        [1, true, { kind: "parenthesis", closed: true }],
-        [2, null, "default"]
-    ];
-    const list = (variant, lowercased, delimiter, closed) => {
+test("ast: every ordered delimiter survives decoding", () => {
+    // Branch indexes of OrderedListDelimiter, in the contract's declaration order.
+    const list = (delimiter) => {
         const writer = new MessageWriter()
             .text("item")
             .record("paragraph")
@@ -1487,45 +1064,30 @@ test("ast: every ordered delimiter and associated numbering value survives decod
             .u8(1)
             .optional(1, MessageWriter.prototype.int)
             .bool(true)
-            .u8(variant);
-        if (lowercased !== null) writer.bool(lowercased);
-        writer.bool(true).u8(delimiter);
-        if (closed !== null) writer.bool(closed);
+            .u8(delimiter);
         return decoder(writer.bool(true).u32(1).root(1).document()).decode();
     };
-    for (const [variant, kind] of [
-        [1, "alpha"],
-        [2, "roman"]
+    for (const [delimiter, expected] of [
+        [0, "period"],
+        [1, "parenthesis"]
     ]) {
-        for (const lowercased of [false, true]) {
-            for (const [delimiter, closed, expected] of delimiters) {
-                const document = list(variant, lowercased, delimiter, closed);
-                assert.deepEqual(document.content[0].variant, { kind, lowercased });
-                assert.deepEqual(document.content[0].delimiter, expected);
-                assert.match(
-                    MarkupDumper.dump(document, ""),
-                    new RegExp(`variant=${kind}\\(lowercased=${lowercased}\\)`)
-                );
-                const spelling = typeof expected === "string" ? expected : `parenthesis(closed=${closed})`;
-                assert.ok(MarkupDumper.dump(document, "").includes(`delimiter=${spelling}`));
-            }
-        }
+        const document = list(delimiter);
+        assert.equal(document.content[0].delimiter, expected);
+        assert.ok(MarkupDumper.dump(document, "").includes(`delimiter=${expected}`));
     }
-    assert.equal(list(0, null, 0, null).content[0].variant, "decimal");
-    assert.equal(list(3, null, 2, null).content[0].variant, "default");
 });
 
-test("ast: a UTF-8 task marker is an owned string, independent of the payload", () => {
+test("ast: a task status is read from its wire index", () => {
     const bytes = new MessageWriter()
         .text("x")
         .record("paragraph")
         .u32(1)
         .record("listItem")
-        .optional("🚀", MessageWriter.prototype.string)
+        .bool(true)
+        .u8(2)
         .u32(1)
         .record("list")
         .u8(0)
-        .bool(false)
         .bool(false)
         .bool(false)
         .bool(true)
@@ -1534,83 +1096,8 @@ test("ast: a UTF-8 task marker is an owned string, independent of the payload", 
         .document();
     const document = decoder(bytes).decode();
     bytes.fill(0);
-    assert.equal(document.content[0].items[0].marker, "🚀");
-    assert.equal(document.content[0].items[0].completed, true);
-    assert.ok(MarkupDumper.dump(document, "").includes('marker="🚀"'));
-});
-
-test("ast: specimen definitions and references retain ownership, nulls and reset facts", () => {
-    // CitationReferent: bib(0) | footnote(1) | specimen(2); FootnoteTarget:
-    // label(0) | note(1).
-    const message = (start) => {
-        const writer = new MessageWriter();
-        writer.record("citation").u8(1).u8(0).string("note").u32(0).u32(0).record("cite").u32(1);
-        writer.text(" ");
-        writer.record("citation").u8(2).string("étude").u32(0).u32(0).record("cite").u32(1);
-        return writer
-            .record("paragraph")
-            .u32(3)
-            .text("note")
-            .record("paragraph")
-            .u32(1)
-            .record("footnote", { id: 20 })
-            .optional("note", MessageWriter.prototype.string)
-            .u32(1)
-            .text("body")
-            .record("paragraph")
-            .u32(1)
-            .record("specimen", { id: 30 })
-            .optional("étude", MessageWriter.prototype.string)
-            .optional(start, MessageWriter.prototype.int)
-            .u32(1)
-            .text("tail")
-            .record("paragraph")
-            .u32(1)
-            .record("specimen", { id: 31 })
-            .bool(false)
-            .bool(false)
-            .u32(1)
-            .root(4, { footnotes: [20], specimens: [30, 31] })
-            .document();
-    };
-    const bytes = message(5);
-    const document = decoder(bytes).decode();
-    bytes.fill(0);
-    assert.deepEqual(
-        document.content.map((node) => node.kind),
-        ["paragraph", "footnote", "specimen", "specimen"]
-    );
-    assert.deepEqual(document.footnotes, [document.content[1]]);
-    assert.deepEqual(document.specimens, [document.content[2], document.content[3]]);
-    assert.deepEqual(
-        document.specimens.map(({ label, start }) => [label, start]),
-        [
-            ["étude", 5],
-            [null, null]
-        ]
-    );
-    assert.equal(document.specimen("étude"), document.content[2]);
-    assert.equal(document.specimen("etude"), null);
-    assert.equal(document.footnote("note"), document.content[1]);
-    assert.equal(document.specimens[0].content[0].content[0].literal, "body");
-    assert.deepEqual(document.content[0].content[0].citations[0].referent, {
-        kind: "footnote",
-        target: { kind: "label", value: "note" }
-    });
-    assert.deepEqual(document.content[0].content[2].citations[0].referent, { kind: "specimen", label: "étude" });
-    const dumped = document.dump("");
-    assert.match(dumped, /Specimen scope=\S+ anchor=null attributes=\{\} label="étude" start=5 children=1/u);
-    assert.match(dumped, /Specimen scope=\S+ anchor=null attributes=\{\} label=null start=null children=1/u);
-    assert.match(dumped, /referent=footnote\(label="note"\)[^]*referent=specimen\(label="étude"\)/u);
-    const events = [];
-    walk(
-        document,
-        walkingVisitor((value, phase) => {
-            if (phase === "enter") events.push(value.kind);
-        })
-    );
-    assert.equal(events.filter((kind) => kind === "specimen").length, 2);
-    assert.ok(events.indexOf("footnote") < events.indexOf("specimen"));
+    assert.equal(document.content[0].items[0].status, "question");
+    assert.ok(MarkupDumper.dump(document, "").includes("status=question"));
 });
 
 test("ast: table groups and columns survive the wire as owned facts", () => {
@@ -1726,7 +1213,7 @@ test("ast: dimensions belong to occurrences and universal attributes survive rel
     const bytes = nativeMessage("![a|640x480][r] ![b][r]\n\n[r]: /u\n");
     const document = decoder(bytes).decode();
     bytes.fill(0);
-    const images = document.content[0].content.filter((value) => value.kind === "embedded");
+    const images = document.content[0].content.filter((value) => value.kind === "embed");
     assert.deepEqual(
         images.map((value) => value.dest),
         [
@@ -1755,15 +1242,13 @@ test("ast: dimensions belong to occurrences and universal attributes survive rel
 test("ast: cross links retain raw values after native release", () => {
     const bytes = nativeMessage("[[Note]] [[Note|]] ![[#^id|raw *label*]]\n");
     const document = decoder(bytes).decode();
-    const links = document.content[0].content.filter(
-        (node) => node.kind === "crossLink" || node.kind === "crossEmbedded"
-    );
+    const links = document.content[0].content.filter((node) => node.kind === "crossLink" || node.kind === "crossEmbed");
     assert.deepEqual(
         links.map((node) => [node.kind, node.dest, node.label]),
         [
             ["crossLink", { kind: "cross", path: "Note", anchor: null }, null],
             ["crossLink", { kind: "cross", path: "Note", anchor: null }, ""],
-            ["crossEmbedded", { kind: "cross", path: "", anchor: "id" }, "raw *label*"]
+            ["crossEmbed", { kind: "cross", path: "", anchor: "id" }, "raw *label*"]
         ]
     );
     assert.ok(links.every((node) => !("embedded" in node)));
@@ -1774,7 +1259,7 @@ test("ast: cross links retain raw values after native release", () => {
         links[2],
         walkingVisitor((node, phase) => events.push(`${phase}:${node.kind}`))
     );
-    assert.deepEqual(events, ["enter:crossEmbedded", "exit:crossEmbedded"]);
+    assert.deepEqual(events, ["enter:crossEmbed", "exit:crossEmbed"]);
     bytes.fill(0);
     assert.equal(links[2].label, "raw *label*");
 });
@@ -1815,7 +1300,7 @@ test("ast: Properties keep recognized fields and literal prose after native rele
     assert.equal(Document.parse("---\nname: 1\n").metadata, null);
 });
 
-test("ast: embedded dimensions survive the wire lifetime", () => {
+test("ast: embed dimensions survive the wire lifetime", () => {
     const bytes = nativeMessage("![[#^id|raw *label*|2147483647x2]]\n");
     const document = decoder(bytes).decode();
     bytes.fill(0);
@@ -1865,11 +1350,11 @@ test("ast: P2 attributes preserve native arrays, ownership, dimensions and occur
 });
 
 test("ast: definition terms and ordered bodies are owned and walk without body wrapper nodes", () => {
-    const bytes = nativeMessage("::: box\n*T*\n: one\n~\n\nU\n\n: two\n:::\n");
+    const bytes = nativeMessage(":::box\n*T*\n: one\n:\n\nU\n\n: two\n:::\n");
     const block = decoder(bytes).decode().content[0];
     bytes.fill(0);
-    assert.equal(block.name, null);
-    assert.deepEqual(block.attributes.classes, ["box"]);
+    assert.equal(block.name, "box");
+    assert.deepEqual(block.attributes.classes, []);
     const list = block.content[0];
     assert.equal(list.kind, "definitionList");
     assert.equal(list.kind, "definitionList");
@@ -1932,13 +1417,13 @@ test("ast: a definition's term and bodies decode in field order", () => {
 });
 
 test("api: owned elements are Markup with finite walks and preserved labels", () => {
-    const source = "---\ntitle: Example\n---\n[^Label]\n\n[^label]: self [^LABEL]\n\n(@sample) Body\n";
+    const source = "---\ntitle: Example\n---\n[^Label]\n\n[^label]: self [^LABEL]\n";
     const document = Document.parse(source);
     const citation = document.content[0].content[0].citations[0];
-    const nodes = [document.metadata, citation, document.footnotes[0], document.specimens[0]];
+    const nodes = [document.metadata, citation, document.footnotes[0]];
     assert.deepEqual(
         nodes.map((node) => node.kind),
-        ["metadata", "citation", "footnote", "specimen"]
+        ["metadata", "citation", "footnote"]
     );
     for (const node of nodes) {
         assert.equal(node.anchor, null);
@@ -1956,7 +1441,6 @@ test("api: owned elements are Markup with finite walks and preserved labels", ()
     assert.deepEqual(citation.referent, { kind: "footnote", target: { kind: "label", value: "label" } });
     assert.equal(document.footnotes[0].label, "label");
     assert.equal(document.footnote("label"), document.footnotes[0]);
-    assert.equal(document.specimen("sample"), document.specimens[0]);
     // An inline note's Footnote is the first node its citation takes.
     const inline = decoder(
         new MessageWriter()
@@ -2350,103 +1834,4 @@ test("robustness: deep trees are released, compared, walked and queried with a s
         }
     );
     assert.equal(result.status, 0, result.stderr);
-});
-
-test("api: a session's documents are the parses of its text, continuing the previous document's ids", () => {
-    const session = new MarkdownSession("# One\n\nfirst 😀 here\n\nlast");
-    try {
-        const before = session.document;
-        assert.equal(before.unit, "utf16");
-        const after = session.append(" line\n\nmore\n");
-        assert.equal(session.document, after);
-        assert.equal(session.text, "# One\n\nfirst 😀 here\n\nlast line\n\nmore\n");
-        assert.equal(after.dump(session.text), Document.parse(session.text).dump(session.text));
-        // The extended paragraph continues its id; the blocks before it are unchanged.
-        assert.deepEqual(
-            after.content.slice(0, 3).map((node) => node.id),
-            before.content.map((node) => node.id)
-        );
-        assert.ok(markupEquals(after.content[0], before.content[0]));
-        assert.ok(markupEquals(after.content[1], before.content[1]));
-        assert.equal(markupEquals(after.content[2], before.content[2]), false);
-        assert.equal(after.content[3].kind, "paragraph");
-    } finally {
-        session.dispose();
-    }
-});
-
-test("api: a session's documents count columns in its unit", () => {
-    // 😀 is two UTF-16 units and four UTF-8 bytes.
-    for (const [unit, column] of [
-        ["utf16", 4],
-        ["utf8", 6]
-    ]) {
-        const session = new MarkdownSession("😀a", { unit });
-        try {
-            const document = session.append("b\n");
-            assert.equal(session.unit, unit);
-            assert.equal(document.unit, unit);
-            const text = document.content[0].content[0];
-            assert.deepEqual(document.scope(text, session.text), [
-                { start: { line: 1, column: 1 }, end: { line: 1, column } }
-            ]);
-        } finally {
-            session.dispose();
-        }
-    }
-});
-
-test("api: the language server checks an update's edits whole, and a refused one leaves the document as it was", () => {
-    const server = new Server();
-    try {
-        assert.equal(server.phase, "fresh");
-        assert.throws(() => server.open("file:///a.md", 1, "x"), { name: "ServerError", code: "notInitialized" });
-        assert.deepEqual(server.initialize(["utf8"]).unit, "utf8");
-        assert.equal(server.phase, "active");
-        server.open("file:///a.md", 1, "one\n");
-        const start = { line: 0, character: 3 };
-        const append = { scope: { start, end: start }, text: " two" };
-        const backwards = { scope: { start, end: { line: 0, character: 0 } }, text: "" };
-        assert.throws(() => server.update("file:///a.md", 2, [append, backwards]), {
-            code: "invalidParams",
-            value: -32602
-        });
-        assert.equal(server.complete("file:///a.md", start).version, 1);
-        server.update("file:///a.md", 3, [append, { text: "whole" }]);
-        assert.deepEqual(server.complete("file:///a.md", start), { version: 3, count: 0 });
-        server.close("file:///a.md");
-        assert.throws(() => server.complete("file:///a.md", start), ServerError);
-        assert.throws(() => server.initialize([]), { code: "invalidRequest" });
-        server.shutdown();
-        assert.equal(server.phase, "halted");
-    } finally {
-        server.dispose();
-    }
-    server.dispose();
-    assert.throws(() => server.phase, { message: "The server is disposed." });
-});
-
-test("errors: the language server refuses a version or position the protocol does not hold there", () => {
-    const server = new Server();
-    try {
-        server.initialize(["utf16"]);
-        for (const version of [1.5, 2 ** 31, -(2 ** 31) - 1, Number.NaN]) {
-            assert.throws(() => server.open("file:///a.md", version, ""), { code: "invalidParams" });
-        }
-        server.open("file:///a.md", -(2 ** 31), "a\n");
-        for (const position of [
-            { line: -1, character: 0 },
-            { line: 0, character: 2 ** 32 },
-            { line: 0.5, character: 0 }
-        ]) {
-            assert.throws(() => server.complete("file:///a.md", position), { code: "invalidParams" });
-        }
-        // The protocol's bound stands at the text's end.
-        assert.equal(
-            server.complete("file:///a.md", { line: 2 ** 32 - 1, character: 2 ** 32 - 1 }).version,
-            -(2 ** 31)
-        );
-    } finally {
-        server.dispose();
-    }
 });

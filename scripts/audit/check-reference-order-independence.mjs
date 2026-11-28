@@ -30,7 +30,7 @@
  *
  * A reference that HOLDS ONLY ITS LABEL buys both, and that is the model:
  * each definition is a `Reference` node holding its destination and title
- * once, every occurrence that resolves is the `Link` or `Embedded` it names
+ * once, every occurrence that resolves is the `Link` or `Embed` it names
  * with a `reference` destination naming the label, so nothing is copied,
  * there is nothing to charge and no budget. `reference_expansion_bound`
  * counts each node's own payload and holds the sum within the source while

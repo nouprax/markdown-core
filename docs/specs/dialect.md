@@ -39,12 +39,11 @@ returns this structure; your application decides how to display it.
 | --- | --- |
 | Links, images, reference definitions, automatic URL links, image sizes | [Links and images](dialect/links-and-images.md) |
 | Internal links and embedded resources | [Cross links and embeds](dialect/cross-links.md) |
-| Heading targets and implicit references | [Anchors](dialect/anchors.md) |
+| Heading targets | [Anchors](dialect/anchors.md) |
 | Targets on other blocks | [Block identifiers](dialect/block-identifiers.md) |
 | Referenced and inline notes | [Footnotes](dialect/footnotes.md) |
 | Bibliography references and citation groups | [Citations](dialect/citations.md) |
 | Topics such as `#pricing` | [Topics](dialect/topics.md) |
-| Numbered examples and references to them | [Specimens](dialect/specimens.md) |
 
 ## Organize content
 
@@ -100,8 +99,7 @@ the host operating system's Unicode version.
 Letters, numbers, combining marks, and punctuation use the Unicode
 categories; CommonMark punctuation also includes symbols. Reference-label
 normalization uses full case folding, trims whitespace, and collapses each
-internal whitespace run to one space. Automatic anchors use their own
-[lowercase algorithm](dialect/anchors.md#automatic-anchors).
+internal whitespace run to one space.
 
 ## Whitespace
 
@@ -124,12 +122,9 @@ Neither are the non-breaking space and the other `Zs` characters beyond
 U+0020.
 
 *Unicode whitespace* decides only delimiter flanking: whether a run of `*`,
-`_`, `~~`, `==`, or `++` can open or close. Two rules use other sets, and
-their pages say so:
-- `class=` values split at HTML's ASCII whitespace: tab, LF, form feed, CR,
-  and space.
-- Automatic anchors replace each Unicode `White_Space` character with a
-  hyphen.
+`_`, `~~`, `==`, or `++` can open or close. One rule uses another set, and
+its page says so: `class=` values split at HTML's ASCII whitespace: tab, LF,
+form feed, CR, and space.
 
 A CommonMark rule that names spaces alone means U+0020 alone. Code spans and
 hard line breaks are the two such rules.
@@ -142,8 +137,7 @@ hard line breaks are the two such rules.
 | Code-span backtick run | 80 backticks | The run is literal text. |
 | Directive label | 32 nested brackets | The directive has no label; the failed bracket source is parsed normally. |
 | Footnote definition nesting | Depth must be below 100 | The line is ordinary content. |
-| Decimal list marker or specimen reset | 9 digits | The marker is not recognized. |
-| Roman list marker value | 999,999,999 | The marker is not recognized. |
+| Decimal list marker | 9 digits | The marker is not recognized. |
 | Image width or height | 2,147,483,647 | The suffix remains label content. |
 | Pipe-table row | 65,535 cells | An oversized header is not a table; an oversized body row ends the table. |
 | Filled-in pipe-table cells | 524,288 | Once the count exceeds this, no further rows are accepted. |

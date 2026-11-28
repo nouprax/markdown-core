@@ -77,9 +77,8 @@ Document scope=1:1..1:22 anchor=null attributes={} children=1
 [[wiki]]{.x}
 .
 Document scope=1:1..1:12 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:12 anchor=null attributes={} children=2
-    ├── CrossLink scope=1:1..1:8 anchor=null attributes={} dest=cross(path="wiki",anchor=null) label=null children=0
-    └── Text scope=1:9..1:12 anchor=null attributes={} literal="{.x}" children=0
+└── Paragraph scope=1:1..1:12 anchor=null attributes={} children=1
+    └── CrossLink scope=1:1..1:12 anchor=null attributes={.x} dest=cross(path="wiki",anchor=null) label=null children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -148,11 +147,10 @@ Document scope=1:1..2:6 anchor=null attributes={} children=1
 [[wiki]]{.x} ![[wiki]]{.x}
 .
 Document scope=1:1..1:26 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:26 anchor=null attributes={} children=4
-    ├── CrossLink scope=1:1..1:8 anchor=null attributes={} dest=cross(path="wiki",anchor=null) label=null children=0
-    ├── Text scope=1:9..1:13 anchor=null attributes={} literal="{.x} " children=0
-    ├── CrossEmbedded scope=1:14..1:22 anchor=null attributes={} dest=cross(path="wiki",anchor=null) label=null dimensions=null children=0
-    └── Text scope=1:23..1:26 anchor=null attributes={} literal="{.x}" children=0
+└── Paragraph scope=1:1..1:26 anchor=null attributes={} children=3
+    ├── CrossLink scope=1:1..1:12 anchor=null attributes={.x} dest=cross(path="wiki",anchor=null) label=null children=0
+    ├── Text scope=1:13..1:13 anchor=null attributes={} literal=" " children=0
+    └── CrossEmbed scope=1:14..1:26 anchor=null attributes={.x} dest=cross(path="wiki",anchor=null) label=null dimensions=null children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -389,7 +387,7 @@ Document scope=1:1..1:50 anchor=null attributes={} children=1
 .
 Document scope=1:1..1:9 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..1:9 anchor=null attributes={} children=1
-    └── Span scope=1:1..1:9 anchor=null attributes={.unnumbered} children=1
+    └── Span scope=1:1..1:9 anchor=null attributes={-="true"} children=1
         └── Text scope=1:2..1:5 anchor=null attributes={} literal="text" children=0
 ````````````````````````````````
 

@@ -60,22 +60,19 @@ export interface Run {
 }
 
 export type ListFlavor = "bullet" | "ordered";
-export type OrderedListVariant =
-    | "decimal"
-    | { readonly kind: "alpha"; readonly lowercased: boolean }
-    | { readonly kind: "roman"; readonly lowercased: boolean }
-    | "default";
-export type OrderedListDelimiter = "period" | { readonly kind: "parenthesis"; readonly closed: boolean } | "default";
+/** The status a list item's task check gives it: `[ ]`, `[x]` or `[X]`, `[?]` and `[-]`. */
+export type TaskStatus = "open" | "done" | "question" | "cancelled";
+/** The punctuation after an ordered-list number: `1.` or `1)`. */
+export type OrderedListDelimiter = "period" | "parenthesis";
 /**
- * The target of a `Link`, `Embedded` or `Reference`: a tagged value, not a
+ * The target of a `Link`, `Embed` or `Reference`: a tagged value, not a
  * node, so it has no id, no extent and no children, and a branch's fields
  * exist only in that branch. A direct link or image and every `Reference` own
  * the `url` branch, the complete semantic destination the inherited grammar
  * produced -- decoded, not percent-encoded, normalized, or resolved, and
  * possibly empty. A reference link or image owns the `reference` branch, the
  * normalized label it names: the first `Reference` in document source order
- * whose label is equal, or, when none is, the first `Heading` in document
- * source order whose text declares it (`Document.reference`). The `cross`
+ * whose label is equal (`Document.reference`). The `cross`
  * branch is the workspace address a cross link produces.
  */
 export type Destination =
@@ -92,14 +89,11 @@ export type BibMode = "normal" | "authorInText" | "suppressAuthor";
  * What a `Citation` names: a tagged value, not a node, so it has no id or
  * extent, and a branch's fields exist only in that branch. The `bib` branch is
  * produced by bibliography citations; every referenced or inline footnote call
- * produces the `footnote` branch. The `specimen` branch names the first
- * `Specimen` in document source order whose label is equal
- * (`Document.specimen`).
+ * produces the `footnote` branch.
  */
 export type CitationReferent =
     | { readonly kind: "bib"; readonly key: string; readonly mode: BibMode }
-    | { readonly kind: "footnote"; readonly target: FootnoteTarget }
-    | { readonly kind: "specimen"; readonly label: string };
+    | { readonly kind: "footnote"; readonly target: FootnoteTarget };
 
 /**
  * The footnote a footnote referent names: a label, which names the first

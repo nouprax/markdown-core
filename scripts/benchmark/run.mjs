@@ -78,7 +78,6 @@ import {
     sameCompileOptions
 } from "./compile-identity.mjs";
 import { STAGES, stageBudget, STAGE_IR_LIMIT } from "./stage-budget.mjs";
-import { BINDING_ENTRIES, SESSION_EDIT, SESSION_STEPS, STEP_ENTRIES } from "./stream-gates.mjs";
 import {
     buildGrammarCorpus,
     writeGrammarCorpus,
@@ -131,28 +130,14 @@ const ENGINES = {
     }
 };
 
-/* The core's parse stages, which a `reparse` stream window reads as this
- * benchmark reads a document (stream-gates.mjs, parseCost). */
-export const PARSE_BOUNDARIES = Object.freeze(STAGES.map((stage) => ENGINES["markdown-core"].stages[stage].callee));
-
-/* The stream benchmark's runner (streams.mjs): Markdown Core's engine,
- * measured per append rather than per stage. */
-export const STREAM_RUNNER = "packages/markdown-core/benchmarks/markdown_core_stream_runner";
-
-/* The completion latency benchmark's runner (completion.mjs): the language
- * engine, measured per completion request. Only that driver builds it, and
- * never for a base revision: the report has no gate (plan D5). */
-export const COMPLETION_RUNNER = "packages/markdown-core/benchmarks/markdown_core_completion_runner";
-
 /* The stage runners. */
 const STAGE_RUNNERS = Object.fromEntries(
     Object.entries(ENGINES).map(([engine, definition]) => [engine, definition.runner])
 );
 
 /* Every binary that contributes measured instructions, and the binaries the
- * baseline is rebuilt for: the stage gate and the stream gate each compare
- * against it. */
-const MEASURED_BINARIES = { ...STAGE_RUNNERS, "markdown-core streams": STREAM_RUNNER };
+ * baseline is rebuilt for: the stage gate compares against it. */
+const MEASURED_BINARIES = { ...STAGE_RUNNERS };
 
 function fail(message) {
     console.error(`benchmark: ${message}`);
@@ -610,12 +595,12 @@ function profileBuild() {
  * is refused instead, the way `setup-environment.sh --check` refuses it.
  */
 function pinnedCmark() {
-    const script = fs.readFileSync(path.join(root, "scripts/tooling/setup-environment.sh"), "utf8");
+    const script = fs.readFileSync(path.join(root, "scripts/tools/setup-environment.sh"), "utf8");
     const version = /^CMARK_VERSION=(.+)$/mu.exec(script)?.[1];
     const commit = /^CMARK_COMMIT=([0-9a-f]{40})$/mu.exec(script)?.[1];
-    if (!version || !commit) fail("scripts/tooling/setup-environment.sh does not pin cmark");
+    if (!version || !commit) fail("scripts/tools/setup-environment.sh does not pin cmark");
     const checkout = path.join(root, ".tools/cmark", version);
-    const install = "scripts/tooling/setup-environment.sh --install oracle-cmark";
+    const install = "scripts/tools/setup-environment.sh --install oracle-cmark";
     if (!fs.existsSync(path.join(checkout, "src/cmark.h"))) {
         fail(`the pinned cmark oracle is not installed; run: ${install}`);
     }
@@ -638,12 +623,12 @@ function pinnedCmark() {
 /* The pinned GFM oracle, located exactly as cmark is: the pin lives in
  * setup-environment.sh and this reads it rather than keeping a second copy. */
 function pinnedCmarkGfm() {
-    const script = fs.readFileSync(path.join(root, "scripts/tooling/setup-environment.sh"), "utf8");
+    const script = fs.readFileSync(path.join(root, "scripts/tools/setup-environment.sh"), "utf8");
     const version = /^CMARK_GFM_VERSION=(.+)$/mu.exec(script)?.[1];
     const commit = /^CMARK_GFM_COMMIT=([0-9a-f]{40})$/mu.exec(script)?.[1];
-    if (!version || !commit) fail("scripts/tooling/setup-environment.sh does not pin cmark-gfm");
+    if (!version || !commit) fail("scripts/tools/setup-environment.sh does not pin cmark-gfm");
     const checkout = path.join(root, ".tools/cmark-gfm", version);
-    const install = "scripts/tooling/setup-environment.sh --install oracle-cmark-gfm";
+    const install = "scripts/tools/setup-environment.sh --install oracle-cmark-gfm";
     if (!fs.existsSync(path.join(checkout, "src/cmark-gfm.h"))) {
         fail(`the pinned cmark-gfm oracle is not installed; run: ${install}`);
     }
@@ -817,8 +802,7 @@ function buildBaseline(options, profile, cmark, cmarkBuildDir, gfm, gfmBuildDir,
     fs.copyFileSync(path.join(root, "CMakePresets.json"), path.join(source, "CMakePresets.json"));
     const built = { ...profile, binaryDir: path.join(directory, "build") };
     buildRunners(built, MEASURED_BINARIES, cmark, cmarkBuildDir, gfm, gfmBuildDir, versions, source);
-    const header = fs.readFileSync(path.join(source, "packages/markdown-core/include/markdown_core.h"), "utf8");
-    verifyStageSymbols(built, header.includes("markdown_core_session_edit("));
+    verifyStageSymbols(built);
     verifyBuildProvenance(built, MEASURED_BINARIES, versions);
     const compiled = Object.fromEntries(
         [["markdown-core", "libmarkdown-core-public-static"]].map(([engine, target]) => [
@@ -899,13 +883,9 @@ function verifyBuildProvenance(profile, runners, versions) {
 /**
  * A stage boundary that the compiler folded into its caller is not a smaller
  * number, it is a missing one; the profile flags exist to prevent it and this
- * is where that contract is checked instead of discovered as a zero. The
- * stream runner's step entries, the parse stages its `reparse` windows read
- * and the MCB3 entries and session steps its `binding` windows read are
- * checked the same way, and the session's edit its edit windows read, except
- * in a base revision from before the edit, which measures no edits.
+ * is where that contract is checked instead of discovered as a zero.
  */
-function verifyStageSymbols(profile, edits = true) {
+function verifyStageSymbols(profile) {
     const symbolsOf = (engine, runner) => {
         const binary = path.join(profile.binaryDir, runner);
         if (!fs.existsSync(binary)) fail(`${engine}: ${runner} was not built`);
@@ -927,21 +907,6 @@ function verifyStageSymbols(profile, edits = true) {
                     );
                 }
             }
-        }
-    }
-    const streamSymbols = symbolsOf("markdown-core streams", STREAM_RUNNER);
-    for (const name of [
-        ...STEP_ENTRIES,
-        ...PARSE_BOUNDARIES,
-        ...BINDING_ENTRIES,
-        ...SESSION_STEPS,
-        ...(edits ? [SESSION_EDIT] : [])
-    ]) {
-        if (!streamSymbols.has(name)) {
-            fail(
-                `markdown-core streams: ${name} is absent from ${STREAM_RUNNER}. The profile build must keep the ` +
-                    `stream windows' entries out of line; check CMAKE_C_FLAGS_RELEASE in the benchmark preset.`
-            );
         }
     }
 }
@@ -1431,7 +1396,7 @@ export function markdownReport(report) {
 
 /**
  * The measurement build, shared by every driver that measures this
- * repository's runners (this one, streams.mjs and completion.mjs): the
+ * repository's runners: the
  * profile preset built from scratch with the pinned references, every
  * measured binary checked for one compiler and the pinned flags, and the
  * identity a report states -- toolchain, compile lines, dispatch, runtime

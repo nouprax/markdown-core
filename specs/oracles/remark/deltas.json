@@ -69,8 +69,8 @@
         {
             "id": "reference-resolution-model",
             "kind": "ast-shape",
-            "summary": "mdast keeps a link reference definition as a `definition` node where it was written and its references as `linkReference` and `imageReference` carrying mdast's identifier. Markdown Core keeps the definition as a `Reference` node where it was written and has each reference `Link` or `Embedded` name its label under the full case fold (`dest=reference(\"...\")`). The two label normalizations differ, so the labels are not compared directly.",
-            "handling": "The comparison resolves both sides into `Link`/`Embedded` carrying the definition's destination and title and drops the definition nodes: mdast's references against mdast's own definitions inside the projection, and this side's with the shared `resolveReferences` -- the first definition of a label wins, as in both grammars. A reference with no definition stays the prose both models make of it, so a reference that resolved to the wrong definition, or to none, still shows up as a difference."
+            "summary": "mdast keeps a link reference definition as a `definition` node where it was written and its references as `linkReference` and `imageReference` carrying mdast's identifier. Markdown Core keeps the definition as a `Reference` node where it was written and has each reference `Link` or `Embed` name its label under the full case fold (`dest=reference(\"...\")`). The two label normalizations differ, so the labels are not compared directly.",
+            "handling": "The comparison resolves both sides into `Link`/`Embed` carrying the definition's destination and title and drops the definition nodes: mdast's references against mdast's own definitions inside the projection, and this side's with the shared `resolveReferences` -- the first definition of a label wins, as in both grammars. A reference with no definition stays the prose both models make of it, so a reference that resolved to the wrong definition, or to none, still shows up as a difference."
         },
         {
             "id": "table-row-width-shape",
@@ -89,8 +89,8 @@
         {
             "id": "task-marker-completion",
             "kind": "ast-shape",
-            "summary": "Boolean-only oracles retain task completion but lose the authored marker spelling, including x versus X.",
-            "handling": "Compare the three shared states: absent, incomplete and complete. Exact marker spelling remains covered by canonical fixtures and binding tests; the non-leading [x] witness still compares unequal completion states."
+            "summary": "Boolean-only oracles retain task completion but not the dialect's status: question and cancelled are checked boxes there.",
+            "handling": "Compare the three shared states: absent, incomplete and complete. The exact status remains covered by canonical fixtures and binding tests; the non-leading [x] witness still compares unequal completion states."
         },
         {
             "id": "table-row-groups",
@@ -100,10 +100,17 @@
             "evidence": "docs/specs/dialect/tables.md; canonical table fixtures and existing pipe-table oracle corpus."
         },
         {
+            "id": "code-block-ends",
+            "kind": "comparison-boundary",
+            "summary": "mdast states a code block's value without its last line ending, so an empty fenced block and one holding a blank line are alike, and splits the info string into `lang`, its first word, and `meta`, the rest, which also holds what this repository reads as an attribute container.",
+            "handling": "The shared comparison projection drops one final line ending from CodeBlock.literal and keeps only the first space- or tab-delimited word of CodeBlock.info, on both sides. The full literal and info string remain compared by the canonical fixtures and the cmark and cmark-gfm oracles.",
+            "evidence": "scripts/correctness/mdast-oracle.mjs, projectMdastComparison."
+        },
+        {
             "id": "heading-anchor-unavailable",
             "kind": "comparison-boundary",
-            "summary": "mdast headings carry no anchor fact. P3 produces heading identifiers under the Pandoc-owned anchors module.",
-            "handling": "The shared comparison field map omits only Heading.anchor on both sides. Heading level, content and attributes, and anchors on all other Markup kinds remain compared; the Pandoc oracle and canonical fixtures verify generated and explicit heading anchors."
+            "summary": "mdast headings carry no anchor fact. A heading's anchor is the explicit identifier its attributes declare, under the Pandoc-owned anchors module.",
+            "handling": "The shared comparison field map omits only Heading.anchor on both sides. Heading level, content and attributes, and anchors on all other Markup kinds remain compared; the Pandoc oracle and canonical fixtures verify explicit heading anchors and their absence."
         }
     ],
     "notDeltas": [
@@ -200,6 +207,13 @@
             "authority": "docs/specs/dialect/attributes.md and directives.md (M7)",
             "summary": "Quoted line endings normalize to one ASCII space; remark preserves a newline.",
             "why": "Directives are the first attachment site of the single Pandoc 3.11 attribute operation. The dialect owns normalization and the Unicode letter-first directive envelope; remark supplies independent evidence, not alternate parsing modes."
+        },
+        {
+            "id": "shared-attributes-quoted-line-indent",
+            "input": ":n{e=\"a\n  b\" f=\"c\n\td\"}\n",
+            "authority": "docs/specs/dialect/attributes.md",
+            "summary": "A quoted line ending becomes one ASCII space and the spaces and tabs that begin the next line are the line's, as a paragraph's are; remark keeps the newline and the indentation.",
+            "why": "The attribute member grammar and its normalization are the dialect's own, stated in attributes.md; remark supplies evidence for the directive envelope and attachment position, not for the member grammar."
         },
         {
             "id": "shared-attributes-bare-member-atomic",
@@ -340,6 +354,27 @@
             "authority": "docs/specs/dialect/directives.md",
             "summary": "`12:30` is text, since the name after its colon has no bracket part, and `.` is a name byte so `:a.b[x]` names `a.b`; remark makes `:30` a directive and ends a name at the dot.",
             "why": "An inline directive is a name that is a string without spaces, as the generic directive proposal on the CommonMark wiki has it, followed immediately by a bracketed label or an attribute container; it is that part that makes the colon a directive, and nothing in the name is classified by Unicode category. micromark-extension-directive's name character classes and its part-less `:name` form are that implementation's own rules, so remark is not the authority for either."
+        },
+        {
+            "id": "directive-name-control-bytes",
+            "input": ":\u000b{} and :\f[x]\n",
+            "authority": "docs/specs/dialect/directives.md",
+            "summary": "A vertical tab or a form feed is a name byte, so `:\\v{}` and `:\\f[x]` are directives; remark ends a name at either.",
+            "why": "A directive name is one or more bytes other than a space, a tab, a line ending, `[`, `{` or `:`, as directives.md states; micromark-extension-directive's name character classes are that implementation's own rule."
+        },
+        {
+            "id": "attributes-matched-quote-retry",
+            "input": ":n{k=\"}\"\n",
+            "authority": "docs/specs/dialect/attributes.md",
+            "summary": "A C defect, not a deliberate difference: C retries a matched opening quote as an unquoted value, so `:n{k=\"}\"` is a directive with `k=\"\\\"\"`; remark and the Rust parser keep the line as text.",
+            "why": "Only an unmatched opening quote is part of an unquoted value, as attributes.md states; this quote is matched, so the container never closes. The Rust parser's output is recorded as a departure in packages/markdown-core-rs/tests/departures.txt; when C is removed and its output is written back, this entry stops reproducing and is deleted."
+        },
+        {
+            "id": "setext-attributes-line",
+            "input": "{.c}\n-\n\na\n{#x}\n=\n\n> b\n> {.d}\n> -\n",
+            "authority": "docs/specs/dialect/attributes.md",
+            "summary": "A Setext heading whose last content line holds only an attribute container takes it: `{.c}` over `-` is an empty heading with class `c`, and `a` over `{#x}` over `=` is the heading `a` with anchor `x`; remark keeps the container as text.",
+            "why": "attributes.md gives the suffix to the last content line of a Setext heading and lets `# {#empty}` be an empty heading, so a line of the container alone is a suffix with nothing before it, as in Pandoc."
         },
         {
             "id": "shared-attributes-normalization-order",
@@ -583,64 +618,64 @@
             "id": "task-prefix-grammar-49",
             "input": "- [?] a\n- [-] b\n- [✓] c\n",
             "authority": "docs/specs/dialect/task-lists.md (O5); opacity follows formulas.md, cross-links.md and comments.md",
-            "summary": "One Unicode scalar and its full structural separator run are recognized once when an item opens, before its first block. Opaque bodies cannot supply a task prefix.",
-            "why": "remark-gfm only recognizes inherited ASCII task states after forming paragraph content; it has no custom markers, CrossLink or percent comments. The exact witnesses preserve every difference instead of changing the product grammar."
+            "summary": "One of the five markers (`[ ]`, `[x]`, `[X]`, `[?]`, `[-]`) and its full structural separator run are recognized once when an item opens, before its first block. Opaque bodies cannot supply a task prefix.",
+            "why": "remark-gfm only recognizes open and done after forming paragraph content; it has no question or cancelled status, CrossLink or percent comments. The exact witnesses preserve every difference instead of changing the product grammar."
         },
         {
             "id": "task-prefix-grammar-50",
             "input": "- [é] two\n- [🚀] four\n- [́] combining scalar\n- [[] open bracket\n- []] close bracket\n- [\\] backslash\n- [\t] tab marker\n- [\u000b] vertical tab marker\n- [\f] form feed marker\n",
             "authority": "docs/specs/dialect/task-lists.md (O5); opacity follows formulas.md, cross-links.md and comments.md",
-            "summary": "One Unicode scalar and its full structural separator run are recognized once when an item opens, before its first block. Opaque bodies cannot supply a task prefix.",
-            "why": "remark-gfm only recognizes inherited ASCII task states after forming paragraph content; it has no custom markers, CrossLink or percent comments. The exact witnesses preserve every difference instead of changing the product grammar."
+            "summary": "One of the five markers (`[ ]`, `[x]`, `[X]`, `[?]`, `[-]`) and its full structural separator run are recognized once when an item opens, before its first block. Opaque bodies cannot supply a task prefix.",
+            "why": "remark-gfm only recognizes open and done after forming paragraph content; it has no question or cancelled status, CrossLink or percent comments. The exact witnesses preserve every difference instead of changing the product grammar."
         },
         {
             "id": "task-prefix-grammar-51",
-            "input": "- [?] space\n- [✓]\ttab\n- [?] \t  mixed\n",
+            "input": "- [?] space\n- [x]\ttab\n- [?] \t  mixed\n",
             "authority": "docs/specs/dialect/task-lists.md (O5); opacity follows formulas.md, cross-links.md and comments.md",
-            "summary": "One Unicode scalar and its full structural separator run are recognized once when an item opens, before its first block. Opaque bodies cannot supply a task prefix.",
-            "why": "remark-gfm only recognizes inherited ASCII task states after forming paragraph content; it has no custom markers, CrossLink or percent comments. The exact witnesses preserve every difference instead of changing the product grammar."
+            "summary": "One of the five markers (`[ ]`, `[x]`, `[X]`, `[?]`, `[-]`) and its full structural separator run are recognized once when an item opens, before its first block. Opaque bodies cannot supply a task prefix.",
+            "why": "remark-gfm only recognizes open and done after forming paragraph content; it has no question or cancelled status, CrossLink or percent comments. The exact witnesses preserve every difference instead of changing the product grammar."
         },
         {
             "id": "task-prefix-grammar-57",
-            "input": "- [x]\u000bvertical\n- [🚀]\u000bvertical\n- [ ]\fform\n- [?] \u000b\f  mixed\n",
+            "input": "- [x]\u000bvertical\n- [-]\u000bvertical\n- [ ]\fform\n- [?] \u000b\f  mixed\n",
             "authority": "docs/specs/dialect/task-lists.md (O5); opacity follows formulas.md, cross-links.md and comments.md",
-            "summary": "One Unicode scalar and its full structural separator run are recognized once when an item opens, before its first block. Opaque bodies cannot supply a task prefix.",
-            "why": "remark-gfm only recognizes inherited ASCII task states after forming paragraph content; it has no custom markers, CrossLink or percent comments. The exact witnesses preserve every difference instead of changing the product grammar."
+            "summary": "One of the five markers (`[ ]`, `[x]`, `[X]`, `[?]`, `[-]`) and its full structural separator run are recognized once when an item opens, before its first block. Opaque bodies cannot supply a task prefix.",
+            "why": "remark-gfm only recognizes open and done after forming paragraph content; it has no question or cancelled status, CrossLink or percent comments. The exact witnesses preserve every difference instead of changing the product grammar."
         },
         {
             "id": "task-prefix-grammar-52",
-            "input": "> 1. [🚀] outer\n>    - [?] middle\n>      2) [✓] inner\n>         continuation\n",
+            "input": "> 1. [-] outer\n>    - [?] middle\n>      2) [x] inner\n>         continuation\n",
             "authority": "docs/specs/dialect/task-lists.md (O5); opacity follows formulas.md, cross-links.md and comments.md",
-            "summary": "One Unicode scalar and its full structural separator run are recognized once when an item opens, before its first block. Opaque bodies cannot supply a task prefix.",
-            "why": "remark-gfm only recognizes inherited ASCII task states after forming paragraph content; it has no custom markers, CrossLink or percent comments. The exact witnesses preserve every difference instead of changing the product grammar."
+            "summary": "One of the five markers (`[ ]`, `[x]`, `[X]`, `[?]`, `[-]`) and its full structural separator run are recognized once when an item opens, before its first block. Opaque bodies cannot supply a task prefix.",
+            "why": "remark-gfm only recognizes open and done after forming paragraph content; it has no question or cancelled status, CrossLink or percent comments. The exact witnesses preserve every difference instead of changing the product grammar."
         },
         {
             "id": "task-prefix-grammar-53",
-            "input": "- [✓] [?] second prefix\n\n  [x] later paragraph\n- ordinary\n\n  [?] later paragraph\n-\n  [x] later first block\n",
+            "input": "- [x] [?] second prefix\n\n  [x] later paragraph\n- ordinary\n\n  [?] later paragraph\n-\n  [x] later first block\n",
             "authority": "docs/specs/dialect/task-lists.md (O5); opacity follows formulas.md, cross-links.md and comments.md",
-            "summary": "One Unicode scalar and its full structural separator run are recognized once when an item opens, before its first block. Opaque bodies cannot supply a task prefix.",
-            "why": "remark-gfm only recognizes inherited ASCII task states after forming paragraph content; it has no custom markers, CrossLink or percent comments. The exact witnesses preserve every difference instead of changing the product grammar."
+            "summary": "One of the five markers (`[ ]`, `[x]`, `[X]`, `[?]`, `[-]`) and its full structural separator run are recognized once when an item opens, before its first block. Opaque bodies cannot supply a task prefix.",
+            "why": "remark-gfm only recognizes open and done after forming paragraph content; it has no question or cancelled status, CrossLink or percent comments. The exact witnesses preserve every difference instead of changing the product grammar."
         },
         {
             "id": "task-prefix-grammar-54",
-            "input": "- [?] # heading\n- [✓] > quote\n- [🚀] - [?] nested item\n- [-] ```text\n  code\n  ```\n- [?] $$\n  formula\n  $$\n- [✓] :::note\n  body\n  :::\n",
+            "input": "- [?] # heading\n- [x] > quote\n- [-] - [?] nested item\n- [-] ```text\n  code\n  ```\n- [?] $$\n  formula\n  $$\n- [x] :::note\n  body\n  :::\n",
             "authority": "docs/specs/dialect/task-lists.md (O5); opacity follows formulas.md, cross-links.md and comments.md",
-            "summary": "One Unicode scalar and its full structural separator run are recognized once when an item opens, before its first block. Opaque bodies cannot supply a task prefix.",
-            "why": "remark-gfm only recognizes inherited ASCII task states after forming paragraph content; it has no custom markers, CrossLink or percent comments. The exact witnesses preserve every difference instead of changing the product grammar."
+            "summary": "One of the five markers (`[ ]`, `[x]`, `[X]`, `[?]`, `[-]`) and its full structural separator run are recognized once when an item opens, before its first block. Opaque bodies cannot supply a task prefix.",
+            "why": "remark-gfm only recognizes open and done after forming paragraph content; it has no question or cancelled status, CrossLink or percent comments. The exact witnesses preserve every difference instead of changing the product grammar."
         },
         {
             "id": "task-prefix-grammar-55",
             "input": "- [?] \t \noutside\n",
             "authority": "docs/specs/dialect/task-lists.md (O5); opacity follows formulas.md, cross-links.md and comments.md",
-            "summary": "One Unicode scalar and its full structural separator run are recognized once when an item opens, before its first block. Opaque bodies cannot supply a task prefix.",
-            "why": "remark-gfm only recognizes inherited ASCII task states after forming paragraph content; it has no custom markers, CrossLink or percent comments. The exact witnesses preserve every difference instead of changing the product grammar."
+            "summary": "One of the five markers (`[ ]`, `[x]`, `[X]`, `[?]`, `[-]`) and its full structural separator run are recognized once when an item opens, before its first block. Opaque bodies cannot supply a task prefix.",
+            "why": "remark-gfm only recognizes open and done after forming paragraph content; it has no question or cancelled status, CrossLink or percent comments. The exact witnesses preserve every difference instead of changing the product grammar."
         },
         {
             "id": "task-prefix-grammar-56",
             "input": "- `- [?] code`\n- $- [✓] formula$\n- <i title=\"- [🚀] html\">text</i>\n- [[- [?] link]]\n- %% - [✓] inline comment %%\n\n%%\n- [?] block comment\n%%\n\n```\n- [🚀] fenced\n```\n",
             "authority": "docs/specs/dialect/task-lists.md (O5); opacity follows formulas.md, cross-links.md and comments.md",
-            "summary": "One Unicode scalar and its full structural separator run are recognized once when an item opens, before its first block. Opaque bodies cannot supply a task prefix.",
-            "why": "remark-gfm only recognizes inherited ASCII task states after forming paragraph content; it has no custom markers, CrossLink or percent comments. The exact witnesses preserve every difference instead of changing the product grammar."
+            "summary": "One of the five markers (`[ ]`, `[x]`, `[X]`, `[?]`, `[-]`) and its full structural separator run are recognized once when an item opens, before its first block. Opaque bodies cannot supply a task prefix.",
+            "why": "remark-gfm only recognizes open and done after forming paragraph content; it has no question or cancelled status, CrossLink or percent comments. The exact witnesses preserve every difference instead of changing the product grammar."
         },
         {
             "id": "task-prefix-line-ending-separator",
@@ -650,11 +685,11 @@
             "why": "The O5 deterministic fuzz run exposed remark recognizing [x] across a line ending. The product retains the marker literally and parses the following inline directives as usual."
         },
         {
-            "id": "task-prefix-unicode-tab-columns",
-            "input": "- [?] - \tchild\n- [é] - \tchild\n- [✓] - \tchild\n- [🚀] - \tchild\n",
+            "id": "task-prefix-tab-columns",
+            "input": "- [?] - \tchild\n- [ ] - \tchild\n- [x] - \tchild\n- [-] - \tchild\n",
             "authority": "docs/specs/dialect/task-lists.md (O5)",
-            "summary": "All one-scalar task markers use one virtual indentation column before nested tab padding. Source scopes remain byte-based.",
-            "why": "remark-gfm has no custom task prefixes and treats these markers and following nested-list syntax as paragraph content."
+            "summary": "Every task marker takes one virtual indentation column before nested tab padding. Source scopes remain byte-based.",
+            "why": "remark-gfm has no question or cancelled task prefixes and treats these markers and following nested-list syntax as paragraph content."
         },
         {
             "id": "p2-attribute-sites-58",
@@ -679,12 +714,6 @@
             "input": "```python {.numberLines startFrom=\"10\"}\nprint(\"hello\")\n```\n",
             "authority": "docs/specs/dialect/attributes.md; P2a–P2d",
             "note": "packages/markdown-core/tests/fixtures/dialect-attributes.txt:310: the dialect attaches normalized attributes at code, heading and link sites and inherits reference-definition values; remark has no such attachment sites. Fenced-code info remains the authored text outside the container. Its competing base/extension parse is preserved as exact evidence."
-        },
-        {
-            "id": "p2-attribute-sites-62",
-            "input": "``` python {.x} y\nz\n```\n",
-            "authority": "docs/specs/dialect/attributes.md; P2a–P2d",
-            "note": "packages/markdown-core/tests/fixtures/dialect-attributes.txt:319: the dialect attaches normalized attributes at code, heading and link sites and inherits reference-definition values; remark has no such attachment sites. Fenced-code info remains the authored text outside the container. Its competing base/extension parse is preserved as exact evidence."
         },
         {
             "id": "p2-attribute-sites-63",
@@ -801,77 +830,23 @@
             "note": "packages/markdown-core/tests/fixtures/dialect-attributes.txt:696: the dialect attaches normalized attributes at code, heading and link sites and inherits reference-definition values; remark has no such attachment sites. Fenced-code info remains the authored text outside the container. Its competing base/extension parse is preserved as exact evidence."
         },
         {
+            "id": "p2-attribute-sites-82",
+            "input": "~~~ {.c #code}\nx\n~~~\n\n``` C++ {.numberLines startFrom=10}\nx\n```\n\n~~~\u0000 Python {.}\ny\n~~~\n\n~~~ lang {#unclosed\ny\n~~~\n",
+            "authority": "docs/specs/dialect/attributes.md; P2a–P2d",
+            "note": "packages/markdown-core/tests/fixtures/dialect-attributes.txt:753: the dialect attaches normalized attributes at code, heading and link sites and inherits reference-definition values; remark has no such attachment sites. Fenced-code info remains the authored text outside the container. Its competing base/extension parse is preserved as exact evidence."
+        },
+        {
+            "id": "p2-attribute-sites-83",
+            "input": "[l]: <u>{.a}\n\n[m]: /u \"t\"{.b}\n",
+            "authority": "docs/specs/dialect/attributes.md; P2a–P2d",
+            "note": "packages/markdown-core/tests/fixtures/dialect-attributes.txt:816: the dialect attaches normalized attributes at code, heading and link sites and inherits reference-definition values; remark has no such attachment sites. Fenced-code info remains the authored text outside the container. Its competing base/extension parse is preserved as exact evidence."
+        },
+        {
             "id": "span-after-failed-directive",
             "input": ":n{.a=b}::note[Label]{.c}\n",
             "authority": "docs/specs/dialect/bracketed-spans.md (P5)",
             "summary": "A rejected directive envelope leaves its balanced bracket pair eligible for a Span with the immediate attribute container.",
             "why": "Remark has no bracketed-span syntax. This minimized seeded-fuzz witness preserves its competing literal interpretation while the product fixture pins the Span and source scopes."
-        },
-        {
-            "id": "p8-nameless-container-1",
-            "input": "::: {.warning}\ncontent\n:::\n",
-            "authority": "docs/specs/dialect/directives.md (P8)",
-            "note": "Braced nameless opener; the container owns its body and closing fence. Remark implements named directives only and retains the nameless opener as prose."
-        },
-        {
-            "id": "p8-nameless-container-2",
-            "input": "::: warning\nx\n:::\n\n:::: {#id .c k=v} ::::\ny\n::::\n",
-            "authority": "docs/specs/dialect/directives.md (P8)",
-            "note": "One unbraced class word and a braced container with a trailing colon run are nameless openers. Remark implements named directives only and retains the nameless opener as prose."
-        },
-        {
-            "id": "p8-nameless-container-3",
-            "input": "::: -\nx\n:::\n\n::: {-}\ny\n:::\n\n::: {}\nz\n:::\n",
-            "authority": "docs/specs/dialect/directives.md (P8)",
-            "note": "Unbraced minus is a literal class, braced minus is the attribute shorthand, and empty braces still open a container. Remark implements named directives only and retains the nameless opener as prose."
-        },
-        {
-            "id": "p8-nameless-container-4",
-            "input": ":::: {.outer}\n:::note\nx\n:::\n::::\n",
-            "authority": "docs/specs/dialect/directives.md (P8)",
-            "note": "Named and nameless containers share the nesting stack and closest matching closer. Remark implements named directives only and retains the nameless opener as prose."
-        },
-        {
-            "id": "p8-nameless-container-5",
-            "input": ":::: {.a}\n:::\nx\n::::\n",
-            "authority": "docs/specs/dialect/directives.md (P8)",
-            "note": "A shorter fence is content; the matching width closes the nameless container. Remark implements named directives only and retains the nameless opener as prose."
-        },
-        {
-            "id": "p8-nameless-container-6",
-            "input": "para\n\n::: {.a}\ntext\n",
-            "authority": "docs/specs/dialect/directives.md (P8)",
-            "note": "An unclosed nameless container owns content through end of input. Remark implements named directives only and retains the nameless opener as prose."
-        },
-        {
-            "id": "p8-nameless-container-7",
-            "input": "para\n::: {.a}\nx\n:::\n",
-            "authority": "docs/specs/dialect/directives.md (P8)",
-            "note": "A nameless container interrupts paragraph content under the ordinary directive block-start rule. Remark implements named directives only and retains the nameless opener as prose."
-        },
-        {
-            "id": "p8-nameless-container-8",
-            "input": "::: {.a}\n# h\n\n- i\n:::\n",
-            "authority": "docs/specs/dialect/directives.md (P8)",
-            "note": "Nameless content uses the ordinary heading and list parser and heading anchor synthesis. Remark implements named directives only and retains the nameless opener as prose."
-        },
-        {
-            "id": "p8-nameless-container-9",
-            "input": "::: {.outer}\n```\n:::\n```\n<div>\n:::\n</div>\n\n::::note\nx\n::::\ny\n:::\n",
-            "authority": "docs/specs/dialect/directives.md (P8)",
-            "note": "Code and HTML own their colon lines; a nested named container owns its closer before the outer nameless container. Remark implements named directives only and retains the nameless opener as prose."
-        },
-        {
-            "id": "p8-nameless-container-10",
-            "input": "::: {.outer}\n- ```\n  x\n:::\nafter\n",
-            "authority": "docs/specs/dialect/directives.md (P8)",
-            "note": "A code block whose list prefix fails ends before the enclosing div closer; subsequent prose is outside the div. Remark implements named directives only and retains the nameless opener as prose."
-        },
-        {
-            "id": "p8-nameless-container-11",
-            "input": "::: {.outer}\n:::: {.inner}\nx\n:::\ny\n::::\nz\n:::\n",
-            "authority": "docs/specs/dialect/directives.md (P8)",
-            "note": "The closest open container shields its parent from a shorter colon run; after it closes the parent resumes. Remark implements named directives only and retains the nameless opener as prose."
         },
         {
             "id": "directive-inherited-lazy-parent",
@@ -881,11 +856,46 @@
             "why": "Reduced from the P8 corpus recombination. A build of pre-P8 commit 9cbb83e5 produces the identical product tree; this records an existing boundary rather than changing the parser to satisfy recombination."
         },
         {
+            "id": "quote-empty-item-after-paragraph",
+            "input": "a\n> -\n",
+            "authority": "CommonMark 0.31.2 §5.2 (an empty list item cannot interrupt a paragraph) with §5.1 (a block quote opens a new container)",
+            "summary": "An empty list item that starts a block quote's first line opens a list: the quote holds no paragraph for it to interrupt. cmark 0.31.2 agrees.",
+            "why": "Remark applies the interrupt rule from the paragraph outside the quote and leaves `-` as paragraph text. Reduced from seeded remark fuzz (seed 1) after the corpus gained new fragments."
+        },
+        {
             "id": "topic-after-unclosed-attributes",
             "input": "`a` {.c} `b`{.} `c`{\"bad} `d`{#x\n",
             "authority": "docs/specs/dialect/topics.md",
             "summary": "An unclosed attribute container is ordinary text, and the `#x` inside it is a topic here; remark has no topics.",
             "why": "A failed construct releases its source to ordinary Markdown, where valid inner syntax is still recognized; a `#` after `{` opens a topic."
+        },
+        {
+            "id": "p8-container-opaque-lines",
+            "input": ":::box{.outer}\n```\n:::\n```\n<div>\n:::\n</div>\n\n::::note\nx\n::::\ny\n:::\n",
+            "authority": "docs/specs/dialect/directives.md (P8)",
+            "summary": "Code and HTML own their colon lines, and a nested container owns its closer before the outer one.",
+            "why": "remark-directive closes the container at a colon line inside fenced code, leaving the rest as one code block; the product fixture pins the opaque ownership and scopes."
+        },
+        {
+            "id": "p8-container-shorter-closer",
+            "input": ":::box{.outer}\n::::box{.inner}\nx\n:::\ny\n::::\nz\n:::\n",
+            "authority": "docs/specs/dialect/directives.md (P8)",
+            "summary": "A closer needs at least as many colons as its opener, so a shorter run inside the innermost open container is its content.",
+            "why": "remark-directive closes the inner container at the shorter run and keeps the rest as prose; the product fixture pins the minimum closer length."
+        },
+        {
+            "id": "unmatched-double-dollar-release",
+            "input": "$$x$ y\n\n$$$z$\n",
+            "authority": "docs/specs/dialect/formulas.md",
+            "summary": "An unmatched `$$` opener is text, both its dollars, and the single dollar after it may open a formula, so `$$$z$` holds `$z$`; remark-math needs a closer as long as the whole opening run and keeps the line as text.",
+            "why": "The dialect tries `$$` before `$`, and an unmatched formula opener releases its source for normal parsing; remark-math's run-length matching is that implementation's own rule."
+        },
+        {
+            "id": "email-colon-over-directive",
+            "input": ":s@a.t[]\n\nmailto:a@b.com[x]\n",
+            "authority": "docs/specs/dialect/conflicts.md",
+            "summary": "An email address recognized at a colon owns the colon, so neither colon starts a directive; remark makes `:s` and `:a` directives.",
+            "why": "conflicts.md (Inline recognition) gives an address at a colon precedence over a competing directive name."
         }
     ],
     "baselineBacklog": [],

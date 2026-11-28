@@ -10,7 +10,6 @@
 #include "utf8.h"
 #include "inlines.h"
 #include "element.h"
-#include "sink.h"
 
 /* One maximal parsed delimiter run, classified from immutable source bytes. The text
  * scanner may retain one lookahead run for delimiter dispatch to consume. */
@@ -117,12 +116,6 @@ struct markdown_core_inline_state {
     /* The token starts a settle point may be (markdown_core_inline_settle),
      * or NULL when the run's caller asks for none. */
     markdown_core_inline_settle *settle;
-    /* The old seams the run stops at, or NULL (markdown_core_seam_stops). */
-    markdown_core_seam_stops *stops;
-    /* The sink the run reports what it leaves open to, or NULL: set only in
-     * the parse of the text before a cursor, for a run whose content reaches
-     * the text's end (sink.h). */
-    markdown_core_context_sink *context;
 };
 
 /* The token being read made `node`, which ends here: the token read next
@@ -145,21 +138,8 @@ typedef char markdown_core_asked_fits[MARKDOWN_CORE_DELIM_RULE_COUNT <= 32 ? 1 :
  * no earlier token read the end, and the run lists settle starts. A check
  * whose only use is to say a token read the end asks this first. */
 static inline bool markdown_core_inline_tracks_end(const markdown_core_inline_state *inline_state) {
-    return inline_state->token < inline_state->undecided || inline_state->context;
+    return inline_state->token < inline_state->undecided;
 }
-
-/* THE OPEN CONSTRUCT of a token that read the end of a run that reports to a
- * context sink: it opens a construct of kind `opens` (NONE when that is still
- * open) whose opening syntax is content bytes `from` up to `to`, and reads
- * the `count` fields at `fields` when the content ends, which may be none. A
- * run with no sink lists nothing, so a token asks only when the run has
- * one. */
-void markdown_core_inline_open(markdown_core_inline_state *inline_state, markdown_core_node_kind opens, bufsize_t from,
-                               bufsize_t to, const markdown_core_field *fields, size_t count);
-/* The same for a construct the line, not the run, may open: a block's tail.
- * The context lists no inline opener for it. */
-void markdown_core_inline_open_line(markdown_core_inline_state *inline_state, markdown_core_node_kind opens,
-                                    bufsize_t from, bufsize_t to, const markdown_core_field *fields, size_t count);
 
 /* The inline note `note`, a field its Citation holds, settles as a field
  * does (markdown_core_parser_settle_field), and a run that lists settle
@@ -210,6 +190,14 @@ static inline void markdown_core_inline_seat_cursor(markdown_core_inline_state *
     inline_state->mark_width = mark->source_width;
 }
 
+/* The offset just past the bytes of the last delimiter, or 0 with none:
+ * what pushed it owns the bytes before it, a citation key's included, so a
+ * scanner that takes bytes back from the text before it stops there. */
+static inline bufsize_t markdown_core_inline_state_settled(markdown_core_inline_state *inline_state) {
+    const delimiter *last = delimiter_last(&inline_state->delims);
+    return last ? last->position : 0;
+}
+
 /* A Text's map, once its extent is placed on the runs [first, last]. A Text
  * whose bytes ARE the source bytes of its scope takes a view of the source
  * map; a decoded token, or a literal shorter than its scope, maps each of
@@ -219,12 +207,28 @@ static inline void markdown_core_inline_seat_cursor(markdown_core_inline_state *
  * for byte. The writes stay inside the gate: a node that is not a verbatim
  * copy of its source must keep `content_map.count` at zero, because that
  * count is read elsewhere as "is there a mapping at all". */
+/* Whether the literal of Text `node` is the content bytes [from, to] as
+ * written, or those bytes but the spaces and tabs trimmed from their end
+ * before a line ending: it reads them where they are. */
+static inline bool markdown_core_inline_literal_copied(const markdown_core_inline_state *inline_state,
+                                                       const markdown_core_node *node, int from, int to) {
+    const markdown_core_chunk *literal = node->as.literal;
+    const unsigned char *bytes = inline_state->input.data + from;
+    if (literal->len > to - from + 1 ||
+        (literal->data != bytes && memcmp(literal->data, bytes, (size_t)literal->len) != 0)) {
+        return false;
+    }
+    for (bufsize_t at = literal->len; at < to - from + 1; at++) {
+        if (bytes[at] != ' ' && bytes[at] != '\t') {
+            return false;
+        }
+    }
+    return true;
+}
+
 static inline void markdown_core_inline_map_text(markdown_core_inline_state *inline_state, markdown_core_node *node,
                                                  int from, int to, int first, int last) {
-    const markdown_core_chunk *literal = node->as.literal;
-    if (literal->len == to - from + 1 &&
-        (literal->data == inline_state->input.data + from ||
-         memcmp(literal->data, inline_state->input.data + from, (size_t)literal->len) == 0)) {
+    if (markdown_core_inline_literal_copied(inline_state, node, from, to)) {
         node->content_map.first = first;
         node->content_map.count = last - first + 1;
         node->content_map.offset = from + inline_state->owner->content_map.offset;

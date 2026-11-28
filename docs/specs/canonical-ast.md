@@ -10,7 +10,7 @@ and traversal. The node table below is checked against that inventory by
 Each kind's `ordinal` in the contract is its wire number: the value of
 `markdown_core_node_kind` and of the JNI and ECMAScript wire kinds. A new kind
 takes the next ordinal, because renumbering one renumbers every binding.
-`scripts/tooling/generate-node-kinds.mjs` generates every table that
+`scripts/tools/generate-node-kinds.mjs` generates every table that
 enumerates kinds from the contract and from
 `packages/markdown-core/node-types.json`, the native types that report them.
 
@@ -46,7 +46,7 @@ maintaining the contract and comparison policies.
 - Adjacent `Text` nodes in one content array are merged into one node spanning
   from the first's start to the last's end, and a `Text` node is never empty.
 - Every independently scoped semantic element is `Markup`, including `Citation`,
-  `Footnote`, `Specimen`, and `Metadata`. Other values use their owner’s scope.
+  `Footnote`, and `Metadata`. Other values use their owner’s scope.
 
 ## Identity and equality
 
@@ -166,8 +166,7 @@ table boundaries do not discard source information.
 The following rules describe authored editor positions, not independently
 sliceable string ranges. They refine the general coordinate contract. A syntax's
 punctuation can be inside its owner's scope without appearing in visible
-content. Unscoped semantic fields, including generated anchors, never gain a
-range of their own.
+content. Unscoped semantic fields never gain a range of their own.
 
 | Syntax | Range |
 | --- | --- |
@@ -183,7 +182,6 @@ range of their own.
 | Block identifier | Remains inside the receiving block's scope after removal from visible content. |
 | Metadata | Runs from the first hyphen of the opening fence through the third hyphen of the closing fence. Fields have no scopes of their own; the field query gives each decoded member's name and values field scopes (`field` and `value`). |
 | Definition list and definition | Ends at the last nonblank line of the final body. A definition includes its term, markers, padding, and every body. |
-| Specimen definition | Covers its marker and complete block body. |
 
 For a referenced footnote call, `Cite` covers `[^label]` and its `Citation`
 covers `^label`. The `Footnote` covers its definition through the final
@@ -198,8 +196,7 @@ mode marker or `@` and ends at the key or its claimed tail's closer. Its first
 item ends at the key when there is no tail or the tail's first section is
 keyed; otherwise it ends at the last non-whitespace byte of its suffix. Later
 keyed sections follow the bracketed item rule. An item includes neither a
-separator semicolon nor a closing bracket. A parenthesized specimen `Cite`
-includes parentheses, while its item covers `@label`.
+separator semicolon nor a closing bracket.
 
 A table and its head row begin at the head row's first non-space byte, after
 the block indentation and its container's prefix. A pipe row covers its
@@ -242,27 +239,22 @@ grammar. Every node's anchor and attributes are the ones written on it: a
 `Reference` has the definition's, and a reference occurrence has its own. Each binding keeps its native collection types and owns all
 returned values after the native document is released.
 
-Parsed headings always have a nonempty anchor: an explicit identifier wins,
-otherwise the [anchors module](dialect/anchors.md) derives one from parsed
-content after reserving every emitted explicit anchor. Generated anchors add
-no source range. Writable authored heading labels also declare reference
-labels, including for forward references: a `reference` destination whose
-label no `Reference` states resolves to the first such `Heading`, whose
-anchor is the target. Explicit definitions win.
+A heading's anchor is the explicit identifier its attributes declare, and
+null without one: the parser derives none from its content (see the
+[anchors module](dialect/anchors.md)). A heading declares no reference label:
+a `reference` destination resolves only to a `Reference`.
 `Document.metadata: Metadata?` holds ten named optional values defined by the
 [properties grammar](dialect/properties.md). Metadata is a leaf `Markup` node
 produced by the leading properties envelope. It receives ordinary visitor and
-walking callbacks. Its fields have no scopes of their own, but the field
-query reads each decoded member's name as a field of slot kind `field` and
-each of its values as one of slot kind `value`; absent fields differ from
-explicit null values.
+walking callbacks. Its fields have no scopes of their own; absent fields
+differ from explicit null values.
 
 ### Dimensions
 
 `Dimensions(width: Int, height: Int?)` is a node-independent value. Width is
 required and height is optional; every present component is in 1..2147483647.
 It has no kind, id, extent, anchor, attributes, children or visitor callbacks.
-`Embedded.dimensions` and `CrossEmbedded.dimensions` have type `Dimensions?`, absent when no complete valid suffix was
+`Embed.dimensions` and `CrossEmbed.dimensions` have type `Dimensions?`, absent when no complete valid suffix was
 recognized, including malformed labels. The dimension suffix produces this value from image
 labels and embedded cross-link labels. `CrossLink` has no dimensions field.
 The value is independent of a destination's shared identity and attribute records.
@@ -275,18 +267,17 @@ Destination = url(String) | cross(path: String, anchor: String?) | reference(lab
 
 `Destination` is a tagged value, not a node: it has no id, extent, children,
 anchor, or attributes, and a branch's fields exist only in that branch. It is
-the `dest` of every `Link`, `Embedded` and `Reference`. A direct `Link` or
-`Embedded` and every `Reference` own the `url` branch: the
+the `dest` of every `Link`, `Embed` and `Reference`. A direct `Link` or
+`Embed` and every `Reference` own the `url` branch: the
 complete semantic destination the inherited grammar produced, the bytes
 between angle brackets or the bare destination with backslash escapes and
 character references decoded and no percent-encoding, normalization, or
-resolution, and possibly empty. A reference `Link` or `Embedded` owns the
+resolution, and possibly empty. A reference `Link` or `Embed` owns the
 `reference` branch: the normalized label it names, which resolves to the
-first `Reference` in document source order whose label is equal, or, when
-none is, the first `Heading` in document source order whose text declares
-it. The `cross` branch is the workspace address of
+first `Reference` in document source order whose label is equal. The `cross`
+branch is the workspace address of
 the [cross links](dialect/cross-links.md) module and is stored by
-`CrossLink` and `CrossEmbedded`. The parser fetches no URL, opens no file, tests no
+`CrossLink` and `CrossEmbed`. The parser fetches no URL, opens no file, tests no
 existence, and infers no media type; no such result is a field or a branch.
 The C facade answers it through `markdown_core_node_destination`, whose
 `kind` names the branch and whose other branch's fields are zeroed; Swift
@@ -298,8 +289,8 @@ one class per branch, and ECMAScript as a discriminated union on `kind`.
 ```text
 BibMode = normal | authorInText | suppressAuthor
 ListFlavor = bullet | ordered
-OrderedListVariant = decimal | alpha(lowercased: Bool) | roman(lowercased: Bool) | default
-OrderedListDelimiter = period | parenthesis(closed: Bool) | default
+TaskStatus = open | done | question | cancelled
+OrderedListDelimiter = period | parenthesis
 Flow = none | left | center | right
 ```
 
@@ -307,14 +298,13 @@ Flow = none | left | center | right
 means no explicit alignment was authored. `TableColumn.flow` uses this
 value; its producing syntax determines which value is stored.
 
-### CitationReferent, Citation, Footnote, and Specimen
+### CitationReferent, Citation, and Footnote
 
 ```text
-CitationReferent = bib(key: String, mode: BibMode) | footnote(target: FootnoteTarget) | specimen(label: String)
+CitationReferent = bib(key: String, mode: BibMode) | footnote(target: FootnoteTarget)
 FootnoteTarget = label(value: String) | note(footnote: Footnote)
 Citation(referent: CitationReferent, prefix: [Markup], suffix: [Markup])
 Footnote(label: String?, content: [Markup])
-Specimen(label: String?, start: Int?, content: [Markup])
 ```
 
 `CitationReferent` and `FootnoteTarget` are tagged values like
@@ -335,25 +325,15 @@ written, with its normalized label without the caret as `label` and its
 parsed block content. An inline note keeps its parsed inline body directly,
 without a `Paragraph`.
 
-`Specimen` follows the same definition ownership: a specimen definition is a
-`Specimen` block in the content where it was written. Every definition
-remains present, including anonymous and duplicate ones. Its nullable `label`
-retains the authored label; its nullable `start` retains an effective
-explicit counter reset. A consumer derives displayed numbers in definition
-order; neither definitions nor references store that derived state. See
-[specimens](dialect/specimens.md) for definition and reference syntax.
-Ordinary lists have no specimen variant or label field.
-
-`Document` carries the parser's footnote, specimen and reference tables.
-`document.footnotes`, `document.specimens` and `document.references` list
-every definition in source order, inline notes included, and
-`document.footnote(for: label)` and `document.specimen(for: label)` return the
-first one whose stored label equals the referent's.
+`Document` carries the parser's footnote and reference tables.
+`document.footnotes` and `document.references` list every definition in
+source order, inline notes included, and `document.footnote(for: label)`
+returns the first footnote whose stored label equals the referent's.
 `document.reference(for: label)` returns the node a `reference` destination
-with that label resolves to: the first `Reference` whose label equals it, or,
-when none does, the first `Heading` whose text declares it. The C facade
+with that label resolves to: the first `Reference` whose label equals it. The
+C facade
 answers them through `markdown_core_document_footnote_count`, `_footnote_at`,
-`_footnote_for`, the specimen and reference equivalents, and
+`_footnote_for`, the reference equivalents, and
 `_reference_label_count` and `_reference_label_at`, which list each label that
 resolves with its node, and exposes the nodes through `markdown_core_node`
 and typed field accessors. Swift, Kotlin, and ECMAScript include them in
@@ -375,15 +355,15 @@ them without checking.
 | `Paragraph` | `content: [Markup]` | inline content |
 | `Heading` | `level: Int`, `content: [Markup]` | `level` is 1 through 6; inline content |
 | `ThematicBreak` | none | leaf |
-| `List` | `flavor: ListFlavor`, `start: Int?`, `variant: OrderedListVariant?`, `delimiter: OrderedListDelimiter?`, `tight: Bool`, `items: [ListItem]` | `start` is non-null only for ordered lists |
-| `ListItem` | `marker: String?`, `content: [Markup]` | `marker == null` means not a task item; block content |
+| `List` | `flavor: ListFlavor`, `start: Int?`, `delimiter: OrderedListDelimiter?`, `tight: Bool`, `items: [ListItem]` | `start` is non-null only for ordered lists |
+| `ListItem` | `status: TaskStatus?`, `content: [Markup]` | `status == null` means not a task item; `[ ]` is open, `[x]` and `[X]` done, `[?]` question and `[-]` cancelled; block content |
 | `CodeBlock` | `info: String?`, `language: String?`, `literal: String`, `fenced: Bool`, `closed: Bool` | mode is `standalone`; `info` is trimmed, escape/entity-decoded, and excludes attached attributes; `language` is its first space/tab-delimited token; indented blocks have `fenced=false, closed=true` |
 | `HTMLBlock` | `literal: String` | raw HTML is preserved; a block that opens with `<!--` and whose end line holds only whitespace after the first `-->` is a `Comment` |
 | `FormulaBlock` | `literal: String` | mode is `standalone` |
 | `Table` | `columns: [TableColumn]`, `head: [TableRow]`, `content: [TableRow]` | non-empty columns define the logical grid; rows are owned exactly once in head/content order: one head row, then the body rows |
 | `TableRow` | `cells: [TableCell]` | cells in column order; no row-local header state |
 | `TableCell` | `content: [Markup]` | inline content, stored as parsed |
-| `DirectiveBlock` | `name: String?`, `label: DirectiveLabel?`, `content: [Markup]` | null name for a nameless container, otherwise a letter-first name; attributes use the inherited fields; label is a typed Markup field spanning its brackets, never content; absent and empty labels remain distinct; block content |
+| `DirectiveBlock` | `name: String`, `label: DirectiveLabel?`, `content: [Markup]` | a required name; attributes use the inherited fields; label is a typed Markup field spanning its brackets, never content; absent and empty labels remain distinct; block content |
 | `DirectiveLabel` | `content: [Markup]` | inline content; the scope spans the brackets, so an empty label is still a place |
 | `Text` | `literal: String` | leaf |
 | `SoftBreak` | none | leaf |
@@ -391,7 +371,7 @@ them without checking.
 | `Code` | `literal: String` | mode is `embedded`; leaf |
 | `HTML` | `literal: String` | raw HTML is preserved; an HTML comment token is a `Comment`; leaf |
 | `CrossLink` | `dest: Destination`, `label: String?` | inline leaf; cross destination; complete raw label; no separator means null |
-| `CrossEmbedded` | `dest: Destination`, `label: String?`, `dimensions: Dimensions?` | inline leaf; workspace transclusion; cross destination; label is the raw prefix after a valid size suffix; no separator means null |
+| `CrossEmbed` | `dest: Destination`, `label: String?`, `dimensions: Dimensions?` | inline leaf; workspace transclusion; cross destination; label is the raw prefix after a valid size suffix; no separator means null |
 | `Comment` | `literal: String` | an HTML comment or a `%%` comment, the one kind valid in both block and inline content, which the parent edge records; `literal` excludes the delimiters and keeps every byte between them; leaf |
 | `Formula` | `mode: Placement`, `literal: String` | either mode; leaf |
 | `Emphasis` | `content: [Markup]` | inline content |
@@ -403,7 +383,7 @@ them without checking.
 | `Superscript` | `content: [Markup]` | inline content; empty bodies are retained |
 | `Subscript` | `content: [Markup]` | inline content; non-empty body |
 | `Link` | `dest: Destination`, `title: String?`, `content: [Markup]` | `dest` is the tagged `Destination` value and is never absent: `[a]()` and `[a](<>)` wrote one and wrote nothing in it, so it is `url("")`; a direct link owns the `url` branch; a reference occurrence owns the `reference` branch with the normalized label it names, and an unresolved reference is the inherited literal text; absent and empty title remain distinct; inline content |
-| `Embedded` | `dest: Destination`, `title: String?`, `dimensions: Dimensions?`, `content: [Markup]` | `dest` is the tagged `Destination` value and is never absent, for the reason `Link.dest` is not; a direct image owns the `url` branch and a reference image the `reference` branch; absent and empty title remain distinct; content is parsed alt-text inline content |
+| `Embed` | `dest: Destination`, `title: String?`, `dimensions: Dimensions?`, `content: [Markup]` | `dest` is the tagged `Destination` value and is never absent, for the reason `Link.dest` is not; a direct image owns the `url` branch and a reference image the `reference` branch; absent and empty title remain distinct; content is parsed alt-text inline content |
 | `Directive` | `name: String`, `label: DirectiveLabel?` | letter-first name; attributes use the inherited fields; label is a typed Markup field spanning its brackets, never content; absent and empty labels remain distinct; leaf |
 | `Cite` | `citations: [Citation]` | one or more items in source order; every item has exactly one referent and one cite never mixes referent families; an inherited `[^label]` call is one item with a `footnote(label)` referent whose value is the normalized label without the caret and with empty affixes; its items are owned Citation nodes in the citations field; ordinary content remains empty |
 | `Topic` | `name: String` | inline leaf; the name as written, without the `#`; null anchor and empty attributes |
@@ -411,16 +391,15 @@ them without checking.
 | `Definition` | `term: [Markup]`, `content: [[Markup]]`, `compact: Bool` | inline term; non-empty outer content; each inner collection is one block body; compact records the absence of a blank term gap; visit term then bodies |
 | `Citation` | `referent: CitationReferent`, `prefix: [Markup]`, `suffix: [Markup]` | One Markup node owned by Cite.citations. Its non-null prefix and suffix contain inline markup, empty when absent. It is not ordinary content. |
 | `Footnote` | `label: String?`, `content: [Markup]` | A definition where it was written, or an inline note owned by its `Citation`'s referent. A referenced definition keeps its normalized label and block content; an inline note has a null label and direct inline content. Duplicate and unused definitions remain. |
-| `Specimen` | `label: String?`, `start: Int?`, `content: [Markup]` | A definition where it was written, including duplicates and anonymous definitions. label is the authored label or null; start is an explicit effective counter reset or null. Display numbers are derived. |
 | `Metadata` | `name: MetadataValue?`, `title: MetadataValue?`, `subtitle: MetadataValue?`, `time: MetadataValue?`, `date: MetadataValue?`, `authors: MetadataValue?`, `keywords: MetadataValue?`, `abstract: MetadataValue?`, `state: MetadataValue?`, `comment: MetadataValue?` | A leaf Markup node owned by Document.metadata. Field absence differs from explicit null. Its scope covers the authored properties block; unsupported attribute syntax yields null anchor and empty attributes. |
 | `Reference` | `label: String`, `dest: Destination`, `title: String?` | A link reference definition where it was written: a leaf block with its normalized label, the `url` destination it states, and its title, absent and empty remaining distinct. Its anchor and attributes are the ones the definition states. Duplicates and unused definitions remain. |
 
 Every row also has the ordered inherited fields `id: MarkupID`,
-`extent: Extent`, `runs: [Run]`, `anchor: String?`, and `attributes: Attributes`; they are not repeated in the table. The `url` of a `Link` or `Embedded` destination, and
+`extent: Extent`, `runs: [Run]`, `anchor: String?`, and `attributes: Attributes`; they are not repeated in the table. The `url` of a `Link` or `Embed` destination, and
 every `title`, are the CommonMark-unescaped values with angle-bracket
 wrappers removed and no percent-encoding or normalization. A link reference
 definition is a `Reference` block where it was written, and every successful
-full, collapsed or shortcut form is a `Link` or `Embedded` whose `reference`
+full, collapsed or shortcut form is a `Link` or `Embed` whose `reference`
 destination names the definition's label, with no title and its own
 occurrence scope. An unresolved reference is the inherited literal text with
 its brackets.
@@ -444,49 +423,6 @@ row's end, and cells past the last column are dropped. A cell keeps its inline
 nodes directly. An authored empty cell is a `TableCell` with empty `content`.
 
 The [tables guide](dialect/tables.md) defines the source geometry.
-
-## Slots
-
-A slot is the source of a field that holds a name, a key or a path an editor
-can complete, read where the field is written. The contract's `slots` lists
-the slot kinds, each with its `ordinal`, which is its value in
-`markdown_core_slot_kind` and in every binding, so a new slot kind takes the
-next ordinal. A field's `slots` names the kinds of the slots its source
-writes, in source order: a URL destination writes its path, then its
-fragment, and a properties member its name, then its value.
-`scripts/tooling/generate-node-kinds.mjs` generates every table that
-enumerates slot kinds from the contract, and C answers a kind's name through
-`markdown_core_slot_kind_name`.
-
-A slot's owner is the kind of the construct the field belongs to: the kind
-that has the field, or every kind that holds the value whose field it is,
-except where the value's `holders` names the kinds that hold one of its
-branches. A slot of an inherited field is one of every kind that writes the
-field, which is every attribute site and every block that takes a block
-identifier. A slot kind that several owners share means one role in each.
-
-| Slot | Fields |
-| --- | --- |
-| `dest` | `Destination.url.value`, `Destination.cross.path` |
-| `anchor` | `Destination.url.value`, `Destination.cross.anchor` |
-| `label` | `Reference.label`, `Destination.reference.label` |
-| `footnote` | `Footnote.label`, `FootnoteTarget.label.value` |
-| `bib` | `CitationReferent.bib.key` |
-| `specimen` | `Specimen.label`, `CitationReferent.specimen.label` |
-| `name` | `DirectiveBlock.name`, `Directive.name`, `Topic.name` |
-| `id` | `Markup.anchor` |
-| `class` | `Attributes.classes` |
-| `record` | `Record.name` |
-| `variant` | `Callout.variant` |
-| `info` | `CodeBlock.info` |
-| `field` | `Metadata.name`, `Metadata.title`, `Metadata.subtitle`, `Metadata.time`, `Metadata.date`, `Metadata.authors`, `Metadata.keywords`, `Metadata.abstract`, `Metadata.state`, `Metadata.comment` |
-| `value` | `Metadata.name`, `Metadata.title`, `Metadata.subtitle`, `Metadata.time`, `Metadata.date`, `Metadata.authors`, `Metadata.keywords`, `Metadata.abstract`, `Metadata.state`, `Metadata.comment`, `Record.value` |
-
-A slot that declares a name, such as a definition's label or a node's `id`,
-and a slot that refers to one, such as a call's label or a destination's
-anchor, are both slots: the one completes from the names used and the other
-from the names declared. A field that holds free text, a number or a flag,
-such as a title, a cross link's label or a list's start, has no slot.
 
 ## Parsing
 

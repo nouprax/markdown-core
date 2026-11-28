@@ -196,56 +196,6 @@ void markdown_core_utf8proc_normalize_label(markdown_core_strbuf *dest, const ui
 
 #include "unicode_categories.inc"
 
-#include "anchor_scalars.inc"
-
-/* The anchors module's image of one scalar, or 0 when the scalar is removed.
- * Three dependent loads for every scalar: the generated table is staged by
- * page, leaf and class, so no script is searched for and none is special. */
-static inline int32_t anchor_scalar(int32_t uc) {
-    if ((uint32_t)uc >= 0x110000) {
-        return 0;
-    }
-    uint8_t page = anchor_pages[uc >> (ANCHOR_LEAF_BITS + ANCHOR_PAGE_BITS)];
-    uint16_t leaf = anchor_leaves[page][(uc >> ANCHOR_LEAF_BITS) & ((1 << ANCHOR_PAGE_BITS) - 1)];
-    uint8_t projected = anchor_classes[leaf][uc & ((1 << ANCHOR_LEAF_BITS) - 1)];
-    return projected ? uc + anchor_deltas[projected] : 0;
-}
-
-/* Consume a complete literal here so UTF-8 decoding, scalar projection and
- * encoding share one loop and write through the cursor above.
- *
- * The bound it reserves for is twice the rest of the literal. The generator
- * asserts that no scalar's image is longer than 3/2 of its own encoding, and
- * a scalar decoded from w bytes encodes in at most w: a 2-byte character's
- * scalar is below 0x800 and a 3-byte one's below 0x10000, whatever the bytes.
- * A character with no scalar, a surrogate and anything past U+10FFFF have no
- * image. */
-void markdown_core_utf8proc_anchor(markdown_core_strbuf *dest, const uint8_t *str, bufsize_t len) {
-    uint8_t *out = dest->ptr + dest->size, *end = out;
-    for (bufsize_t at = 0; at < len;) {
-        int32_t scalar;
-        at += markdown_core_utf8proc_decode(str + at, len - at, &scalar);
-        scalar = anchor_scalar(scalar);
-        if (!scalar) {
-            continue;
-        }
-        int width = S_scalar_width(scalar);
-        /* Four bytes hold any scalar's image; only short of that is this
-         * one's exact width compared. */
-        if (end - out < 4) {
-            if (end - out < width) {
-                if (!(out = S_reserve_image(dest, out, (size_t)width, (size_t)width + 2 * (size_t)(len - at)))) {
-                    return;
-                }
-                end = S_image_end(dest);
-            }
-        }
-        S_encode_scalar(scalar, width, out);
-        out += width;
-    }
-    S_finish_image(dest, out);
-}
-
 size_t markdown_core_utf8_columns(const uint8_t *source, size_t from, size_t to, bool wide) {
     if (!wide) {
         return to - from;

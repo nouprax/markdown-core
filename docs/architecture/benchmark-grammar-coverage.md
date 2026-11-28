@@ -33,15 +33,15 @@ the responsibility of the existing parity and regression pipelines.
    states. Requested unit counts are lower bounds; they cannot truncate this
    coverage. Callgrind measures these generated documents.
 
-There are **31 specification features, 133 sections, 36 registered elements,
-186 certificates and 792 generated documents**, 396 in each of two
+There are **30 specification features, 129 sections, 34 registered elements,
+175 certificates and 748 generated documents**, 374 in each of two
 [alphabets](benchmark-grammar-corpus.md#alphabets), each measured once.
-Of the 133 sections, **128 link to grammar certificates and five are explicitly
-context-only** (automatic-anchor output, anchor ownership, two navigation
-introductions, and topic boundaries). Cross-feature links reuse the same certificate; a documentation
+Of the 129 sections, **123 link to grammar certificates and six are explicitly
+context-only** (headings without an anchor, links to headings, anchor ownership,
+two navigation introductions, and topic boundaries). Cross-feature links reuse the same certificate; a documentation
 heading does not demand another benchmark. Mixed sections link their source
 productions and explicitly keep output-coordinate rules in parity/regression.
-Of these, **180 certify whole declared languages and 6 certify local boundary
+Of these, **169 certify whole declared languages and 6 certify local boundary
 languages**. This is feature coverage, not a theorem that the union of these
 restricted grammars equals every possible document of the unrestricted dialect.
 In particular a boundary's residual is not proved impossible to match against
@@ -50,7 +50,7 @@ all imaginable reference grammars. The ledger exposes that distinction.
 | Feature | Generated grammar coverage |
 | --- | --- |
 | Basics | Paragraphs, blanks, tabs, Unicode, LF/CR/CRLF, literal punctuation, escapes and named/decimal/hex entities. |
-| Headings | All six ATX levels, closing hashes, both Setext levels, multiline and inline content. Same input; generated anchors are extra native output work. |
+| Headings | All six ATX levels, closing hashes, both Setext levels, multiline and inline content. |
 | Emphasis | Asterisk and underscore, strong, nested formatting and flanking in the declared domains. |
 | Line breaks | Soft breaks and both hard-break spellings. |
 | Thematic breaks | Three marker families and spaced markers. |
@@ -66,26 +66,24 @@ all imaginable reference grammars. The ledger exposes that distinction.
 | Bracketed spans | Empty, nested, record/class forms and rejected suffixes. |
 | Links/images | Direct links/images, all reference forms, duplicate and unresolved references, angle/bare autolinks; numeric dimensions have an explicit boundary. |
 | Cross links/embeds | Absent/empty/raw labels, path/local/heading/block targets, embed forms, escaped pipes within tables and fallback; numeric dimensions remain a boundary. |
-| Anchors | Explicit IDs, last/empty ID, Unicode/duplicate/empty automatic bases and implicit references. |
+| Anchors | Explicit IDs and last/empty ID. |
 | Block IDs | Paragraph, list-item, list/quote/table container declarations and escaped markers. |
 | Footnotes | GFM references and multi-block definitions, nested inline notes, cycles, duplicate/unused definitions, repeated calls and fallback. The GFM retention difference is documented for cost interpretation. |
 | Citations | Author/suppressed/normal modes, groups, independent prefix/key/suffix and rejected keys. |
-| Specimens | Definition/call equality, explicit nine-digit resets, anonymous/duplicate definitions and group reset suppression have constructive whole-language counterparts. |
-| Lists | Three bullets, decimal delimiters, tight/loose/nested/empty items; alpha/Roman canonical finite domains and default markers have constructive proofs. |
+| Lists | Three bullets, decimal delimiters, tight/loose/nested/empty items. |
 | Tasks | Standard states, custom/Unicode markers, nested ordered tasks, heading bodies and missing-separator fallback. |
 | Definition lists | Tight/loose, multiple/empty definitions and multiple blocks. |
 | Quotes/callouts | Same-input plain/nested/lazy quotes; variable type and all three collapse states have invertible counterparts. |
 | Tables | Same-input pipe/alignment/ragged/escaped-pipe forms. |
-| Directives | Inline label/attribute/both, Unicode names, leaf forms, named/nameless/unbraced/nested containers and fallback. |
+| Directives | Inline label/attribute/both, Unicode names, leaf forms, named and nested containers and fallback. |
 | Properties | All ten fields, text/number/bool/null/list distinctions, invalid-before-valid/duplicates, unknown fields and literal indentation in complete boundary hosts. |
 | Attributes | Quoted/unquoted/empty/bare values, ordered duplicates, escapes/entities/newline, IDs/classes and every documented owner category. |
 | Precedence | Nested block owners, literal islands, bracket/suffix and rejected-prefix cases; the declared source productions cover precedence interactions. |
 
 The precise restricted productions, including all punctuation, are in
 `grammar-corpus.json`; a table cell above does not broaden a certificate's domain.
-For example the Roman substitution is explicitly 1..26, and generated Word fields
-do not claim the full unrestricted Unicode key language. Boundary hosts retain
-the additional work rather than hiding it in a CommonMark paragraph ratio.
+For example generated Word fields do not claim the full unrestricted Unicode
+key language. Boundary hosts retain the additional work rather than hiding it in a CommonMark paragraph ratio.
 
 The pipelines have separate acceptance rules. The grammar checker recognizes
 source bytes against the declared languages and verifies the inverse laws. The

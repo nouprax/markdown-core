@@ -397,8 +397,8 @@ as indentation with four spaces would:
 →bar
 .
 Document scope=1:1..3:4 anchor=null attributes={} children=1
-└── List scope=1:3..3:4 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=false children=1
-    └── ListItem scope=1:3..3:4 anchor=null attributes={} marker=null children=2
+└── List scope=1:3..3:4 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=false children=1
+    └── ListItem scope=1:3..3:4 anchor=null attributes={} status=null children=2
         ├── Paragraph scope=1:5..1:7 anchor=null attributes={} children=1
         │   └── Text scope=1:5..1:7 anchor=null attributes={} literal="foo" children=0
         └── Paragraph scope=3:2..3:4 anchor=null attributes={} children=1
@@ -411,8 +411,8 @@ Document scope=1:1..3:4 anchor=null attributes={} children=1
 →→bar
 .
 Document scope=1:1..3:5 anchor=null attributes={} children=1
-└── List scope=1:1..3:5 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=false children=1
-    └── ListItem scope=1:1..3:5 anchor=null attributes={} marker=null children=2
+└── List scope=1:1..3:5 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=false children=1
+    └── ListItem scope=1:1..3:5 anchor=null attributes={} status=null children=2
         ├── Paragraph scope=1:3..1:5 anchor=null attributes={} children=1
         │   └── Text scope=1:3..1:5 anchor=null attributes={} literal="foo" children=0
         └── CodeBlock scope=3:2..3:5 anchor=null attributes={} info=null language=null literal="  bar\n" fenced=false closed=true children=0
@@ -439,8 +439,8 @@ Document scope=1:1..1:6 anchor=null attributes={} children=1
 -→→foo
 .
 Document scope=1:1..1:6 anchor=null attributes={} children=1
-└── List scope=1:1..1:6 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
-    └── ListItem scope=1:1..1:6 anchor=null attributes={} marker=null children=1
+└── List scope=1:1..1:6 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=1
+    └── ListItem scope=1:1..1:6 anchor=null attributes={} status=null children=1
         └── CodeBlock scope=1:3..1:6 anchor=null attributes={} info=null language=null literal="  foo\n" fenced=false closed=true children=0
 ````````````````````````````````
 
@@ -459,16 +459,16 @@ Document scope=1:1..2:4 anchor=null attributes={} children=1
 → - baz
 .
 Document scope=1:1..3:7 anchor=null attributes={} children=1
-└── List scope=1:2..3:7 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
-    └── ListItem scope=1:2..3:7 anchor=null attributes={} marker=null children=2
+└── List scope=1:2..3:7 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=1
+    └── ListItem scope=1:2..3:7 anchor=null attributes={} status=null children=2
         ├── Paragraph scope=1:4..1:6 anchor=null attributes={} children=1
         │   └── Text scope=1:4..1:6 anchor=null attributes={} literal="foo" children=0
-        └── List scope=2:4..3:7 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
-            └── ListItem scope=2:4..3:7 anchor=null attributes={} marker=null children=2
+        └── List scope=2:4..3:7 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=1
+            └── ListItem scope=2:4..3:7 anchor=null attributes={} status=null children=2
                 ├── Paragraph scope=2:6..2:8 anchor=null attributes={} children=1
                 │   └── Text scope=2:6..2:8 anchor=null attributes={} literal="bar" children=0
-                └── List scope=3:3..3:7 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
-                    └── ListItem scope=3:3..3:7 anchor=null attributes={} marker=null children=1
+                └── List scope=3:3..3:7 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=1
+                    └── ListItem scope=3:3..3:7 anchor=null attributes={} status=null children=1
                         └── Paragraph scope=3:5..3:7 anchor=null attributes={} children=1
                             └── Text scope=3:5..3:7 anchor=null attributes={} literal="baz" children=0
 ````````````````````````````````
@@ -477,7 +477,7 @@ Document scope=1:1..3:7 anchor=null attributes={} children=1
 #→Foo
 .
 Document scope=1:1..1:5 anchor=null attributes={} children=1
-└── Heading scope=1:1..1:5 anchor="foo" attributes={} level=1 children=1
+└── Heading scope=1:1..1:5 anchor=null attributes={} level=1 children=1
     └── Text scope=1:3..1:5 anchor=null attributes={} literal="Foo" children=0
 ````````````````````````````````
 
@@ -514,11 +514,11 @@ two items, not a list with one item containing a code span:
 - two`
 .
 Document scope=1:1..2:6 anchor=null attributes={} children=1
-└── List scope=1:1..2:6 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=2
-    ├── ListItem scope=1:1..1:6 anchor=null attributes={} marker=null children=1
+└── List scope=1:1..2:6 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=2
+    ├── ListItem scope=1:1..1:6 anchor=null attributes={} status=null children=1
     │   └── Paragraph scope=1:3..1:6 anchor=null attributes={} children=1
     │       └── Text scope=1:3..1:6 anchor=null attributes={} literal="`one" children=0
-    └── ListItem scope=2:1..2:6 anchor=null attributes={} marker=null children=1
+    └── ListItem scope=2:1..2:6 anchor=null attributes={} status=null children=1
         └── Paragraph scope=2:3..2:6 anchor=null attributes={} children=1
             └── Text scope=2:3..2:6 anchor=null attributes={} literal="two`" children=0
 ````````````````````````````````
@@ -723,13 +723,13 @@ Thematic breaks do not need blank lines before or after:
 - bar
 .
 Document scope=1:1..3:5 anchor=null attributes={} children=3
-├── List scope=1:1..1:5 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
-│   └── ListItem scope=1:1..1:5 anchor=null attributes={} marker=null children=1
+├── List scope=1:1..1:5 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=1
+│   └── ListItem scope=1:1..1:5 anchor=null attributes={} status=null children=1
 │       └── Paragraph scope=1:3..1:5 anchor=null attributes={} children=1
 │           └── Text scope=1:3..1:5 anchor=null attributes={} literal="foo" children=0
 ├── ThematicBreak scope=2:1..2:3 anchor=null attributes={} children=0
-└── List scope=3:1..3:5 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
-    └── ListItem scope=3:1..3:5 anchor=null attributes={} marker=null children=1
+└── List scope=3:1..3:5 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=1
+    └── ListItem scope=3:1..3:5 anchor=null attributes={} status=null children=1
         └── Paragraph scope=3:3..3:5 anchor=null attributes={} children=1
             └── Text scope=3:3..3:5 anchor=null attributes={} literal="bar" children=0
 ````````````````````````````````
@@ -763,7 +763,7 @@ Foo
 bar
 .
 Document scope=1:1..3:3 anchor=null attributes={} children=2
-├── Heading scope=1:1..2:3 anchor="foo" attributes={} level=2 children=1
+├── Heading scope=1:1..2:3 anchor=null attributes={} level=2 children=1
 │   └── Text scope=1:1..1:3 anchor=null attributes={} literal="Foo" children=0
 └── Paragraph scope=3:1..3:3 anchor=null attributes={} children=1
     └── Text scope=3:1..3:3 anchor=null attributes={} literal="bar" children=0
@@ -779,13 +779,13 @@ interpretations of a line, the thematic break takes precedence:
 * Bar
 .
 Document scope=1:1..3:5 anchor=null attributes={} children=3
-├── List scope=1:1..1:5 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
-│   └── ListItem scope=1:1..1:5 anchor=null attributes={} marker=null children=1
+├── List scope=1:1..1:5 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=1
+│   └── ListItem scope=1:1..1:5 anchor=null attributes={} status=null children=1
 │       └── Paragraph scope=1:3..1:5 anchor=null attributes={} children=1
 │           └── Text scope=1:3..1:5 anchor=null attributes={} literal="Foo" children=0
 ├── ThematicBreak scope=2:1..2:5 anchor=null attributes={} children=0
-└── List scope=3:1..3:5 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
-    └── ListItem scope=3:1..3:5 anchor=null attributes={} marker=null children=1
+└── List scope=3:1..3:5 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=1
+    └── ListItem scope=3:1..3:5 anchor=null attributes={} status=null children=1
         └── Paragraph scope=3:3..3:5 anchor=null attributes={} children=1
             └── Text scope=3:3..3:5 anchor=null attributes={} literal="Bar" children=0
 ````````````````````````````````
@@ -798,11 +798,11 @@ If you want a thematic break in a list item, use a different bullet:
 - * * *
 .
 Document scope=1:1..2:7 anchor=null attributes={} children=1
-└── List scope=1:1..2:7 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=2
-    ├── ListItem scope=1:1..1:5 anchor=null attributes={} marker=null children=1
+└── List scope=1:1..2:7 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=2
+    ├── ListItem scope=1:1..1:5 anchor=null attributes={} status=null children=1
     │   └── Paragraph scope=1:3..1:5 anchor=null attributes={} children=1
     │       └── Text scope=1:3..1:5 anchor=null attributes={} literal="Foo" children=0
-    └── ListItem scope=2:1..2:7 anchor=null attributes={} marker=null children=1
+    └── ListItem scope=2:1..2:7 anchor=null attributes={} status=null children=1
         └── ThematicBreak scope=2:3..2:7 anchor=null attributes={} children=0
 ````````````````````````````````
 
@@ -832,17 +832,17 @@ Simple headings:
 ###### foo
 .
 Document scope=1:1..6:10 anchor=null attributes={} children=6
-├── Heading scope=1:1..1:5 anchor="foo" attributes={} level=1 children=1
+├── Heading scope=1:1..1:5 anchor=null attributes={} level=1 children=1
 │   └── Text scope=1:3..1:5 anchor=null attributes={} literal="foo" children=0
-├── Heading scope=2:1..2:6 anchor="foo-1" attributes={} level=2 children=1
+├── Heading scope=2:1..2:6 anchor=null attributes={} level=2 children=1
 │   └── Text scope=2:4..2:6 anchor=null attributes={} literal="foo" children=0
-├── Heading scope=3:1..3:7 anchor="foo-2" attributes={} level=3 children=1
+├── Heading scope=3:1..3:7 anchor=null attributes={} level=3 children=1
 │   └── Text scope=3:5..3:7 anchor=null attributes={} literal="foo" children=0
-├── Heading scope=4:1..4:8 anchor="foo-3" attributes={} level=4 children=1
+├── Heading scope=4:1..4:8 anchor=null attributes={} level=4 children=1
 │   └── Text scope=4:6..4:8 anchor=null attributes={} literal="foo" children=0
-├── Heading scope=5:1..5:9 anchor="foo-4" attributes={} level=5 children=1
+├── Heading scope=5:1..5:9 anchor=null attributes={} level=5 children=1
 │   └── Text scope=5:7..5:9 anchor=null attributes={} literal="foo" children=0
-└── Heading scope=6:1..6:10 anchor="foo-5" attributes={} level=6 children=1
+└── Heading scope=6:1..6:10 anchor=null attributes={} level=6 children=1
     └── Text scope=6:8..6:10 anchor=null attributes={} literal="foo" children=0
 ````````````````````````````````
 
@@ -896,7 +896,7 @@ Contents are parsed as inlines:
 # foo *bar* \*baz\*
 .
 Document scope=1:1..1:19 anchor=null attributes={} children=1
-└── Heading scope=1:1..1:19 anchor="foo-bar-baz" attributes={} level=1 children=3
+└── Heading scope=1:1..1:19 anchor=null attributes={} level=1 children=3
     ├── Text scope=1:3..1:6 anchor=null attributes={} literal="foo " children=0
     ├── Emphasis scope=1:7..1:11 anchor=null attributes={} children=1
     │   └── Text scope=1:8..1:10 anchor=null attributes={} literal="bar" children=0
@@ -910,7 +910,7 @@ Leading and trailing [whitespace] is ignored in parsing inline content:
 #                  foo                     
 .
 Document scope=1:1..1:43 anchor=null attributes={} children=1
-└── Heading scope=1:1..1:43 anchor="foo" attributes={} level=1 children=1
+└── Heading scope=1:1..1:43 anchor=null attributes={} level=1 children=1
     └── Text scope=1:20..1:22 anchor=null attributes={} literal="foo" children=0
 ````````````````````````````````
 
@@ -923,11 +923,11 @@ One to three spaces indentation are allowed:
    # foo
 .
 Document scope=1:1..3:8 anchor=null attributes={} children=3
-├── Heading scope=1:2..1:8 anchor="foo" attributes={} level=3 children=1
+├── Heading scope=1:2..1:8 anchor=null attributes={} level=3 children=1
 │   └── Text scope=1:6..1:8 anchor=null attributes={} literal="foo" children=0
-├── Heading scope=2:3..2:8 anchor="foo-1" attributes={} level=2 children=1
+├── Heading scope=2:3..2:8 anchor=null attributes={} level=2 children=1
 │   └── Text scope=2:6..2:8 anchor=null attributes={} literal="foo" children=0
-└── Heading scope=3:4..3:8 anchor="foo-2" attributes={} level=1 children=1
+└── Heading scope=3:4..3:8 anchor=null attributes={} level=1 children=1
     └── Text scope=3:6..3:8 anchor=null attributes={} literal="foo" children=0
 ````````````````````````````````
 
@@ -961,9 +961,9 @@ A closing sequence of `#` characters is optional:
   ###   bar    ###
 .
 Document scope=1:1..2:18 anchor=null attributes={} children=2
-├── Heading scope=1:1..1:9 anchor="foo" attributes={} level=2 children=1
+├── Heading scope=1:1..1:9 anchor=null attributes={} level=2 children=1
 │   └── Text scope=1:4..1:6 anchor=null attributes={} literal="foo" children=0
-└── Heading scope=2:3..2:18 anchor="bar" attributes={} level=3 children=1
+└── Heading scope=2:3..2:18 anchor=null attributes={} level=3 children=1
     └── Text scope=2:9..2:11 anchor=null attributes={} literal="bar" children=0
 ````````````````````````````````
 
@@ -975,9 +975,9 @@ It need not be the same length as the opening sequence:
 ##### foo ##
 .
 Document scope=1:1..2:12 anchor=null attributes={} children=2
-├── Heading scope=1:1..1:40 anchor="foo" attributes={} level=1 children=1
+├── Heading scope=1:1..1:40 anchor=null attributes={} level=1 children=1
 │   └── Text scope=1:3..1:5 anchor=null attributes={} literal="foo" children=0
-└── Heading scope=2:1..2:12 anchor="foo-1" attributes={} level=5 children=1
+└── Heading scope=2:1..2:12 anchor=null attributes={} level=5 children=1
     └── Text scope=2:7..2:9 anchor=null attributes={} literal="foo" children=0
 ````````````````````````````````
 
@@ -988,7 +988,7 @@ Spaces are allowed after the closing sequence:
 ### foo ###     
 .
 Document scope=1:1..1:16 anchor=null attributes={} children=1
-└── Heading scope=1:1..1:16 anchor="foo" attributes={} level=3 children=1
+└── Heading scope=1:1..1:16 anchor=null attributes={} level=3 children=1
     └── Text scope=1:5..1:7 anchor=null attributes={} literal="foo" children=0
 ````````````````````````````````
 
@@ -1001,7 +1001,7 @@ heading:
 ### foo ### b
 .
 Document scope=1:1..1:13 anchor=null attributes={} children=1
-└── Heading scope=1:1..1:13 anchor="foo--b" attributes={} level=3 children=1
+└── Heading scope=1:1..1:13 anchor=null attributes={} level=3 children=1
     └── Text scope=1:5..1:13 anchor=null attributes={} literal="foo ### b" children=0
 ````````````````````````````````
 
@@ -1012,7 +1012,7 @@ The closing sequence must be preceded by a space:
 # foo#
 .
 Document scope=1:1..1:6 anchor=null attributes={} children=1
-└── Heading scope=1:1..1:6 anchor="foo" attributes={} level=1 children=1
+└── Heading scope=1:1..1:6 anchor=null attributes={} level=1 children=1
     └── Text scope=1:3..1:6 anchor=null attributes={} literal="foo#" children=0
 ````````````````````````````````
 
@@ -1026,11 +1026,11 @@ of the closing sequence:
 # foo \#
 .
 Document scope=1:1..3:8 anchor=null attributes={} children=3
-├── Heading scope=1:1..1:12 anchor="foo-" attributes={} level=3 children=1
+├── Heading scope=1:1..1:12 anchor=null attributes={} level=3 children=1
 │   └── Text scope=1:5..1:12 anchor=null attributes={} literal="foo ###" children=0
-├── Heading scope=2:1..2:11 anchor="foo--1" attributes={} level=2 children=1
+├── Heading scope=2:1..2:11 anchor=null attributes={} level=2 children=1
 │   └── Text scope=2:4..2:11 anchor=null attributes={} literal="foo ###" children=0
-└── Heading scope=3:1..3:8 anchor="foo--2" attributes={} level=1 children=1
+└── Heading scope=3:1..3:8 anchor=null attributes={} level=1 children=1
     └── Text scope=3:3..3:8 anchor=null attributes={} literal="foo #" children=0
 ````````````````````````````````
 
@@ -1045,7 +1045,7 @@ lines, and they can interrupt paragraphs:
 .
 Document scope=1:1..3:4 anchor=null attributes={} children=3
 ├── ThematicBreak scope=1:1..1:4 anchor=null attributes={} children=0
-├── Heading scope=2:1..2:6 anchor="foo" attributes={} level=2 children=1
+├── Heading scope=2:1..2:6 anchor=null attributes={} level=2 children=1
 │   └── Text scope=2:4..2:6 anchor=null attributes={} literal="foo" children=0
 └── ThematicBreak scope=3:1..3:4 anchor=null attributes={} children=0
 ````````````````````````````````
@@ -1059,7 +1059,7 @@ Bar foo
 Document scope=1:1..3:7 anchor=null attributes={} children=3
 ├── Paragraph scope=1:1..1:7 anchor=null attributes={} children=1
 │   └── Text scope=1:1..1:7 anchor=null attributes={} literal="Foo bar" children=0
-├── Heading scope=2:1..2:5 anchor="baz" attributes={} level=1 children=1
+├── Heading scope=2:1..2:5 anchor=null attributes={} level=1 children=1
 │   └── Text scope=2:3..2:5 anchor=null attributes={} literal="baz" children=0
 └── Paragraph scope=3:1..3:7 anchor=null attributes={} children=1
     └── Text scope=3:1..3:7 anchor=null attributes={} literal="Bar foo" children=0
@@ -1074,9 +1074,9 @@ ATX headings can be empty:
 ### ###
 .
 Document scope=1:1..3:7 anchor=null attributes={} children=3
-├── Heading scope=1:1..1:3 anchor="section" attributes={} level=2 children=0
-├── Heading scope=2:1..2:1 anchor="section-1" attributes={} level=1 children=0
-└── Heading scope=3:1..3:7 anchor="section-2" attributes={} level=3 children=0
+├── Heading scope=1:1..1:3 anchor=null attributes={} level=2 children=0
+├── Heading scope=2:1..2:1 anchor=null attributes={} level=1 children=0
+└── Heading scope=3:1..3:7 anchor=null attributes={} level=3 children=0
 ````````````````````````````````
 
 
@@ -1117,11 +1117,11 @@ Foo *bar*
 ---------
 .
 Document scope=1:1..5:9 anchor=null attributes={} children=2
-├── Heading scope=1:1..2:9 anchor="foo-bar" attributes={} level=1 children=2
+├── Heading scope=1:1..2:9 anchor=null attributes={} level=1 children=2
 │   ├── Text scope=1:1..1:4 anchor=null attributes={} literal="Foo " children=0
 │   └── Emphasis scope=1:5..1:9 anchor=null attributes={} children=1
 │       └── Text scope=1:6..1:8 anchor=null attributes={} literal="bar" children=0
-└── Heading scope=4:1..5:9 anchor="foo-bar-1" attributes={} level=2 children=2
+└── Heading scope=4:1..5:9 anchor=null attributes={} level=2 children=2
     ├── Text scope=4:1..4:4 anchor=null attributes={} literal="Foo " children=0
     └── Emphasis scope=4:5..4:9 anchor=null attributes={} children=1
         └── Text scope=4:6..4:8 anchor=null attributes={} literal="bar" children=0
@@ -1136,7 +1136,7 @@ baz*
 ====
 .
 Document scope=1:1..3:4 anchor=null attributes={} children=1
-└── Heading scope=1:1..3:4 anchor="foo-bar-baz" attributes={} level=1 children=2
+└── Heading scope=1:1..3:4 anchor=null attributes={} level=1 children=2
     ├── Text scope=1:1..1:4 anchor=null attributes={} literal="Foo " children=0
     └── Emphasis scope=1:5..2:4 anchor=null attributes={} children=3
         ├── Text scope=1:6..1:8 anchor=null attributes={} literal="bar" children=0
@@ -1155,7 +1155,7 @@ baz*→
 ====
 .
 Document scope=1:1..3:4 anchor=null attributes={} children=1
-└── Heading scope=1:3..3:4 anchor="foo-bar-baz" attributes={} level=1 children=2
+└── Heading scope=1:3..3:4 anchor=null attributes={} level=1 children=2
     ├── Text scope=1:3..1:6 anchor=null attributes={} literal="Foo " children=0
     └── Emphasis scope=1:7..2:4 anchor=null attributes={} children=3
         ├── Text scope=1:8..1:10 anchor=null attributes={} literal="bar" children=0
@@ -1174,9 +1174,9 @@ Foo
 =
 .
 Document scope=1:1..5:1 anchor=null attributes={} children=2
-├── Heading scope=1:1..2:25 anchor="foo" attributes={} level=2 children=1
+├── Heading scope=1:1..2:25 anchor=null attributes={} level=2 children=1
 │   └── Text scope=1:1..1:3 anchor=null attributes={} literal="Foo" children=0
-└── Heading scope=4:1..5:1 anchor="foo-1" attributes={} level=1 children=1
+└── Heading scope=4:1..5:1 anchor=null attributes={} level=1 children=1
     └── Text scope=4:1..4:3 anchor=null attributes={} literal="Foo" children=0
 ````````````````````````````````
 
@@ -1195,11 +1195,11 @@ not line up with the underlining:
   ===
 .
 Document scope=1:1..8:5 anchor=null attributes={} children=3
-├── Heading scope=1:4..2:3 anchor="foo" attributes={} level=2 children=1
+├── Heading scope=1:4..2:3 anchor=null attributes={} level=2 children=1
 │   └── Text scope=1:4..1:6 anchor=null attributes={} literal="Foo" children=0
-├── Heading scope=4:3..5:5 anchor="foo-1" attributes={} level=2 children=1
+├── Heading scope=4:3..5:5 anchor=null attributes={} level=2 children=1
 │   └── Text scope=4:3..4:5 anchor=null attributes={} literal="Foo" children=0
-└── Heading scope=7:3..8:5 anchor="foo-2" attributes={} level=1 children=1
+└── Heading scope=7:3..8:5 anchor=null attributes={} level=1 children=1
     └── Text scope=7:3..7:5 anchor=null attributes={} literal="Foo" children=0
 ````````````````````````````````
 
@@ -1227,7 +1227,7 @@ Foo
    ----      
 .
 Document scope=1:1..2:13 anchor=null attributes={} children=1
-└── Heading scope=1:1..2:13 anchor="foo" attributes={} level=2 children=1
+└── Heading scope=1:1..2:13 anchor=null attributes={} level=2 children=1
     └── Text scope=1:1..1:3 anchor=null attributes={} literal="Foo" children=0
 ````````````````````````````````
 
@@ -1273,7 +1273,7 @@ Foo
 -----
 .
 Document scope=1:1..2:5 anchor=null attributes={} children=1
-└── Heading scope=1:1..2:5 anchor="foo" attributes={} level=2 children=1
+└── Heading scope=1:1..2:5 anchor=null attributes={} level=2 children=1
     └── Text scope=1:1..1:3 anchor=null attributes={} literal="Foo" children=0
 ````````````````````````````````
 
@@ -1285,7 +1285,7 @@ Foo\
 ----
 .
 Document scope=1:1..2:4 anchor=null attributes={} children=1
-└── Heading scope=1:1..2:4 anchor="foo" attributes={} level=2 children=1
+└── Heading scope=1:1..2:4 anchor=null attributes={} level=2 children=1
     └── Text scope=1:1..1:4 anchor=null attributes={} literal="Foo\\" children=0
 ````````````````````````````````
 
@@ -1303,11 +1303,11 @@ indicators of inline structure, the following are setext headings:
 of dashes"/>
 .
 Document scope=1:1..7:12 anchor=null attributes={} children=4
-├── Heading scope=1:1..2:4 anchor="foo" attributes={} level=2 children=1
+├── Heading scope=1:1..2:4 anchor=null attributes={} level=2 children=1
 │   └── Text scope=1:1..1:4 anchor=null attributes={} literal="`Foo" children=0
 ├── Paragraph scope=3:1..3:1 anchor=null attributes={} children=1
 │   └── Text scope=3:1..3:1 anchor=null attributes={} literal="`" children=0
-├── Heading scope=5:1..6:3 anchor="a-titlea-lot" attributes={} level=2 children=1
+├── Heading scope=5:1..6:3 anchor=null attributes={} level=2 children=1
 │   └── Text scope=5:1..5:15 anchor=null attributes={} literal="<a title=\"a lot" children=0
 └── Paragraph scope=7:1..7:12 anchor=null attributes={} children=1
     └── Text scope=7:1..7:12 anchor=null attributes={} literal="of dashes\"/>" children=0
@@ -1350,8 +1350,8 @@ Document scope=1:1..3:3 anchor=null attributes={} children=1
 ---
 .
 Document scope=1:1..2:3 anchor=null attributes={} children=2
-├── List scope=1:1..1:5 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
-│   └── ListItem scope=1:1..1:5 anchor=null attributes={} marker=null children=1
+├── List scope=1:1..1:5 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=1
+│   └── ListItem scope=1:1..1:5 anchor=null attributes={} status=null children=1
 │       └── Paragraph scope=1:3..1:5 anchor=null attributes={} children=1
 │           └── Text scope=1:3..1:5 anchor=null attributes={} literal="Foo" children=0
 └── ThematicBreak scope=2:1..2:3 anchor=null attributes={} children=0
@@ -1368,7 +1368,7 @@ Bar
 ---
 .
 Document scope=1:1..3:3 anchor=null attributes={} children=1
-└── Heading scope=1:1..3:3 anchor="foo-bar" attributes={} level=2 children=3
+└── Heading scope=1:1..3:3 anchor=null attributes={} level=2 children=3
     ├── Text scope=1:1..1:3 anchor=null attributes={} literal="Foo" children=0
     ├── SoftBreak scope=1:4..2:0 anchor=null attributes={} children=0
     └── Text scope=2:1..2:3 anchor=null attributes={} literal="Bar" children=0
@@ -1388,7 +1388,7 @@ Baz
 .
 Document scope=1:1..6:3 anchor=null attributes={} children=2
 ├── Metadata scope=1:1..3:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
-├── Heading scope=4:1..5:3 anchor="bar" attributes={} level=2 children=1
+├── Heading scope=4:1..5:3 anchor=null attributes={} level=2 children=1
 │   └── Text scope=4:1..4:3 anchor=null attributes={} literal="Bar" children=0
 └── Paragraph scope=6:1..6:3 anchor=null attributes={} children=1
     └── Text scope=6:1..6:3 anchor=null attributes={} literal="Baz" children=0
@@ -1425,8 +1425,8 @@ Document scope=1:1..2:3 anchor=null attributes={} children=0
 -----
 .
 Document scope=1:1..2:5 anchor=null attributes={} children=2
-├── List scope=1:1..1:5 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
-│   └── ListItem scope=1:1..1:5 anchor=null attributes={} marker=null children=1
+├── List scope=1:1..1:5 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=1
+│   └── ListItem scope=1:1..1:5 anchor=null attributes={} status=null children=1
 │       └── Paragraph scope=1:3..1:5 anchor=null attributes={} children=1
 │           └── Text scope=1:3..1:5 anchor=null attributes={} literal="foo" children=0
 └── ThematicBreak scope=2:1..2:5 anchor=null attributes={} children=0
@@ -1463,7 +1463,7 @@ use backslash escapes:
 ------
 .
 Document scope=1:1..2:6 anchor=null attributes={} children=1
-└── Heading scope=1:1..2:6 anchor="-foo" attributes={} level=2 children=1
+└── Heading scope=1:1..2:6 anchor=null attributes={} level=2 children=1
     └── Text scope=1:1..1:6 anchor=null attributes={} literal="> foo" children=0
 ````````````````````````````````
 
@@ -1501,7 +1501,7 @@ baz
 Document scope=1:1..5:3 anchor=null attributes={} children=3
 ├── Paragraph scope=1:1..1:3 anchor=null attributes={} children=1
 │   └── Text scope=1:1..1:3 anchor=null attributes={} literal="Foo" children=0
-├── Heading scope=3:1..4:3 anchor="bar" attributes={} level=2 children=1
+├── Heading scope=3:1..4:3 anchor=null attributes={} level=2 children=1
 │   └── Text scope=3:1..3:3 anchor=null attributes={} literal="bar" children=0
 └── Paragraph scope=5:1..5:3 anchor=null attributes={} children=1
     └── Text scope=5:1..5:3 anchor=null attributes={} literal="baz" children=0
@@ -1604,8 +1604,8 @@ item][list items], the list item interpretation takes precedence:
     bar
 .
 Document scope=1:1..3:7 anchor=null attributes={} children=1
-└── List scope=1:3..3:7 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=false children=1
-    └── ListItem scope=1:3..3:7 anchor=null attributes={} marker=null children=2
+└── List scope=1:3..3:7 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=false children=1
+    └── ListItem scope=1:3..3:7 anchor=null attributes={} status=null children=2
         ├── Paragraph scope=1:5..1:7 anchor=null attributes={} children=1
         │   └── Text scope=1:5..1:7 anchor=null attributes={} literal="foo" children=0
         └── Paragraph scope=3:5..3:7 anchor=null attributes={} children=1
@@ -1619,12 +1619,12 @@ Document scope=1:1..3:7 anchor=null attributes={} children=1
     - bar
 .
 Document scope=1:1..3:9 anchor=null attributes={} children=1
-└── List scope=1:1..3:9 anchor=null attributes={} flavor=ordered start=1 variant=decimal delimiter=period tight=false children=1
-    └── ListItem scope=1:1..3:9 anchor=null attributes={} marker=null children=2
+└── List scope=1:1..3:9 anchor=null attributes={} flavor=ordered start=1 delimiter=period tight=false children=1
+    └── ListItem scope=1:1..3:9 anchor=null attributes={} status=null children=2
         ├── Paragraph scope=1:5..1:7 anchor=null attributes={} children=1
         │   └── Text scope=1:5..1:7 anchor=null attributes={} literal="foo" children=0
-        └── List scope=3:5..3:9 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
-            └── ListItem scope=3:5..3:9 anchor=null attributes={} marker=null children=1
+        └── List scope=3:5..3:9 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=1
+            └── ListItem scope=3:5..3:9 anchor=null attributes={} status=null children=1
                 └── Paragraph scope=3:7..3:9 anchor=null attributes={} children=1
                     └── Text scope=3:7..3:9 anchor=null attributes={} literal="bar" children=0
 ````````````````````````````````
@@ -1717,10 +1717,10 @@ Heading
 ----
 .
 Document scope=1:1..6:4 anchor=null attributes={} children=5
-├── Heading scope=1:1..1:9 anchor="heading" attributes={} level=1 children=1
+├── Heading scope=1:1..1:9 anchor=null attributes={} level=1 children=1
 │   └── Text scope=1:3..1:9 anchor=null attributes={} literal="Heading" children=0
 ├── CodeBlock scope=2:5..2:7 anchor=null attributes={} info=null language=null literal="foo\n" fenced=false closed=true children=0
-├── Heading scope=3:1..4:6 anchor="heading-1" attributes={} level=2 children=1
+├── Heading scope=3:1..4:6 anchor=null attributes={} level=2 children=1
 │   └── Text scope=3:1..3:7 anchor=null attributes={} literal="Heading" children=0
 ├── CodeBlock scope=5:5..5:7 anchor=null attributes={} info=null language=null literal="foo\n" fenced=false closed=true children=0
 └── ThematicBreak scope=6:1..6:4 anchor=null attributes={} children=0
@@ -2096,10 +2096,10 @@ bar
 # baz
 .
 Document scope=1:1..6:5 anchor=null attributes={} children=3
-├── Heading scope=1:1..2:3 anchor="foo" attributes={} level=2 children=1
+├── Heading scope=1:1..2:3 anchor=null attributes={} level=2 children=1
 │   └── Text scope=1:1..1:3 anchor=null attributes={} literal="foo" children=0
 ├── CodeBlock scope=3:1..5:3 anchor=null attributes={} info=null language=null literal="bar\n" fenced=true closed=true children=0
-└── Heading scope=6:1..6:5 anchor="baz" attributes={} level=1 children=1
+└── Heading scope=6:1..6:5 anchor=null attributes={} level=1 children=1
     └── Text scope=6:3..6:5 anchor=null attributes={} literal="baz" children=0
 ````````````````````````````````
 
@@ -2642,10 +2642,10 @@ Document scope=1:1..4:3 anchor=null attributes={} children=2
 - foo
 .
 Document scope=1:1..2:5 anchor=null attributes={} children=1
-└── List scope=1:1..2:5 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=2
-    ├── ListItem scope=1:1..1:7 anchor=null attributes={} marker=null children=1
+└── List scope=1:1..2:5 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=2
+    ├── ListItem scope=1:1..1:7 anchor=null attributes={} status=null children=1
     │   └── HTMLBlock scope=1:3..1:7 anchor=null attributes={} literal="<div>\n" children=0
-    └── ListItem scope=2:1..2:5 anchor=null attributes={} marker=null children=1
+    └── ListItem scope=2:1..2:5 anchor=null attributes={} status=null children=1
         └── Paragraph scope=2:3..2:5 anchor=null attributes={} children=1
             └── Text scope=2:3..2:5 anchor=null attributes={} literal="foo" children=0
 ````````````````````````````````
@@ -3315,7 +3315,7 @@ and thematic breaks, and it need not be followed by a blank line.
 > bar
 .
 Document scope=1:1..3:5 anchor=null attributes={} children=3
-├── Heading scope=1:1..1:7 anchor="foo" attributes={} level=1 children=1
+├── Heading scope=1:1..1:7 anchor=null attributes={} level=1 children=1
 │   └── Link scope=1:3..1:7 anchor=null attributes={} dest=reference("foo") title=null children=1
 │       └── Text scope=1:4..1:6 anchor=null attributes={} literal="Foo" children=0
 ├── Reference scope=2:1..2:11 anchor=null attributes={} label="foo" dest=url("/url") title=null children=0
@@ -3332,7 +3332,7 @@ bar
 .
 Document scope=1:1..4:5 anchor=null attributes={} children=3
 ├── Reference scope=1:1..1:11 anchor=null attributes={} label="foo" dest=url("/url") title=null children=0
-├── Heading scope=2:1..3:3 anchor="bar" attributes={} level=1 children=1
+├── Heading scope=2:1..3:3 anchor=null attributes={} level=1 children=1
 │   └── Text scope=2:1..2:3 anchor=null attributes={} literal="bar" children=0
 └── Paragraph scope=4:1..4:5 anchor=null attributes={} children=1
     └── Link scope=4:1..4:5 anchor=null attributes={} dest=reference("foo") title=null children=1
@@ -3574,7 +3574,7 @@ aaa
 Document scope=1:1..8:2 anchor=null attributes={} children=2
 ├── Paragraph scope=3:1..3:3 anchor=null attributes={} children=1
 │   └── Text scope=3:1..3:3 anchor=null attributes={} literal="aaa" children=0
-└── Heading scope=6:1..6:5 anchor="aaa" attributes={} level=1 children=1
+└── Heading scope=6:1..6:5 anchor=null attributes={} level=1 children=1
     └── Text scope=6:3..6:5 anchor=null attributes={} literal="aaa" children=0
 ````````````````````````````````
 
@@ -3854,7 +3854,7 @@ Here is a simple example:
 .
 Document scope=1:1..3:5 anchor=null attributes={} children=1
 └── Callout scope=1:1..3:5 anchor=null attributes={} variant=null collapsed=null children=2
-    ├── Heading scope=1:3..1:7 anchor="foo" attributes={} level=1 children=1
+    ├── Heading scope=1:3..1:7 anchor=null attributes={} level=1 children=1
     │   └── Text scope=1:5..1:7 anchor=null attributes={} literal="Foo" children=0
     └── Paragraph scope=2:3..3:0,3:3..3:5 anchor=null attributes={} children=3
         ├── Text scope=2:3..2:5 anchor=null attributes={} literal="bar" children=0
@@ -3872,7 +3872,7 @@ The spaces after the `>` characters can be omitted:
 .
 Document scope=1:1..3:5 anchor=null attributes={} children=1
 └── Callout scope=1:1..3:5 anchor=null attributes={} variant=null collapsed=null children=2
-    ├── Heading scope=1:2..1:6 anchor="foo" attributes={} level=1 children=1
+    ├── Heading scope=1:2..1:6 anchor=null attributes={} level=1 children=1
     │   └── Text scope=1:4..1:6 anchor=null attributes={} literal="Foo" children=0
     └── Paragraph scope=2:2..3:0,3:3..3:5 anchor=null attributes={} children=3
         ├── Text scope=2:2..2:4 anchor=null attributes={} literal="bar" children=0
@@ -3890,7 +3890,7 @@ The `>` characters can be indented 1-3 spaces:
 .
 Document scope=1:1..3:6 anchor=null attributes={} children=1
 └── Callout scope=1:4..3:6 anchor=null attributes={} variant=null collapsed=null children=2
-    ├── Heading scope=1:6..1:10 anchor="foo" attributes={} level=1 children=1
+    ├── Heading scope=1:6..1:10 anchor=null attributes={} level=1 children=1
     │   └── Text scope=1:8..1:10 anchor=null attributes={} literal="Foo" children=0
     └── Paragraph scope=2:6..3:0,3:4..3:6 anchor=null attributes={} children=3
         ├── Text scope=2:6..2:8 anchor=null attributes={} literal="bar" children=0
@@ -3921,7 +3921,7 @@ baz
 .
 Document scope=1:1..3:3 anchor=null attributes={} children=1
 └── Callout scope=1:1..3:3 anchor=null attributes={} variant=null collapsed=null children=2
-    ├── Heading scope=1:3..1:7 anchor="foo" attributes={} level=1 children=1
+    ├── Heading scope=1:3..1:7 anchor=null attributes={} level=1 children=1
     │   └── Text scope=1:5..1:7 anchor=null attributes={} literal="Foo" children=0
     └── Paragraph scope=2:3..3:3 anchor=null attributes={} children=3
         ├── Text scope=2:3..2:5 anchor=null attributes={} literal="bar" children=0
@@ -3987,12 +3987,12 @@ then the block quote ends after the first line:
 .
 Document scope=1:1..2:5 anchor=null attributes={} children=2
 ├── Callout scope=1:1..1:7 anchor=null attributes={} variant=null collapsed=null children=1
-│   └── List scope=1:3..1:7 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
-│       └── ListItem scope=1:3..1:7 anchor=null attributes={} marker=null children=1
+│   └── List scope=1:3..1:7 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=1
+│       └── ListItem scope=1:3..1:7 anchor=null attributes={} status=null children=1
 │           └── Paragraph scope=1:5..1:7 anchor=null attributes={} children=1
 │               └── Text scope=1:5..1:7 anchor=null attributes={} literal="foo" children=0
-└── List scope=2:1..2:5 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
-    └── ListItem scope=2:1..2:5 anchor=null attributes={} marker=null children=1
+└── List scope=2:1..2:5 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=1
+    └── ListItem scope=2:1..2:5 anchor=null attributes={} status=null children=1
         └── Paragraph scope=2:3..2:5 anchor=null attributes={} children=1
             └── Text scope=2:3..2:5 anchor=null attributes={} literal="bar" children=0
 ````````````````````````````````
@@ -4347,8 +4347,8 @@ and the same contents as *Ls*:
     > A block quote.
 .
 Document scope=1:1..6:20 anchor=null attributes={} children=1
-└── List scope=1:1..6:20 anchor=null attributes={} flavor=ordered start=1 variant=decimal delimiter=period tight=false children=1
-    └── ListItem scope=1:1..6:20 anchor=null attributes={} marker=null children=3
+└── List scope=1:1..6:20 anchor=null attributes={} flavor=ordered start=1 delimiter=period tight=false children=1
+    └── ListItem scope=1:1..6:20 anchor=null attributes={} status=null children=3
         ├── Paragraph scope=1:5..2:0,2:5..2:19 anchor=null attributes={} children=3
         │   ├── Text scope=1:5..1:15 anchor=null attributes={} literal="A paragraph" children=0
         │   ├── SoftBreak scope=1:16..2:0 anchor=null attributes={} children=0
@@ -4377,8 +4377,8 @@ put under the list item:
  two
 .
 Document scope=1:1..3:4 anchor=null attributes={} children=2
-├── List scope=1:1..2:0 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
-│   └── ListItem scope=1:1..2:0 anchor=null attributes={} marker=null children=1
+├── List scope=1:1..2:0 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=1
+│   └── ListItem scope=1:1..2:0 anchor=null attributes={} status=null children=1
 │       └── Paragraph scope=1:3..1:5 anchor=null attributes={} children=1
 │           └── Text scope=1:3..1:5 anchor=null attributes={} literal="one" children=0
 └── Paragraph scope=3:2..3:4 anchor=null attributes={} children=1
@@ -4392,8 +4392,8 @@ Document scope=1:1..3:4 anchor=null attributes={} children=2
   two
 .
 Document scope=1:1..3:5 anchor=null attributes={} children=1
-└── List scope=1:1..3:5 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=false children=1
-    └── ListItem scope=1:1..3:5 anchor=null attributes={} marker=null children=2
+└── List scope=1:1..3:5 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=false children=1
+    └── ListItem scope=1:1..3:5 anchor=null attributes={} status=null children=2
         ├── Paragraph scope=1:3..1:5 anchor=null attributes={} children=1
         │   └── Text scope=1:3..1:5 anchor=null attributes={} literal="one" children=0
         └── Paragraph scope=3:3..3:5 anchor=null attributes={} children=1
@@ -4407,8 +4407,8 @@ Document scope=1:1..3:5 anchor=null attributes={} children=1
      two
 .
 Document scope=1:1..3:8 anchor=null attributes={} children=2
-├── List scope=1:2..2:0 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
-│   └── ListItem scope=1:2..2:0 anchor=null attributes={} marker=null children=1
+├── List scope=1:2..2:0 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=1
+│   └── ListItem scope=1:2..2:0 anchor=null attributes={} status=null children=1
 │       └── Paragraph scope=1:7..1:9 anchor=null attributes={} children=1
 │           └── Text scope=1:7..1:9 anchor=null attributes={} literal="one" children=0
 └── CodeBlock scope=3:5..3:8 anchor=null attributes={} info=null language=null literal=" two\n" fenced=false closed=true children=0
@@ -4421,8 +4421,8 @@ Document scope=1:1..3:8 anchor=null attributes={} children=2
       two
 .
 Document scope=1:1..3:9 anchor=null attributes={} children=1
-└── List scope=1:2..3:9 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=false children=1
-    └── ListItem scope=1:2..3:9 anchor=null attributes={} marker=null children=2
+└── List scope=1:2..3:9 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=false children=1
+    └── ListItem scope=1:2..3:9 anchor=null attributes={} status=null children=2
         ├── Paragraph scope=1:7..1:9 anchor=null attributes={} children=1
         │   └── Text scope=1:7..1:9 anchor=null attributes={} literal="one" children=0
         └── Paragraph scope=3:7..3:9 anchor=null attributes={} children=1
@@ -4446,8 +4446,8 @@ this example:
 Document scope=1:1..3:10 anchor=null attributes={} children=1
 └── Callout scope=1:4..3:10 anchor=null attributes={} variant=null collapsed=null children=1
     └── Callout scope=1:6..3:10 anchor=null attributes={} variant=null collapsed=null children=1
-        └── List scope=1:8..3:10 anchor=null attributes={} flavor=ordered start=1 variant=decimal delimiter=period tight=false children=1
-            └── ListItem scope=1:8..3:10 anchor=null attributes={} marker=null children=2
+        └── List scope=1:8..3:10 anchor=null attributes={} flavor=ordered start=1 delimiter=period tight=false children=1
+            └── ListItem scope=1:8..3:10 anchor=null attributes={} status=null children=2
                 ├── Paragraph scope=1:12..1:14 anchor=null attributes={} children=1
                 │   └── Text scope=1:12..1:14 anchor=null attributes={} literal="one" children=0
                 └── Paragraph scope=3:8..3:10 anchor=null attributes={} children=1
@@ -4472,8 +4472,8 @@ far enough past the blockquote marker:
 Document scope=1:1..3:10 anchor=null attributes={} children=1
 └── Callout scope=1:1..3:10 anchor=null attributes={} variant=null collapsed=null children=1
     └── Callout scope=1:2..3:10 anchor=null attributes={} variant=null collapsed=null children=2
-        ├── List scope=1:3..2:2 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
-        │   └── ListItem scope=1:3..2:2 anchor=null attributes={} marker=null children=1
+        ├── List scope=1:3..2:2 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=1
+        │   └── ListItem scope=1:3..2:2 anchor=null attributes={} status=null children=1
         │       └── Paragraph scope=1:5..1:7 anchor=null attributes={} children=1
         │           └── Text scope=1:5..1:7 anchor=null attributes={} literal="one" children=0
         └── Paragraph scope=3:8..3:10 anchor=null attributes={} children=1
@@ -4507,8 +4507,8 @@ one blank line.
   bar
 .
 Document scope=1:1..4:5 anchor=null attributes={} children=1
-└── List scope=1:1..4:5 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=false children=1
-    └── ListItem scope=1:1..4:5 anchor=null attributes={} marker=null children=2
+└── List scope=1:1..4:5 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=false children=1
+    └── ListItem scope=1:1..4:5 anchor=null attributes={} status=null children=2
         ├── Paragraph scope=1:3..1:5 anchor=null attributes={} children=1
         │   └── Text scope=1:3..1:5 anchor=null attributes={} literal="foo" children=0
         └── Paragraph scope=4:3..4:5 anchor=null attributes={} children=1
@@ -4530,8 +4530,8 @@ A list item may contain any kind of block:
     > bam
 .
 Document scope=1:1..9:9 anchor=null attributes={} children=1
-└── List scope=1:1..9:9 anchor=null attributes={} flavor=ordered start=1 variant=decimal delimiter=period tight=false children=1
-    └── ListItem scope=1:1..9:9 anchor=null attributes={} marker=null children=4
+└── List scope=1:1..9:9 anchor=null attributes={} flavor=ordered start=1 delimiter=period tight=false children=1
+    └── ListItem scope=1:1..9:9 anchor=null attributes={} status=null children=4
         ├── Paragraph scope=1:5..1:7 anchor=null attributes={} children=1
         │   └── Text scope=1:5..1:7 anchor=null attributes={} literal="foo" children=0
         ├── CodeBlock scope=3:5..4:0,4:5..5:0,5:5..5:7 anchor=null attributes={} info=null language=null literal="bar\n" fenced=true closed=true children=0
@@ -4555,8 +4555,8 @@ empty lines within the code block verbatim.
       baz
 .
 Document scope=1:1..6:9 anchor=null attributes={} children=1
-└── List scope=1:1..6:9 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=false children=1
-    └── ListItem scope=1:1..6:9 anchor=null attributes={} marker=null children=2
+└── List scope=1:1..6:9 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=false children=1
+    └── ListItem scope=1:1..6:9 anchor=null attributes={} status=null children=2
         ├── Paragraph scope=1:3..1:5 anchor=null attributes={} children=1
         │   └── Text scope=1:3..1:5 anchor=null attributes={} literal="Foo" children=0
         └── CodeBlock scope=3:7..6:0,6:3..6:9 anchor=null attributes={} info=null language=null literal="bar\n\n\nbaz\n" fenced=false closed=true children=0
@@ -4568,8 +4568,8 @@ Note that ordered list start numbers must be nine digits or less:
 123456789. ok
 .
 Document scope=1:1..1:13 anchor=null attributes={} children=1
-└── List scope=1:1..1:13 anchor=null attributes={} flavor=ordered start=123456789 variant=decimal delimiter=period tight=true children=1
-    └── ListItem scope=1:1..1:13 anchor=null attributes={} marker=null children=1
+└── List scope=1:1..1:13 anchor=null attributes={} flavor=ordered start=123456789 delimiter=period tight=true children=1
+    └── ListItem scope=1:1..1:13 anchor=null attributes={} status=null children=1
         └── Paragraph scope=1:12..1:13 anchor=null attributes={} children=1
             └── Text scope=1:12..1:13 anchor=null attributes={} literal="ok" children=0
 ````````````````````````````````
@@ -4590,8 +4590,8 @@ A start number may begin with 0s:
 0. ok
 .
 Document scope=1:1..1:5 anchor=null attributes={} children=1
-└── List scope=1:1..1:5 anchor=null attributes={} flavor=ordered start=0 variant=decimal delimiter=period tight=true children=1
-    └── ListItem scope=1:1..1:5 anchor=null attributes={} marker=null children=1
+└── List scope=1:1..1:5 anchor=null attributes={} flavor=ordered start=0 delimiter=period tight=true children=1
+    └── ListItem scope=1:1..1:5 anchor=null attributes={} status=null children=1
         └── Paragraph scope=1:4..1:5 anchor=null attributes={} children=1
             └── Text scope=1:4..1:5 anchor=null attributes={} literal="ok" children=0
 ````````````````````````````````
@@ -4601,8 +4601,8 @@ Document scope=1:1..1:5 anchor=null attributes={} children=1
 003. ok
 .
 Document scope=1:1..1:7 anchor=null attributes={} children=1
-└── List scope=1:1..1:7 anchor=null attributes={} flavor=ordered start=3 variant=decimal delimiter=period tight=true children=1
-    └── ListItem scope=1:1..1:7 anchor=null attributes={} marker=null children=1
+└── List scope=1:1..1:7 anchor=null attributes={} flavor=ordered start=3 delimiter=period tight=true children=1
+    └── ListItem scope=1:1..1:7 anchor=null attributes={} status=null children=1
         └── Paragraph scope=1:6..1:7 anchor=null attributes={} children=1
             └── Text scope=1:6..1:7 anchor=null attributes={} literal="ok" children=0
 ````````````````````````````````
@@ -4641,8 +4641,8 @@ In the following case that is 6 spaces:
       bar
 .
 Document scope=1:1..3:9 anchor=null attributes={} children=1
-└── List scope=1:1..3:9 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=false children=1
-    └── ListItem scope=1:1..3:9 anchor=null attributes={} marker=null children=2
+└── List scope=1:1..3:9 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=false children=1
+    └── ListItem scope=1:1..3:9 anchor=null attributes={} status=null children=2
         ├── Paragraph scope=1:3..1:5 anchor=null attributes={} children=1
         │   └── Text scope=1:3..1:5 anchor=null attributes={} literal="foo" children=0
         └── CodeBlock scope=3:7..3:9 anchor=null attributes={} info=null language=null literal="bar\n" fenced=false closed=true children=0
@@ -4657,8 +4657,8 @@ And in this case it is 11 spaces:
            bar
 .
 Document scope=1:1..3:14 anchor=null attributes={} children=1
-└── List scope=1:3..3:14 anchor=null attributes={} flavor=ordered start=10 variant=decimal delimiter=period tight=false children=1
-    └── ListItem scope=1:3..3:14 anchor=null attributes={} marker=null children=2
+└── List scope=1:3..3:14 anchor=null attributes={} flavor=ordered start=10 delimiter=period tight=false children=1
+    └── ListItem scope=1:3..3:14 anchor=null attributes={} status=null children=2
         ├── Paragraph scope=1:8..1:10 anchor=null attributes={} children=1
         │   └── Text scope=1:8..1:10 anchor=null attributes={} literal="foo" children=0
         └── CodeBlock scope=3:12..3:14 anchor=null attributes={} info=null language=null literal="bar\n" fenced=false closed=true children=0
@@ -4692,8 +4692,8 @@ Document scope=1:1..5:13 anchor=null attributes={} children=3
        more code
 .
 Document scope=1:1..5:16 anchor=null attributes={} children=1
-└── List scope=1:1..5:16 anchor=null attributes={} flavor=ordered start=1 variant=decimal delimiter=period tight=false children=1
-    └── ListItem scope=1:1..5:16 anchor=null attributes={} marker=null children=3
+└── List scope=1:1..5:16 anchor=null attributes={} flavor=ordered start=1 delimiter=period tight=false children=1
+    └── ListItem scope=1:1..5:16 anchor=null attributes={} status=null children=3
         ├── CodeBlock scope=1:8..2:0 anchor=null attributes={} info=null language=null literal="indented code\n" fenced=false closed=true children=0
         ├── Paragraph scope=3:4..3:12 anchor=null attributes={} children=1
         │   └── Text scope=3:4..3:12 anchor=null attributes={} literal="paragraph" children=0
@@ -4712,8 +4712,8 @@ inside the code block:
        more code
 .
 Document scope=1:1..5:16 anchor=null attributes={} children=1
-└── List scope=1:1..5:16 anchor=null attributes={} flavor=ordered start=1 variant=decimal delimiter=period tight=false children=1
-    └── ListItem scope=1:1..5:16 anchor=null attributes={} marker=null children=3
+└── List scope=1:1..5:16 anchor=null attributes={} flavor=ordered start=1 delimiter=period tight=false children=1
+    └── ListItem scope=1:1..5:16 anchor=null attributes={} status=null children=3
         ├── CodeBlock scope=1:8..2:0 anchor=null attributes={} info=null language=null literal=" indented code\n" fenced=false closed=true children=0
         ├── Paragraph scope=3:4..3:12 anchor=null attributes={} children=1
         │   └── Text scope=3:4..3:12 anchor=null attributes={} literal="paragraph" children=0
@@ -4748,8 +4748,8 @@ Document scope=1:1..3:3 anchor=null attributes={} children=2
   bar
 .
 Document scope=1:1..3:5 anchor=null attributes={} children=2
-├── List scope=1:1..2:0 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
-│   └── ListItem scope=1:1..2:0 anchor=null attributes={} marker=null children=1
+├── List scope=1:1..2:0 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=1
+│   └── ListItem scope=1:1..2:0 anchor=null attributes={} status=null children=1
 │       └── Paragraph scope=1:6..1:8 anchor=null attributes={} children=1
 │           └── Text scope=1:6..1:8 anchor=null attributes={} literal="foo" children=0
 └── Paragraph scope=3:3..3:5 anchor=null attributes={} children=1
@@ -4768,8 +4768,8 @@ the above case:
    bar
 .
 Document scope=1:1..3:6 anchor=null attributes={} children=1
-└── List scope=1:1..3:6 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=false children=1
-    └── ListItem scope=1:1..3:6 anchor=null attributes={} marker=null children=2
+└── List scope=1:1..3:6 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=false children=1
+    └── ListItem scope=1:1..3:6 anchor=null attributes={} status=null children=2
         ├── Paragraph scope=1:4..1:6 anchor=null attributes={} children=1
         │   └── Text scope=1:4..1:6 anchor=null attributes={} literal="foo" children=0
         └── Paragraph scope=3:4..3:6 anchor=null attributes={} children=1
@@ -4802,13 +4802,13 @@ Here are some list items that start with a blank line but are not empty:
       baz
 .
 Document scope=1:1..8:9 anchor=null attributes={} children=1
-└── List scope=1:1..8:9 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=3
-    ├── ListItem scope=1:1..2:5 anchor=null attributes={} marker=null children=1
+└── List scope=1:1..8:9 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=3
+    ├── ListItem scope=1:1..2:5 anchor=null attributes={} status=null children=1
     │   └── Paragraph scope=2:3..2:5 anchor=null attributes={} children=1
     │       └── Text scope=2:3..2:5 anchor=null attributes={} literal="foo" children=0
-    ├── ListItem scope=3:1..6:5 anchor=null attributes={} marker=null children=1
+    ├── ListItem scope=3:1..6:5 anchor=null attributes={} status=null children=1
     │   └── CodeBlock scope=4:3..5:0,5:3..6:0,6:3..6:5 anchor=null attributes={} info=null language=null literal="bar\n" fenced=true closed=true children=0
-    └── ListItem scope=7:1..8:9 anchor=null attributes={} marker=null children=1
+    └── ListItem scope=7:1..8:9 anchor=null attributes={} status=null children=1
         └── CodeBlock scope=8:7..8:9 anchor=null attributes={} info=null language=null literal="baz\n" fenced=false closed=true children=0
 ````````````````````````````````
 
@@ -4820,8 +4820,8 @@ following the list marker doesn't change the required indentation:
   foo
 .
 Document scope=1:1..2:5 anchor=null attributes={} children=1
-└── List scope=1:1..2:5 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
-    └── ListItem scope=1:1..2:5 anchor=null attributes={} marker=null children=1
+└── List scope=1:1..2:5 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=1
+    └── ListItem scope=1:1..2:5 anchor=null attributes={} status=null children=1
         └── Paragraph scope=2:3..2:5 anchor=null attributes={} children=1
             └── Text scope=2:3..2:5 anchor=null attributes={} literal="foo" children=0
 ````````````````````````````````
@@ -4837,8 +4837,8 @@ item:
   foo
 .
 Document scope=1:1..3:5 anchor=null attributes={} children=2
-├── List scope=1:1..2:0 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
-│   └── ListItem scope=1:1..1:1 anchor=null attributes={} marker=null children=0
+├── List scope=1:1..2:0 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=1
+│   └── ListItem scope=1:1..1:1 anchor=null attributes={} status=null children=0
 └── Paragraph scope=3:3..3:5 anchor=null attributes={} children=1
     └── Text scope=3:3..3:5 anchor=null attributes={} literal="foo" children=0
 ````````````````````````````````
@@ -4852,12 +4852,12 @@ Here is an empty bullet list item:
 - bar
 .
 Document scope=1:1..3:5 anchor=null attributes={} children=1
-└── List scope=1:1..3:5 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=3
-    ├── ListItem scope=1:1..1:5 anchor=null attributes={} marker=null children=1
+└── List scope=1:1..3:5 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=3
+    ├── ListItem scope=1:1..1:5 anchor=null attributes={} status=null children=1
     │   └── Paragraph scope=1:3..1:5 anchor=null attributes={} children=1
     │       └── Text scope=1:3..1:5 anchor=null attributes={} literal="foo" children=0
-    ├── ListItem scope=2:1..2:1 anchor=null attributes={} marker=null children=0
-    └── ListItem scope=3:1..3:5 anchor=null attributes={} marker=null children=1
+    ├── ListItem scope=2:1..2:1 anchor=null attributes={} status=null children=0
+    └── ListItem scope=3:1..3:5 anchor=null attributes={} status=null children=1
         └── Paragraph scope=3:3..3:5 anchor=null attributes={} children=1
             └── Text scope=3:3..3:5 anchor=null attributes={} literal="bar" children=0
 ````````````````````````````````
@@ -4871,12 +4871,12 @@ It does not matter whether there are spaces following the [list marker]:
 - bar
 .
 Document scope=1:1..3:5 anchor=null attributes={} children=1
-└── List scope=1:1..3:5 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=3
-    ├── ListItem scope=1:1..1:5 anchor=null attributes={} marker=null children=1
+└── List scope=1:1..3:5 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=3
+    ├── ListItem scope=1:1..1:5 anchor=null attributes={} status=null children=1
     │   └── Paragraph scope=1:3..1:5 anchor=null attributes={} children=1
     │       └── Text scope=1:3..1:5 anchor=null attributes={} literal="foo" children=0
-    ├── ListItem scope=2:1..2:4 anchor=null attributes={} marker=null children=0
-    └── ListItem scope=3:1..3:5 anchor=null attributes={} marker=null children=1
+    ├── ListItem scope=2:1..2:4 anchor=null attributes={} status=null children=0
+    └── ListItem scope=3:1..3:5 anchor=null attributes={} status=null children=1
         └── Paragraph scope=3:3..3:5 anchor=null attributes={} children=1
             └── Text scope=3:3..3:5 anchor=null attributes={} literal="bar" children=0
 ````````````````````````````````
@@ -4890,12 +4890,12 @@ Here is an empty ordered list item:
 3. bar
 .
 Document scope=1:1..3:6 anchor=null attributes={} children=1
-└── List scope=1:1..3:6 anchor=null attributes={} flavor=ordered start=1 variant=decimal delimiter=period tight=true children=3
-    ├── ListItem scope=1:1..1:6 anchor=null attributes={} marker=null children=1
+└── List scope=1:1..3:6 anchor=null attributes={} flavor=ordered start=1 delimiter=period tight=true children=3
+    ├── ListItem scope=1:1..1:6 anchor=null attributes={} status=null children=1
     │   └── Paragraph scope=1:4..1:6 anchor=null attributes={} children=1
     │       └── Text scope=1:4..1:6 anchor=null attributes={} literal="foo" children=0
-    ├── ListItem scope=2:1..2:2 anchor=null attributes={} marker=null children=0
-    └── ListItem scope=3:1..3:6 anchor=null attributes={} marker=null children=1
+    ├── ListItem scope=2:1..2:2 anchor=null attributes={} status=null children=0
+    └── ListItem scope=3:1..3:6 anchor=null attributes={} status=null children=1
         └── Paragraph scope=3:4..3:6 anchor=null attributes={} children=1
             └── Text scope=3:4..3:6 anchor=null attributes={} literal="bar" children=0
 ````````````````````````````````
@@ -4907,8 +4907,8 @@ A list may start or end with an empty list item:
 *
 .
 Document scope=1:1..1:1 anchor=null attributes={} children=1
-└── List scope=1:1..1:1 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
-    └── ListItem scope=1:1..1:1 anchor=null attributes={} marker=null children=0
+└── List scope=1:1..1:1 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=1
+    └── ListItem scope=1:1..1:1 anchor=null attributes={} status=null children=0
 ````````````````````````````````
 
 However, an empty list item cannot interrupt a paragraph:
@@ -4949,8 +4949,8 @@ Indented one space:
      > A block quote.
 .
 Document scope=1:1..6:21 anchor=null attributes={} children=1
-└── List scope=1:2..6:21 anchor=null attributes={} flavor=ordered start=1 variant=decimal delimiter=period tight=false children=1
-    └── ListItem scope=1:2..6:21 anchor=null attributes={} marker=null children=3
+└── List scope=1:2..6:21 anchor=null attributes={} flavor=ordered start=1 delimiter=period tight=false children=1
+    └── ListItem scope=1:2..6:21 anchor=null attributes={} status=null children=3
         ├── Paragraph scope=1:6..2:0,2:6..2:20 anchor=null attributes={} children=3
         │   ├── Text scope=1:6..1:16 anchor=null attributes={} literal="A paragraph" children=0
         │   ├── SoftBreak scope=1:17..2:0 anchor=null attributes={} children=0
@@ -4973,8 +4973,8 @@ Indented two spaces:
       > A block quote.
 .
 Document scope=1:1..6:22 anchor=null attributes={} children=1
-└── List scope=1:3..6:22 anchor=null attributes={} flavor=ordered start=1 variant=decimal delimiter=period tight=false children=1
-    └── ListItem scope=1:3..6:22 anchor=null attributes={} marker=null children=3
+└── List scope=1:3..6:22 anchor=null attributes={} flavor=ordered start=1 delimiter=period tight=false children=1
+    └── ListItem scope=1:3..6:22 anchor=null attributes={} status=null children=3
         ├── Paragraph scope=1:7..2:0,2:7..2:21 anchor=null attributes={} children=3
         │   ├── Text scope=1:7..1:17 anchor=null attributes={} literal="A paragraph" children=0
         │   ├── SoftBreak scope=1:18..2:0 anchor=null attributes={} children=0
@@ -4997,8 +4997,8 @@ Indented three spaces:
        > A block quote.
 .
 Document scope=1:1..6:23 anchor=null attributes={} children=1
-└── List scope=1:4..6:23 anchor=null attributes={} flavor=ordered start=1 variant=decimal delimiter=period tight=false children=1
-    └── ListItem scope=1:4..6:23 anchor=null attributes={} marker=null children=3
+└── List scope=1:4..6:23 anchor=null attributes={} flavor=ordered start=1 delimiter=period tight=false children=1
+    └── ListItem scope=1:4..6:23 anchor=null attributes={} status=null children=3
         ├── Paragraph scope=1:8..2:0,2:8..2:22 anchor=null attributes={} children=3
         │   ├── Text scope=1:8..1:18 anchor=null attributes={} literal="A paragraph" children=0
         │   ├── SoftBreak scope=1:19..2:0 anchor=null attributes={} children=0
@@ -5046,8 +5046,8 @@ with two lines.
       > A block quote.
 .
 Document scope=1:1..6:22 anchor=null attributes={} children=1
-└── List scope=1:3..6:22 anchor=null attributes={} flavor=ordered start=1 variant=decimal delimiter=period tight=false children=1
-    └── ListItem scope=1:3..6:22 anchor=null attributes={} marker=null children=3
+└── List scope=1:3..6:22 anchor=null attributes={} flavor=ordered start=1 delimiter=period tight=false children=1
+    └── ListItem scope=1:3..6:22 anchor=null attributes={} status=null children=3
         ├── Paragraph scope=1:7..2:15 anchor=null attributes={} children=3
         │   ├── Text scope=1:7..1:17 anchor=null attributes={} literal="A paragraph" children=0
         │   ├── SoftBreak scope=1:18..2:0 anchor=null attributes={} children=0
@@ -5066,8 +5066,8 @@ Indentation can be partially deleted:
     with two lines.
 .
 Document scope=1:1..2:19 anchor=null attributes={} children=1
-└── List scope=1:3..2:19 anchor=null attributes={} flavor=ordered start=1 variant=decimal delimiter=period tight=true children=1
-    └── ListItem scope=1:3..2:19 anchor=null attributes={} marker=null children=1
+└── List scope=1:3..2:19 anchor=null attributes={} flavor=ordered start=1 delimiter=period tight=true children=1
+    └── ListItem scope=1:3..2:19 anchor=null attributes={} status=null children=1
         └── Paragraph scope=1:7..2:19 anchor=null attributes={} children=3
             ├── Text scope=1:7..1:17 anchor=null attributes={} literal="A paragraph" children=0
             ├── SoftBreak scope=1:18..2:0 anchor=null attributes={} children=0
@@ -5083,8 +5083,8 @@ continued here.
 .
 Document scope=1:1..2:15 anchor=null attributes={} children=1
 └── Callout scope=1:1..2:15 anchor=null attributes={} variant=null collapsed=null children=1
-    └── List scope=1:3..2:15 anchor=null attributes={} flavor=ordered start=1 variant=decimal delimiter=period tight=true children=1
-        └── ListItem scope=1:3..2:15 anchor=null attributes={} marker=null children=1
+    └── List scope=1:3..2:15 anchor=null attributes={} flavor=ordered start=1 delimiter=period tight=true children=1
+        └── ListItem scope=1:3..2:15 anchor=null attributes={} status=null children=1
             └── Callout scope=1:6..2:15 anchor=null attributes={} variant=null collapsed=null children=1
                 └── Paragraph scope=1:8..2:15 anchor=null attributes={} children=3
                     ├── Text scope=1:8..1:17 anchor=null attributes={} literal="Blockquote" children=0
@@ -5099,8 +5099,8 @@ Document scope=1:1..2:15 anchor=null attributes={} children=1
 .
 Document scope=1:1..2:17 anchor=null attributes={} children=1
 └── Callout scope=1:1..2:17 anchor=null attributes={} variant=null collapsed=null children=1
-    └── List scope=1:3..2:17 anchor=null attributes={} flavor=ordered start=1 variant=decimal delimiter=period tight=true children=1
-        └── ListItem scope=1:3..2:17 anchor=null attributes={} marker=null children=1
+    └── List scope=1:3..2:17 anchor=null attributes={} flavor=ordered start=1 delimiter=period tight=true children=1
+        └── ListItem scope=1:3..2:17 anchor=null attributes={} status=null children=1
             └── Callout scope=1:6..2:17 anchor=null attributes={} variant=null collapsed=null children=1
                 └── Paragraph scope=1:8..2:0,2:3..2:17 anchor=null attributes={} children=3
                     ├── Text scope=1:8..1:17 anchor=null attributes={} literal="Blockquote" children=0
@@ -5127,20 +5127,20 @@ So, in this case we need two spaces indent:
       - boo
 .
 Document scope=1:1..4:11 anchor=null attributes={} children=1
-└── List scope=1:1..4:11 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
-    └── ListItem scope=1:1..4:11 anchor=null attributes={} marker=null children=2
+└── List scope=1:1..4:11 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=1
+    └── ListItem scope=1:1..4:11 anchor=null attributes={} status=null children=2
         ├── Paragraph scope=1:3..1:5 anchor=null attributes={} children=1
         │   └── Text scope=1:3..1:5 anchor=null attributes={} literal="foo" children=0
-        └── List scope=2:3..4:11 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
-            └── ListItem scope=2:3..4:11 anchor=null attributes={} marker=null children=2
+        └── List scope=2:3..4:11 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=1
+            └── ListItem scope=2:3..4:11 anchor=null attributes={} status=null children=2
                 ├── Paragraph scope=2:5..2:7 anchor=null attributes={} children=1
                 │   └── Text scope=2:5..2:7 anchor=null attributes={} literal="bar" children=0
-                └── List scope=3:5..4:11 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
-                    └── ListItem scope=3:5..4:11 anchor=null attributes={} marker=null children=2
+                └── List scope=3:5..4:11 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=1
+                    └── ListItem scope=3:5..4:11 anchor=null attributes={} status=null children=2
                         ├── Paragraph scope=3:7..3:9 anchor=null attributes={} children=1
                         │   └── Text scope=3:7..3:9 anchor=null attributes={} literal="baz" children=0
-                        └── List scope=4:7..4:11 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
-                            └── ListItem scope=4:7..4:11 anchor=null attributes={} marker=null children=1
+                        └── List scope=4:7..4:11 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=1
+                            └── ListItem scope=4:7..4:11 anchor=null attributes={} status=null children=1
                                 └── Paragraph scope=4:9..4:11 anchor=null attributes={} children=1
                                     └── Text scope=4:9..4:11 anchor=null attributes={} literal="boo" children=0
 ````````````````````````````````
@@ -5155,17 +5155,17 @@ One is not enough:
    - boo
 .
 Document scope=1:1..4:8 anchor=null attributes={} children=1
-└── List scope=1:1..4:8 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=4
-    ├── ListItem scope=1:1..1:5 anchor=null attributes={} marker=null children=1
+└── List scope=1:1..4:8 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=4
+    ├── ListItem scope=1:1..1:5 anchor=null attributes={} status=null children=1
     │   └── Paragraph scope=1:3..1:5 anchor=null attributes={} children=1
     │       └── Text scope=1:3..1:5 anchor=null attributes={} literal="foo" children=0
-    ├── ListItem scope=2:2..2:6 anchor=null attributes={} marker=null children=1
+    ├── ListItem scope=2:2..2:6 anchor=null attributes={} status=null children=1
     │   └── Paragraph scope=2:4..2:6 anchor=null attributes={} children=1
     │       └── Text scope=2:4..2:6 anchor=null attributes={} literal="bar" children=0
-    ├── ListItem scope=3:3..3:7 anchor=null attributes={} marker=null children=1
+    ├── ListItem scope=3:3..3:7 anchor=null attributes={} status=null children=1
     │   └── Paragraph scope=3:5..3:7 anchor=null attributes={} children=1
     │       └── Text scope=3:5..3:7 anchor=null attributes={} literal="baz" children=0
-    └── ListItem scope=4:4..4:8 anchor=null attributes={} marker=null children=1
+    └── ListItem scope=4:4..4:8 anchor=null attributes={} status=null children=1
         └── Paragraph scope=4:6..4:8 anchor=null attributes={} children=1
             └── Text scope=4:6..4:8 anchor=null attributes={} literal="boo" children=0
 ````````````````````````````````
@@ -5178,12 +5178,12 @@ Here we need four, because the list marker is wider:
     - bar
 .
 Document scope=1:1..2:9 anchor=null attributes={} children=1
-└── List scope=1:1..2:9 anchor=null attributes={} flavor=ordered start=10 variant=decimal delimiter=parenthesis(closed=false) tight=true children=1
-    └── ListItem scope=1:1..2:9 anchor=null attributes={} marker=null children=2
+└── List scope=1:1..2:9 anchor=null attributes={} flavor=ordered start=10 delimiter=parenthesis tight=true children=1
+    └── ListItem scope=1:1..2:9 anchor=null attributes={} status=null children=2
         ├── Paragraph scope=1:5..1:7 anchor=null attributes={} children=1
         │   └── Text scope=1:5..1:7 anchor=null attributes={} literal="foo" children=0
-        └── List scope=2:5..2:9 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
-            └── ListItem scope=2:5..2:9 anchor=null attributes={} marker=null children=1
+        └── List scope=2:5..2:9 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=1
+            └── ListItem scope=2:5..2:9 anchor=null attributes={} status=null children=1
                 └── Paragraph scope=2:7..2:9 anchor=null attributes={} children=1
                     └── Text scope=2:7..2:9 anchor=null attributes={} literal="bar" children=0
 ````````````````````````````````
@@ -5196,12 +5196,12 @@ Three is not enough:
    - bar
 .
 Document scope=1:1..2:8 anchor=null attributes={} children=2
-├── List scope=1:1..1:7 anchor=null attributes={} flavor=ordered start=10 variant=decimal delimiter=parenthesis(closed=false) tight=true children=1
-│   └── ListItem scope=1:1..1:7 anchor=null attributes={} marker=null children=1
+├── List scope=1:1..1:7 anchor=null attributes={} flavor=ordered start=10 delimiter=parenthesis tight=true children=1
+│   └── ListItem scope=1:1..1:7 anchor=null attributes={} status=null children=1
 │       └── Paragraph scope=1:5..1:7 anchor=null attributes={} children=1
 │           └── Text scope=1:5..1:7 anchor=null attributes={} literal="foo" children=0
-└── List scope=2:4..2:8 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
-    └── ListItem scope=2:4..2:8 anchor=null attributes={} marker=null children=1
+└── List scope=2:4..2:8 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=1
+    └── ListItem scope=2:4..2:8 anchor=null attributes={} status=null children=1
         └── Paragraph scope=2:6..2:8 anchor=null attributes={} children=1
             └── Text scope=2:6..2:8 anchor=null attributes={} literal="bar" children=0
 ````````````````````````````````
@@ -5213,10 +5213,10 @@ A list may be the first block in a list item:
 - - foo
 .
 Document scope=1:1..1:7 anchor=null attributes={} children=1
-└── List scope=1:1..1:7 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
-    └── ListItem scope=1:1..1:7 anchor=null attributes={} marker=null children=1
-        └── List scope=1:3..1:7 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
-            └── ListItem scope=1:3..1:7 anchor=null attributes={} marker=null children=1
+└── List scope=1:1..1:7 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=1
+    └── ListItem scope=1:1..1:7 anchor=null attributes={} status=null children=1
+        └── List scope=1:3..1:7 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=1
+            └── ListItem scope=1:3..1:7 anchor=null attributes={} status=null children=1
                 └── Paragraph scope=1:5..1:7 anchor=null attributes={} children=1
                     └── Text scope=1:5..1:7 anchor=null attributes={} literal="foo" children=0
 ````````````````````````````````
@@ -5226,12 +5226,14 @@ Document scope=1:1..1:7 anchor=null attributes={} children=1
 1. - 2. foo
 .
 Document scope=1:1..1:11 anchor=null attributes={} children=1
-└── List scope=1:1..1:11 anchor=null attributes={} flavor=ordered start=1 variant=decimal delimiter=period tight=true children=1
-    └── ListItem scope=1:1..1:11 anchor=null attributes={} marker=null children=1
-        └── List scope=1:4..1:11 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
-            └── ListItem scope=1:4..1:11 anchor=null attributes={} marker=null children=1
-                └── Paragraph scope=1:6..1:11 anchor=null attributes={} children=1
-                    └── Text scope=1:6..1:11 anchor=null attributes={} literal="2. foo" children=0
+└── List scope=1:1..1:11 anchor=null attributes={} flavor=ordered start=1 delimiter=period tight=true children=1
+    └── ListItem scope=1:1..1:11 anchor=null attributes={} status=null children=1
+        └── List scope=1:4..1:11 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=1
+            └── ListItem scope=1:4..1:11 anchor=null attributes={} status=null children=1
+                └── List scope=1:6..1:11 anchor=null attributes={} flavor=ordered start=2 delimiter=period tight=true children=1
+                    └── ListItem scope=1:6..1:11 anchor=null attributes={} status=null children=1
+                        └── Paragraph scope=1:9..1:11 anchor=null attributes={} children=1
+                            └── Text scope=1:9..1:11 anchor=null attributes={} literal="foo" children=0
 ````````````````````````````````
 
 
@@ -5244,12 +5246,12 @@ A list item can contain a heading:
   baz
 .
 Document scope=1:1..4:5 anchor=null attributes={} children=1
-└── List scope=1:1..4:5 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=2
-    ├── ListItem scope=1:1..1:7 anchor=null attributes={} marker=null children=1
-    │   └── Heading scope=1:3..1:7 anchor="foo" attributes={} level=1 children=1
+└── List scope=1:1..4:5 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=2
+    ├── ListItem scope=1:1..1:7 anchor=null attributes={} status=null children=1
+    │   └── Heading scope=1:3..1:7 anchor=null attributes={} level=1 children=1
     │       └── Text scope=1:5..1:7 anchor=null attributes={} literal="Foo" children=0
-    └── ListItem scope=2:1..4:5 anchor=null attributes={} marker=null children=2
-        ├── Heading scope=2:3..3:0,3:3..3:5 anchor="bar" attributes={} level=2 children=1
+    └── ListItem scope=2:1..4:5 anchor=null attributes={} status=null children=2
+        ├── Heading scope=2:3..3:0,3:3..3:5 anchor=null attributes={} level=2 children=1
         │   └── Text scope=2:3..2:5 anchor=null attributes={} literal="Bar" children=0
         └── Paragraph scope=4:3..4:5 anchor=null attributes={} children=1
             └── Text scope=4:3..4:5 anchor=null attributes={} literal="baz" children=0
@@ -5538,15 +5540,15 @@ Changing the bullet or ordered list delimiter starts a new list:
 + baz
 .
 Document scope=1:1..3:5 anchor=null attributes={} children=2
-├── List scope=1:1..2:5 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=2
-│   ├── ListItem scope=1:1..1:5 anchor=null attributes={} marker=null children=1
+├── List scope=1:1..2:5 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=2
+│   ├── ListItem scope=1:1..1:5 anchor=null attributes={} status=null children=1
 │   │   └── Paragraph scope=1:3..1:5 anchor=null attributes={} children=1
 │   │       └── Text scope=1:3..1:5 anchor=null attributes={} literal="foo" children=0
-│   └── ListItem scope=2:1..2:5 anchor=null attributes={} marker=null children=1
+│   └── ListItem scope=2:1..2:5 anchor=null attributes={} status=null children=1
 │       └── Paragraph scope=2:3..2:5 anchor=null attributes={} children=1
 │           └── Text scope=2:3..2:5 anchor=null attributes={} literal="bar" children=0
-└── List scope=3:1..3:5 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
-    └── ListItem scope=3:1..3:5 anchor=null attributes={} marker=null children=1
+└── List scope=3:1..3:5 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=1
+    └── ListItem scope=3:1..3:5 anchor=null attributes={} status=null children=1
         └── Paragraph scope=3:3..3:5 anchor=null attributes={} children=1
             └── Text scope=3:3..3:5 anchor=null attributes={} literal="baz" children=0
 ````````````````````````````````
@@ -5558,15 +5560,15 @@ Document scope=1:1..3:5 anchor=null attributes={} children=2
 3) baz
 .
 Document scope=1:1..3:6 anchor=null attributes={} children=2
-├── List scope=1:1..2:6 anchor=null attributes={} flavor=ordered start=1 variant=decimal delimiter=period tight=true children=2
-│   ├── ListItem scope=1:1..1:6 anchor=null attributes={} marker=null children=1
+├── List scope=1:1..2:6 anchor=null attributes={} flavor=ordered start=1 delimiter=period tight=true children=2
+│   ├── ListItem scope=1:1..1:6 anchor=null attributes={} status=null children=1
 │   │   └── Paragraph scope=1:4..1:6 anchor=null attributes={} children=1
 │   │       └── Text scope=1:4..1:6 anchor=null attributes={} literal="foo" children=0
-│   └── ListItem scope=2:1..2:6 anchor=null attributes={} marker=null children=1
+│   └── ListItem scope=2:1..2:6 anchor=null attributes={} status=null children=1
 │       └── Paragraph scope=2:4..2:6 anchor=null attributes={} children=1
 │           └── Text scope=2:4..2:6 anchor=null attributes={} literal="bar" children=0
-└── List scope=3:1..3:6 anchor=null attributes={} flavor=ordered start=3 variant=decimal delimiter=parenthesis(closed=false) tight=true children=1
-    └── ListItem scope=3:1..3:6 anchor=null attributes={} marker=null children=1
+└── List scope=3:1..3:6 anchor=null attributes={} flavor=ordered start=3 delimiter=parenthesis tight=true children=1
+    └── ListItem scope=3:1..3:6 anchor=null attributes={} status=null children=1
         └── Paragraph scope=3:4..3:6 anchor=null attributes={} children=1
             └── Text scope=3:4..3:6 anchor=null attributes={} literal="baz" children=0
 ````````````````````````````````
@@ -5584,11 +5586,11 @@ Foo
 Document scope=1:1..3:5 anchor=null attributes={} children=2
 ├── Paragraph scope=1:1..1:3 anchor=null attributes={} children=1
 │   └── Text scope=1:1..1:3 anchor=null attributes={} literal="Foo" children=0
-└── List scope=2:1..3:5 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=2
-    ├── ListItem scope=2:1..2:5 anchor=null attributes={} marker=null children=1
+└── List scope=2:1..3:5 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=2
+    ├── ListItem scope=2:1..2:5 anchor=null attributes={} status=null children=1
     │   └── Paragraph scope=2:3..2:5 anchor=null attributes={} children=1
     │       └── Text scope=2:3..2:5 anchor=null attributes={} literal="bar" children=0
-    └── ListItem scope=3:1..3:5 anchor=null attributes={} marker=null children=1
+    └── ListItem scope=3:1..3:5 anchor=null attributes={} status=null children=1
         └── Paragraph scope=3:3..3:5 anchor=null attributes={} children=1
             └── Text scope=3:3..3:5 anchor=null attributes={} literal="baz" children=0
 ````````````````````````````````
@@ -5678,8 +5680,8 @@ The number of windows in my house is
 Document scope=1:1..2:29 anchor=null attributes={} children=2
 ├── Paragraph scope=1:1..1:36 anchor=null attributes={} children=1
 │   └── Text scope=1:1..1:36 anchor=null attributes={} literal="The number of windows in my house is" children=0
-└── List scope=2:1..2:29 anchor=null attributes={} flavor=ordered start=1 variant=decimal delimiter=period tight=true children=1
-    └── ListItem scope=2:1..2:29 anchor=null attributes={} marker=null children=1
+└── List scope=2:1..2:29 anchor=null attributes={} flavor=ordered start=1 delimiter=period tight=true children=1
+    └── ListItem scope=2:1..2:29 anchor=null attributes={} status=null children=1
         └── Paragraph scope=2:5..2:29 anchor=null attributes={} children=1
             └── Text scope=2:5..2:29 anchor=null attributes={} literal="The number of doors is 6." children=0
 ````````````````````````````````
@@ -5697,14 +5699,14 @@ There can be any number of blank lines between items:
 - baz
 .
 Document scope=1:1..6:5 anchor=null attributes={} children=1
-└── List scope=1:1..6:5 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=false children=3
-    ├── ListItem scope=1:1..2:0 anchor=null attributes={} marker=null children=1
+└── List scope=1:1..6:5 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=false children=3
+    ├── ListItem scope=1:1..2:0 anchor=null attributes={} status=null children=1
     │   └── Paragraph scope=1:3..1:5 anchor=null attributes={} children=1
     │       └── Text scope=1:3..1:5 anchor=null attributes={} literal="foo" children=0
-    ├── ListItem scope=3:1..5:0 anchor=null attributes={} marker=null children=1
+    ├── ListItem scope=3:1..5:0 anchor=null attributes={} status=null children=1
     │   └── Paragraph scope=3:3..3:5 anchor=null attributes={} children=1
     │       └── Text scope=3:3..3:5 anchor=null attributes={} literal="bar" children=0
-    └── ListItem scope=6:1..6:5 anchor=null attributes={} marker=null children=1
+    └── ListItem scope=6:1..6:5 anchor=null attributes={} status=null children=1
         └── Paragraph scope=6:3..6:5 anchor=null attributes={} children=1
             └── Text scope=6:3..6:5 anchor=null attributes={} literal="baz" children=0
 ````````````````````````````````
@@ -5718,16 +5720,16 @@ Document scope=1:1..6:5 anchor=null attributes={} children=1
       bim
 .
 Document scope=1:1..6:9 anchor=null attributes={} children=1
-└── List scope=1:1..6:9 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
-    └── ListItem scope=1:1..6:9 anchor=null attributes={} marker=null children=2
+└── List scope=1:1..6:9 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=1
+    └── ListItem scope=1:1..6:9 anchor=null attributes={} status=null children=2
         ├── Paragraph scope=1:3..1:5 anchor=null attributes={} children=1
         │   └── Text scope=1:3..1:5 anchor=null attributes={} literal="foo" children=0
-        └── List scope=2:3..6:9 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
-            └── ListItem scope=2:3..6:9 anchor=null attributes={} marker=null children=2
+        └── List scope=2:3..6:9 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=1
+            └── ListItem scope=2:3..6:9 anchor=null attributes={} status=null children=2
                 ├── Paragraph scope=2:5..2:7 anchor=null attributes={} children=1
                 │   └── Text scope=2:5..2:7 anchor=null attributes={} literal="bar" children=0
-                └── List scope=3:5..6:9 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=false children=1
-                    └── ListItem scope=3:5..6:9 anchor=null attributes={} marker=null children=2
+                └── List scope=3:5..6:9 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=false children=1
+                    └── ListItem scope=3:5..6:9 anchor=null attributes={} status=null children=2
                         ├── Paragraph scope=3:7..3:9 anchor=null attributes={} children=1
                         │   └── Text scope=3:7..3:9 anchor=null attributes={} literal="baz" children=0
                         └── Paragraph scope=6:7..6:9 anchor=null attributes={} children=1
@@ -5750,19 +5752,19 @@ comment:
 - bim
 .
 Document scope=1:1..7:5 anchor=null attributes={} children=3
-├── List scope=1:1..3:0 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=2
-│   ├── ListItem scope=1:1..1:5 anchor=null attributes={} marker=null children=1
+├── List scope=1:1..3:0 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=2
+│   ├── ListItem scope=1:1..1:5 anchor=null attributes={} status=null children=1
 │   │   └── Paragraph scope=1:3..1:5 anchor=null attributes={} children=1
 │   │       └── Text scope=1:3..1:5 anchor=null attributes={} literal="foo" children=0
-│   └── ListItem scope=2:1..3:0 anchor=null attributes={} marker=null children=1
+│   └── ListItem scope=2:1..3:0 anchor=null attributes={} status=null children=1
 │       └── Paragraph scope=2:3..2:5 anchor=null attributes={} children=1
 │           └── Text scope=2:3..2:5 anchor=null attributes={} literal="bar" children=0
 ├── Comment scope=4:1..4:8 anchor=null attributes={} literal=" " children=0
-└── List scope=6:1..7:5 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=2
-    ├── ListItem scope=6:1..6:5 anchor=null attributes={} marker=null children=1
+└── List scope=6:1..7:5 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=2
+    ├── ListItem scope=6:1..6:5 anchor=null attributes={} status=null children=1
     │   └── Paragraph scope=6:3..6:5 anchor=null attributes={} children=1
     │       └── Text scope=6:3..6:5 anchor=null attributes={} literal="baz" children=0
-    └── ListItem scope=7:1..7:5 anchor=null attributes={} marker=null children=1
+    └── ListItem scope=7:1..7:5 anchor=null attributes={} status=null children=1
         └── Paragraph scope=7:3..7:5 anchor=null attributes={} children=1
             └── Text scope=7:3..7:5 anchor=null attributes={} literal="bim" children=0
 ````````````````````````````````
@@ -5780,13 +5782,13 @@ Document scope=1:1..7:5 anchor=null attributes={} children=3
     code
 .
 Document scope=1:1..9:8 anchor=null attributes={} children=3
-├── List scope=1:1..6:0 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=false children=2
-│   ├── ListItem scope=1:1..4:0 anchor=null attributes={} marker=null children=2
+├── List scope=1:1..6:0 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=false children=2
+│   ├── ListItem scope=1:1..4:0 anchor=null attributes={} status=null children=2
 │   │   ├── Paragraph scope=1:5..1:7 anchor=null attributes={} children=1
 │   │   │   └── Text scope=1:5..1:7 anchor=null attributes={} literal="foo" children=0
 │   │   └── Paragraph scope=3:5..3:11 anchor=null attributes={} children=1
 │   │       └── Text scope=3:5..3:11 anchor=null attributes={} literal="notcode" children=0
-│   └── ListItem scope=5:1..6:0 anchor=null attributes={} marker=null children=1
+│   └── ListItem scope=5:1..6:0 anchor=null attributes={} status=null children=1
 │       └── Paragraph scope=5:5..5:7 anchor=null attributes={} children=1
 │           └── Text scope=5:5..5:7 anchor=null attributes={} literal="foo" children=0
 ├── Comment scope=7:1..7:8 anchor=null attributes={} literal=" " children=0
@@ -5809,26 +5811,26 @@ item:
 - g
 .
 Document scope=1:1..7:3 anchor=null attributes={} children=1
-└── List scope=1:1..7:3 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=7
-    ├── ListItem scope=1:1..1:3 anchor=null attributes={} marker=null children=1
+└── List scope=1:1..7:3 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=7
+    ├── ListItem scope=1:1..1:3 anchor=null attributes={} status=null children=1
     │   └── Paragraph scope=1:3..1:3 anchor=null attributes={} children=1
     │       └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
-    ├── ListItem scope=2:2..2:4 anchor=null attributes={} marker=null children=1
+    ├── ListItem scope=2:2..2:4 anchor=null attributes={} status=null children=1
     │   └── Paragraph scope=2:4..2:4 anchor=null attributes={} children=1
     │       └── Text scope=2:4..2:4 anchor=null attributes={} literal="b" children=0
-    ├── ListItem scope=3:3..3:5 anchor=null attributes={} marker=null children=1
+    ├── ListItem scope=3:3..3:5 anchor=null attributes={} status=null children=1
     │   └── Paragraph scope=3:5..3:5 anchor=null attributes={} children=1
     │       └── Text scope=3:5..3:5 anchor=null attributes={} literal="c" children=0
-    ├── ListItem scope=4:4..4:6 anchor=null attributes={} marker=null children=1
+    ├── ListItem scope=4:4..4:6 anchor=null attributes={} status=null children=1
     │   └── Paragraph scope=4:6..4:6 anchor=null attributes={} children=1
     │       └── Text scope=4:6..4:6 anchor=null attributes={} literal="d" children=0
-    ├── ListItem scope=5:3..5:5 anchor=null attributes={} marker=null children=1
+    ├── ListItem scope=5:3..5:5 anchor=null attributes={} status=null children=1
     │   └── Paragraph scope=5:5..5:5 anchor=null attributes={} children=1
     │       └── Text scope=5:5..5:5 anchor=null attributes={} literal="e" children=0
-    ├── ListItem scope=6:2..6:4 anchor=null attributes={} marker=null children=1
+    ├── ListItem scope=6:2..6:4 anchor=null attributes={} status=null children=1
     │   └── Paragraph scope=6:4..6:4 anchor=null attributes={} children=1
     │       └── Text scope=6:4..6:4 anchor=null attributes={} literal="f" children=0
-    └── ListItem scope=7:1..7:3 anchor=null attributes={} marker=null children=1
+    └── ListItem scope=7:1..7:3 anchor=null attributes={} status=null children=1
         └── Paragraph scope=7:3..7:3 anchor=null attributes={} children=1
             └── Text scope=7:3..7:3 anchor=null attributes={} literal="g" children=0
 ````````````````````````````````
@@ -5842,14 +5844,14 @@ Document scope=1:1..7:3 anchor=null attributes={} children=1
    3. c
 .
 Document scope=1:1..5:7 anchor=null attributes={} children=1
-└── List scope=1:1..5:7 anchor=null attributes={} flavor=ordered start=1 variant=decimal delimiter=period tight=false children=3
-    ├── ListItem scope=1:1..2:0 anchor=null attributes={} marker=null children=1
+└── List scope=1:1..5:7 anchor=null attributes={} flavor=ordered start=1 delimiter=period tight=false children=3
+    ├── ListItem scope=1:1..2:0 anchor=null attributes={} status=null children=1
     │   └── Paragraph scope=1:4..1:4 anchor=null attributes={} children=1
     │       └── Text scope=1:4..1:4 anchor=null attributes={} literal="a" children=0
-    ├── ListItem scope=3:3..4:0 anchor=null attributes={} marker=null children=1
+    ├── ListItem scope=3:3..4:0 anchor=null attributes={} status=null children=1
     │   └── Paragraph scope=3:6..3:6 anchor=null attributes={} children=1
     │       └── Text scope=3:6..3:6 anchor=null attributes={} literal="b" children=0
-    └── ListItem scope=5:4..5:7 anchor=null attributes={} marker=null children=1
+    └── ListItem scope=5:4..5:7 anchor=null attributes={} status=null children=1
         └── Paragraph scope=5:7..5:7 anchor=null attributes={} children=1
             └── Text scope=5:7..5:7 anchor=null attributes={} literal="c" children=0
 ````````````````````````````````
@@ -5866,17 +5868,17 @@ line, because it is indented more than three spaces:
     - e
 .
 Document scope=1:1..5:7 anchor=null attributes={} children=1
-└── List scope=1:1..5:7 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=4
-    ├── ListItem scope=1:1..1:3 anchor=null attributes={} marker=null children=1
+└── List scope=1:1..5:7 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=4
+    ├── ListItem scope=1:1..1:3 anchor=null attributes={} status=null children=1
     │   └── Paragraph scope=1:3..1:3 anchor=null attributes={} children=1
     │       └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
-    ├── ListItem scope=2:2..2:4 anchor=null attributes={} marker=null children=1
+    ├── ListItem scope=2:2..2:4 anchor=null attributes={} status=null children=1
     │   └── Paragraph scope=2:4..2:4 anchor=null attributes={} children=1
     │       └── Text scope=2:4..2:4 anchor=null attributes={} literal="b" children=0
-    ├── ListItem scope=3:3..3:5 anchor=null attributes={} marker=null children=1
+    ├── ListItem scope=3:3..3:5 anchor=null attributes={} status=null children=1
     │   └── Paragraph scope=3:5..3:5 anchor=null attributes={} children=1
     │       └── Text scope=3:5..3:5 anchor=null attributes={} literal="c" children=0
-    └── ListItem scope=4:4..5:7 anchor=null attributes={} marker=null children=1
+    └── ListItem scope=4:4..5:7 anchor=null attributes={} status=null children=1
         └── Paragraph scope=4:6..5:7 anchor=null attributes={} children=3
             ├── Text scope=4:6..4:6 anchor=null attributes={} literal="d" children=0
             ├── SoftBreak scope=4:7..5:0 anchor=null attributes={} children=0
@@ -5895,11 +5897,11 @@ blank line.
     3. c
 .
 Document scope=1:1..5:8 anchor=null attributes={} children=2
-├── List scope=1:1..4:0 anchor=null attributes={} flavor=ordered start=1 variant=decimal delimiter=period tight=false children=2
-│   ├── ListItem scope=1:1..2:0 anchor=null attributes={} marker=null children=1
+├── List scope=1:1..4:0 anchor=null attributes={} flavor=ordered start=1 delimiter=period tight=false children=2
+│   ├── ListItem scope=1:1..2:0 anchor=null attributes={} status=null children=1
 │   │   └── Paragraph scope=1:4..1:4 anchor=null attributes={} children=1
 │   │       └── Text scope=1:4..1:4 anchor=null attributes={} literal="a" children=0
-│   └── ListItem scope=3:3..4:0 anchor=null attributes={} marker=null children=1
+│   └── ListItem scope=3:3..4:0 anchor=null attributes={} status=null children=1
 │       └── Paragraph scope=3:6..3:6 anchor=null attributes={} children=1
 │           └── Text scope=3:6..3:6 anchor=null attributes={} literal="b" children=0
 └── CodeBlock scope=5:5..5:8 anchor=null attributes={} info=null language=null literal="3. c\n" fenced=false closed=true children=0
@@ -5916,14 +5918,14 @@ two of the list items:
 - c
 .
 Document scope=1:1..4:3 anchor=null attributes={} children=1
-└── List scope=1:1..4:3 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=false children=3
-    ├── ListItem scope=1:1..1:3 anchor=null attributes={} marker=null children=1
+└── List scope=1:1..4:3 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=false children=3
+    ├── ListItem scope=1:1..1:3 anchor=null attributes={} status=null children=1
     │   └── Paragraph scope=1:3..1:3 anchor=null attributes={} children=1
     │       └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
-    ├── ListItem scope=2:1..3:0 anchor=null attributes={} marker=null children=1
+    ├── ListItem scope=2:1..3:0 anchor=null attributes={} status=null children=1
     │   └── Paragraph scope=2:3..2:3 anchor=null attributes={} children=1
     │       └── Text scope=2:3..2:3 anchor=null attributes={} literal="b" children=0
-    └── ListItem scope=4:1..4:3 anchor=null attributes={} marker=null children=1
+    └── ListItem scope=4:1..4:3 anchor=null attributes={} status=null children=1
         └── Paragraph scope=4:3..4:3 anchor=null attributes={} children=1
             └── Text scope=4:3..4:3 anchor=null attributes={} literal="c" children=0
 ````````````````````````````````
@@ -5938,12 +5940,12 @@ So is this, with a empty second item:
 * c
 .
 Document scope=1:1..4:3 anchor=null attributes={} children=1
-└── List scope=1:1..4:3 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=false children=3
-    ├── ListItem scope=1:1..1:3 anchor=null attributes={} marker=null children=1
+└── List scope=1:1..4:3 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=false children=3
+    ├── ListItem scope=1:1..1:3 anchor=null attributes={} status=null children=1
     │   └── Paragraph scope=1:3..1:3 anchor=null attributes={} children=1
     │       └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
-    ├── ListItem scope=2:1..2:1 anchor=null attributes={} marker=null children=0
-    └── ListItem scope=4:1..4:3 anchor=null attributes={} marker=null children=1
+    ├── ListItem scope=2:1..2:1 anchor=null attributes={} status=null children=0
+    └── ListItem scope=4:1..4:3 anchor=null attributes={} status=null children=1
         └── Paragraph scope=4:3..4:3 anchor=null attributes={} children=1
             └── Text scope=4:3..4:3 anchor=null attributes={} literal="c" children=0
 ````````````````````````````````
@@ -5961,16 +5963,16 @@ with a blank line between them:
 - d
 .
 Document scope=1:1..5:3 anchor=null attributes={} children=1
-└── List scope=1:1..5:3 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=false children=3
-    ├── ListItem scope=1:1..1:3 anchor=null attributes={} marker=null children=1
+└── List scope=1:1..5:3 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=false children=3
+    ├── ListItem scope=1:1..1:3 anchor=null attributes={} status=null children=1
     │   └── Paragraph scope=1:3..1:3 anchor=null attributes={} children=1
     │       └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
-    ├── ListItem scope=2:1..4:3 anchor=null attributes={} marker=null children=2
+    ├── ListItem scope=2:1..4:3 anchor=null attributes={} status=null children=2
     │   ├── Paragraph scope=2:3..2:3 anchor=null attributes={} children=1
     │   │   └── Text scope=2:3..2:3 anchor=null attributes={} literal="b" children=0
     │   └── Paragraph scope=4:3..4:3 anchor=null attributes={} children=1
     │       └── Text scope=4:3..4:3 anchor=null attributes={} literal="c" children=0
-    └── ListItem scope=5:1..5:3 anchor=null attributes={} marker=null children=1
+    └── ListItem scope=5:1..5:3 anchor=null attributes={} status=null children=1
         └── Paragraph scope=5:3..5:3 anchor=null attributes={} children=1
             └── Text scope=5:3..5:3 anchor=null attributes={} literal="d" children=0
 ````````````````````````````````
@@ -5984,15 +5986,15 @@ Document scope=1:1..5:3 anchor=null attributes={} children=1
 - d
 .
 Document scope=1:1..5:3 anchor=null attributes={} children=1
-└── List scope=1:1..5:3 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=false children=3
-    ├── ListItem scope=1:1..1:3 anchor=null attributes={} marker=null children=1
+└── List scope=1:1..5:3 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=false children=3
+    ├── ListItem scope=1:1..1:3 anchor=null attributes={} status=null children=1
     │   └── Paragraph scope=1:3..1:3 anchor=null attributes={} children=1
     │       └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
-    ├── ListItem scope=2:1..4:13 anchor=null attributes={} marker=null children=2
+    ├── ListItem scope=2:1..4:13 anchor=null attributes={} status=null children=2
     │   ├── Paragraph scope=2:3..2:3 anchor=null attributes={} children=1
     │   │   └── Text scope=2:3..2:3 anchor=null attributes={} literal="b" children=0
     │   └── Reference scope=4:3..4:13 anchor=null attributes={} label="ref" dest=url("/url") title=null children=0
-    └── ListItem scope=5:1..5:3 anchor=null attributes={} marker=null children=1
+    └── ListItem scope=5:1..5:3 anchor=null attributes={} status=null children=1
         └── Paragraph scope=5:3..5:3 anchor=null attributes={} children=1
             └── Text scope=5:3..5:3 anchor=null attributes={} literal="d" children=0
 ````````````````````````````````
@@ -6010,13 +6012,13 @@ This is a tight list, because the blank lines are in a code block:
 - c
 .
 Document scope=1:1..7:3 anchor=null attributes={} children=1
-└── List scope=1:1..7:3 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=3
-    ├── ListItem scope=1:1..1:3 anchor=null attributes={} marker=null children=1
+└── List scope=1:1..7:3 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=3
+    ├── ListItem scope=1:1..1:3 anchor=null attributes={} status=null children=1
     │   └── Paragraph scope=1:3..1:3 anchor=null attributes={} children=1
     │       └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
-    ├── ListItem scope=2:1..6:5 anchor=null attributes={} marker=null children=1
+    ├── ListItem scope=2:1..6:5 anchor=null attributes={} status=null children=1
     │   └── CodeBlock scope=2:3..3:0,3:3..6:0,6:3..6:5 anchor=null attributes={} info=null language=null literal="b\n\n\n" fenced=true closed=true children=0
-    └── ListItem scope=7:1..7:3 anchor=null attributes={} marker=null children=1
+    └── ListItem scope=7:1..7:3 anchor=null attributes={} status=null children=1
         └── Paragraph scope=7:3..7:3 anchor=null attributes={} children=1
             └── Text scope=7:3..7:3 anchor=null attributes={} literal="c" children=0
 ````````````````````````````````
@@ -6034,17 +6036,17 @@ the outer list is tight:
 - d
 .
 Document scope=1:1..5:3 anchor=null attributes={} children=1
-└── List scope=1:1..5:3 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=2
-    ├── ListItem scope=1:1..4:5 anchor=null attributes={} marker=null children=2
+└── List scope=1:1..5:3 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=2
+    ├── ListItem scope=1:1..4:5 anchor=null attributes={} status=null children=2
     │   ├── Paragraph scope=1:3..1:3 anchor=null attributes={} children=1
     │   │   └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
-    │   └── List scope=2:3..4:5 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=false children=1
-    │       └── ListItem scope=2:3..4:5 anchor=null attributes={} marker=null children=2
+    │   └── List scope=2:3..4:5 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=false children=1
+    │       └── ListItem scope=2:3..4:5 anchor=null attributes={} status=null children=2
     │           ├── Paragraph scope=2:5..2:5 anchor=null attributes={} children=1
     │           │   └── Text scope=2:5..2:5 anchor=null attributes={} literal="b" children=0
     │           └── Paragraph scope=4:5..4:5 anchor=null attributes={} children=1
     │               └── Text scope=4:5..4:5 anchor=null attributes={} literal="c" children=0
-    └── ListItem scope=5:1..5:3 anchor=null attributes={} marker=null children=1
+    └── ListItem scope=5:1..5:3 anchor=null attributes={} status=null children=1
         └── Paragraph scope=5:3..5:3 anchor=null attributes={} children=1
             └── Text scope=5:3..5:3 anchor=null attributes={} literal="d" children=0
 ````````````````````````````````
@@ -6060,14 +6062,14 @@ block quote:
 * c
 .
 Document scope=1:1..4:3 anchor=null attributes={} children=1
-└── List scope=1:1..4:3 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=2
-    ├── ListItem scope=1:1..3:3 anchor=null attributes={} marker=null children=2
+└── List scope=1:1..4:3 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=2
+    ├── ListItem scope=1:1..3:3 anchor=null attributes={} status=null children=2
     │   ├── Paragraph scope=1:3..1:3 anchor=null attributes={} children=1
     │   │   └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
     │   └── Callout scope=2:3..3:3 anchor=null attributes={} variant=null collapsed=null children=1
     │       └── Paragraph scope=2:5..2:5 anchor=null attributes={} children=1
     │           └── Text scope=2:5..2:5 anchor=null attributes={} literal="b" children=0
-    └── ListItem scope=4:1..4:3 anchor=null attributes={} marker=null children=1
+    └── ListItem scope=4:1..4:3 anchor=null attributes={} status=null children=1
         └── Paragraph scope=4:3..4:3 anchor=null attributes={} children=1
             └── Text scope=4:3..4:3 anchor=null attributes={} literal="c" children=0
 ````````````````````````````````
@@ -6085,15 +6087,15 @@ are not separated by blank lines:
 - d
 .
 Document scope=1:1..6:3 anchor=null attributes={} children=1
-└── List scope=1:1..6:3 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=2
-    ├── ListItem scope=1:1..5:5 anchor=null attributes={} marker=null children=3
+└── List scope=1:1..6:3 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=2
+    ├── ListItem scope=1:1..5:5 anchor=null attributes={} status=null children=3
     │   ├── Paragraph scope=1:3..1:3 anchor=null attributes={} children=1
     │   │   └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
     │   ├── Callout scope=2:3..2:5 anchor=null attributes={} variant=null collapsed=null children=1
     │   │   └── Paragraph scope=2:5..2:5 anchor=null attributes={} children=1
     │   │       └── Text scope=2:5..2:5 anchor=null attributes={} literal="b" children=0
     │   └── CodeBlock scope=3:3..4:0,4:3..5:0,5:3..5:5 anchor=null attributes={} info=null language=null literal="c\n" fenced=true closed=true children=0
-    └── ListItem scope=6:1..6:3 anchor=null attributes={} marker=null children=1
+    └── ListItem scope=6:1..6:3 anchor=null attributes={} status=null children=1
         └── Paragraph scope=6:3..6:3 anchor=null attributes={} children=1
             └── Text scope=6:3..6:3 anchor=null attributes={} literal="d" children=0
 ````````````````````````````````
@@ -6105,8 +6107,8 @@ A single-paragraph list is tight:
 - a
 .
 Document scope=1:1..1:3 anchor=null attributes={} children=1
-└── List scope=1:1..1:3 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
-    └── ListItem scope=1:1..1:3 anchor=null attributes={} marker=null children=1
+└── List scope=1:1..1:3 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=1
+    └── ListItem scope=1:1..1:3 anchor=null attributes={} status=null children=1
         └── Paragraph scope=1:3..1:3 anchor=null attributes={} children=1
             └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
 ````````````````````````````````
@@ -6117,12 +6119,12 @@ Document scope=1:1..1:3 anchor=null attributes={} children=1
   - b
 .
 Document scope=1:1..2:5 anchor=null attributes={} children=1
-└── List scope=1:1..2:5 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
-    └── ListItem scope=1:1..2:5 anchor=null attributes={} marker=null children=2
+└── List scope=1:1..2:5 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=1
+    └── ListItem scope=1:1..2:5 anchor=null attributes={} status=null children=2
         ├── Paragraph scope=1:3..1:3 anchor=null attributes={} children=1
         │   └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
-        └── List scope=2:3..2:5 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
-            └── ListItem scope=2:3..2:5 anchor=null attributes={} marker=null children=1
+        └── List scope=2:3..2:5 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=1
+            └── ListItem scope=2:3..2:5 anchor=null attributes={} status=null children=1
                 └── Paragraph scope=2:5..2:5 anchor=null attributes={} children=1
                     └── Text scope=2:5..2:5 anchor=null attributes={} literal="b" children=0
 ````````````````````````````````
@@ -6139,8 +6141,8 @@ two block elements in the list item:
    bar
 .
 Document scope=1:1..5:6 anchor=null attributes={} children=1
-└── List scope=1:1..5:6 anchor=null attributes={} flavor=ordered start=1 variant=decimal delimiter=period tight=false children=1
-    └── ListItem scope=1:1..5:6 anchor=null attributes={} marker=null children=2
+└── List scope=1:1..5:6 anchor=null attributes={} flavor=ordered start=1 delimiter=period tight=false children=1
+    └── ListItem scope=1:1..5:6 anchor=null attributes={} status=null children=2
         ├── CodeBlock scope=1:4..2:0,2:4..3:0,3:4..3:6 anchor=null attributes={} info=null language=null literal="foo\n" fenced=true closed=true children=0
         └── Paragraph scope=5:4..5:6 anchor=null attributes={} children=1
             └── Text scope=5:4..5:6 anchor=null attributes={} literal="bar" children=0
@@ -6156,12 +6158,12 @@ Here the outer list is loose, the inner list tight:
   baz
 .
 Document scope=1:1..4:5 anchor=null attributes={} children=1
-└── List scope=1:1..4:5 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=false children=1
-    └── ListItem scope=1:1..4:5 anchor=null attributes={} marker=null children=3
+└── List scope=1:1..4:5 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=false children=1
+    └── ListItem scope=1:1..4:5 anchor=null attributes={} status=null children=3
         ├── Paragraph scope=1:3..1:5 anchor=null attributes={} children=1
         │   └── Text scope=1:3..1:5 anchor=null attributes={} literal="foo" children=0
-        ├── List scope=2:3..3:0 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
-        │   └── ListItem scope=2:3..3:0 anchor=null attributes={} marker=null children=1
+        ├── List scope=2:3..3:0 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=1
+        │   └── ListItem scope=2:3..3:0 anchor=null attributes={} status=null children=1
         │       └── Paragraph scope=2:5..2:7 anchor=null attributes={} children=1
         │           └── Text scope=2:5..2:7 anchor=null attributes={} literal="bar" children=0
         └── Paragraph scope=4:3..4:5 anchor=null attributes={} children=1
@@ -6179,25 +6181,25 @@ Document scope=1:1..4:5 anchor=null attributes={} children=1
   - f
 .
 Document scope=1:1..7:5 anchor=null attributes={} children=1
-└── List scope=1:1..7:5 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=false children=2
-    ├── ListItem scope=1:1..4:0 anchor=null attributes={} marker=null children=2
+└── List scope=1:1..7:5 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=false children=2
+    ├── ListItem scope=1:1..4:0 anchor=null attributes={} status=null children=2
     │   ├── Paragraph scope=1:3..1:3 anchor=null attributes={} children=1
     │   │   └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
-    │   └── List scope=2:3..4:0 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=2
-    │       ├── ListItem scope=2:3..2:5 anchor=null attributes={} marker=null children=1
+    │   └── List scope=2:3..4:0 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=2
+    │       ├── ListItem scope=2:3..2:5 anchor=null attributes={} status=null children=1
     │       │   └── Paragraph scope=2:5..2:5 anchor=null attributes={} children=1
     │       │       └── Text scope=2:5..2:5 anchor=null attributes={} literal="b" children=0
-    │       └── ListItem scope=3:3..4:0 anchor=null attributes={} marker=null children=1
+    │       └── ListItem scope=3:3..4:0 anchor=null attributes={} status=null children=1
     │           └── Paragraph scope=3:5..3:5 anchor=null attributes={} children=1
     │               └── Text scope=3:5..3:5 anchor=null attributes={} literal="c" children=0
-    └── ListItem scope=5:1..7:5 anchor=null attributes={} marker=null children=2
+    └── ListItem scope=5:1..7:5 anchor=null attributes={} status=null children=2
         ├── Paragraph scope=5:3..5:3 anchor=null attributes={} children=1
         │   └── Text scope=5:3..5:3 anchor=null attributes={} literal="d" children=0
-        └── List scope=6:3..7:5 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=2
-            ├── ListItem scope=6:3..6:5 anchor=null attributes={} marker=null children=1
+        └── List scope=6:3..7:5 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=2
+            ├── ListItem scope=6:3..6:5 anchor=null attributes={} status=null children=1
             │   └── Paragraph scope=6:5..6:5 anchor=null attributes={} children=1
             │       └── Text scope=6:5..6:5 anchor=null attributes={} literal="e" children=0
-            └── ListItem scope=7:3..7:5 anchor=null attributes={} marker=null children=1
+            └── ListItem scope=7:3..7:5 anchor=null attributes={} status=null children=1
                 └── Paragraph scope=7:5..7:5 anchor=null attributes={} children=1
                     └── Text scope=7:5..7:5 anchor=null attributes={} literal="f" children=0
 ````````````````````````````````
@@ -6602,8 +6604,8 @@ Document scope=1:1..2:5 anchor=null attributes={} children=1
 Document scope=1:1..3:5 anchor=null attributes={} children=2
 ├── Paragraph scope=1:1..1:9 anchor=null attributes={} children=1
 │   └── Text scope=1:1..1:9 anchor=null attributes={} literal="* foo" children=0
-└── List scope=3:1..3:5 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
-    └── ListItem scope=3:1..3:5 anchor=null attributes={} marker=null children=1
+└── List scope=3:1..3:5 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=1
+    └── ListItem scope=3:1..3:5 anchor=null attributes={} status=null children=1
         └── Paragraph scope=3:3..3:5 anchor=null attributes={} children=1
             └── Text scope=3:3..3:5 anchor=null attributes={} literal="foo" children=0
 ````````````````````````````````
@@ -9314,7 +9316,7 @@ Document scope=1:1..1:30 anchor=null attributes={} children=1
 Document scope=1:1..1:25 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..1:25 anchor=null attributes={} children=1
     └── Link scope=1:1..1:25 anchor=null attributes={} dest=url("/uri") title=null children=1
-        └── Embedded scope=1:2..1:18 anchor=null attributes={} dest=url("moon.jpg") title=null dimensions=null children=1
+        └── Embed scope=1:2..1:18 anchor=null attributes={} dest=url("moon.jpg") title=null dimensions=null children=1
             └── Text scope=1:4..1:7 anchor=null attributes={} literal="moon" children=0
 ````````````````````````````````
 
@@ -9353,7 +9355,7 @@ Document scope=1:1..1:37 anchor=null attributes={} children=1
 .
 Document scope=1:1..1:28 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..1:28 anchor=null attributes={} children=1
-    └── Embedded scope=1:1..1:28 anchor=null attributes={} dest=url("uri3") title=null dimensions=null children=3
+    └── Embed scope=1:1..1:28 anchor=null attributes={} dest=url("uri3") title=null dimensions=null children=3
         ├── Text scope=1:3..1:3 anchor=null attributes={} literal="[" children=0
         ├── Link scope=1:4..1:14 anchor=null attributes={} dest=url("uri1") title=null children=1
         │   └── Text scope=1:5..1:7 anchor=null attributes={} literal="foo" children=0
@@ -9538,7 +9540,7 @@ Document scope=1:1..3:11 anchor=null attributes={} children=2
 Document scope=1:1..3:11 anchor=null attributes={} children=2
 ├── Paragraph scope=1:1..1:24 anchor=null attributes={} children=1
 │   └── Link scope=1:1..1:24 anchor=null attributes={} dest=reference("ref") title=null children=1
-│       └── Embedded scope=1:2..1:18 anchor=null attributes={} dest=url("moon.jpg") title=null dimensions=null children=1
+│       └── Embed scope=1:2..1:18 anchor=null attributes={} dest=url("moon.jpg") title=null dimensions=null children=1
 │           └── Text scope=1:4..1:7 anchor=null attributes={} literal="moon" children=0
 └── Reference scope=3:1..3:11 anchor=null attributes={} label="ref" dest=url("/uri") title=null children=0
 ````````````````````````````````
@@ -10237,7 +10239,7 @@ this is standardly used as the image's `alt` attribute.
 .
 Document scope=1:1..1:20 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..1:20 anchor=null attributes={} children=1
-    └── Embedded scope=1:1..1:20 anchor=null attributes={} dest=url("/url") title="title" dimensions=null children=1
+    └── Embed scope=1:1..1:20 anchor=null attributes={} dest=url("/url") title="title" dimensions=null children=1
         └── Text scope=1:3..1:5 anchor=null attributes={} literal="foo" children=0
 ````````````````````````````````
 
@@ -10249,7 +10251,7 @@ Document scope=1:1..1:20 anchor=null attributes={} children=1
 .
 Document scope=1:1..3:39 anchor=null attributes={} children=2
 ├── Paragraph scope=1:1..1:12 anchor=null attributes={} children=1
-│   └── Embedded scope=1:1..1:12 anchor=null attributes={} dest=reference("foo *bar*") title=null dimensions=null children=2
+│   └── Embed scope=1:1..1:12 anchor=null attributes={} dest=reference("foo *bar*") title=null dimensions=null children=2
 │       ├── Text scope=1:3..1:6 anchor=null attributes={} literal="foo " children=0
 │       └── Emphasis scope=1:7..1:11 anchor=null attributes={} children=1
 │           └── Text scope=1:8..1:10 anchor=null attributes={} literal="bar" children=0
@@ -10262,9 +10264,9 @@ Document scope=1:1..3:39 anchor=null attributes={} children=2
 .
 Document scope=1:1..1:26 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..1:26 anchor=null attributes={} children=1
-    └── Embedded scope=1:1..1:26 anchor=null attributes={} dest=url("/url2") title=null dimensions=null children=2
+    └── Embed scope=1:1..1:26 anchor=null attributes={} dest=url("/url2") title=null dimensions=null children=2
         ├── Text scope=1:3..1:6 anchor=null attributes={} literal="foo " children=0
-        └── Embedded scope=1:7..1:18 anchor=null attributes={} dest=url("/url") title=null dimensions=null children=1
+        └── Embed scope=1:7..1:18 anchor=null attributes={} dest=url("/url") title=null dimensions=null children=1
             └── Text scope=1:9..1:11 anchor=null attributes={} literal="bar" children=0
 ````````````````````````````````
 
@@ -10274,7 +10276,7 @@ Document scope=1:1..1:26 anchor=null attributes={} children=1
 .
 Document scope=1:1..1:25 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..1:25 anchor=null attributes={} children=1
-    └── Embedded scope=1:1..1:25 anchor=null attributes={} dest=url("/url2") title=null dimensions=null children=2
+    └── Embed scope=1:1..1:25 anchor=null attributes={} dest=url("/url2") title=null dimensions=null children=2
         ├── Text scope=1:3..1:6 anchor=null attributes={} literal="foo " children=0
         └── Link scope=1:7..1:17 anchor=null attributes={} dest=url("/url") title=null children=1
             └── Text scope=1:8..1:10 anchor=null attributes={} literal="bar" children=0
@@ -10295,7 +10297,7 @@ content is rendered, without formatting.
 .
 Document scope=1:1..3:39 anchor=null attributes={} children=2
 ├── Paragraph scope=1:1..1:14 anchor=null attributes={} children=1
-│   └── Embedded scope=1:1..1:14 anchor=null attributes={} dest=reference("foo *bar*") title=null dimensions=null children=2
+│   └── Embed scope=1:1..1:14 anchor=null attributes={} dest=reference("foo *bar*") title=null dimensions=null children=2
 │       ├── Text scope=1:3..1:6 anchor=null attributes={} literal="foo " children=0
 │       └── Emphasis scope=1:7..1:11 anchor=null attributes={} children=1
 │           └── Text scope=1:8..1:10 anchor=null attributes={} literal="bar" children=0
@@ -10310,7 +10312,7 @@ Document scope=1:1..3:39 anchor=null attributes={} children=2
 .
 Document scope=1:1..3:36 anchor=null attributes={} children=2
 ├── Paragraph scope=1:1..1:20 anchor=null attributes={} children=1
-│   └── Embedded scope=1:1..1:20 anchor=null attributes={} dest=reference("foobar") title=null dimensions=null children=2
+│   └── Embed scope=1:1..1:20 anchor=null attributes={} dest=reference("foobar") title=null dimensions=null children=2
 │       ├── Text scope=1:3..1:6 anchor=null attributes={} literal="foo " children=0
 │       └── Emphasis scope=1:7..1:11 anchor=null attributes={} children=1
 │           └── Text scope=1:8..1:10 anchor=null attributes={} literal="bar" children=0
@@ -10323,7 +10325,7 @@ Document scope=1:1..3:36 anchor=null attributes={} children=2
 .
 Document scope=1:1..1:17 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..1:17 anchor=null attributes={} children=1
-    └── Embedded scope=1:1..1:17 anchor=null attributes={} dest=url("train.jpg") title=null dimensions=null children=1
+    └── Embed scope=1:1..1:17 anchor=null attributes={} dest=url("train.jpg") title=null dimensions=null children=1
         └── Text scope=1:3..1:5 anchor=null attributes={} literal="foo" children=0
 ````````````````````````````````
 
@@ -10334,7 +10336,7 @@ My ![foo bar](/path/to/train.jpg  "title"   )
 Document scope=1:1..1:45 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..1:45 anchor=null attributes={} children=2
     ├── Text scope=1:1..1:3 anchor=null attributes={} literal="My " children=0
-    └── Embedded scope=1:4..1:45 anchor=null attributes={} dest=url("/path/to/train.jpg") title="title" dimensions=null children=1
+    └── Embed scope=1:4..1:45 anchor=null attributes={} dest=url("/path/to/train.jpg") title="title" dimensions=null children=1
         └── Text scope=1:6..1:12 anchor=null attributes={} literal="foo bar" children=0
 ````````````````````````````````
 
@@ -10344,7 +10346,7 @@ Document scope=1:1..1:45 anchor=null attributes={} children=1
 .
 Document scope=1:1..1:13 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..1:13 anchor=null attributes={} children=1
-    └── Embedded scope=1:1..1:13 anchor=null attributes={} dest=url("url") title=null dimensions=null children=1
+    └── Embed scope=1:1..1:13 anchor=null attributes={} dest=url("url") title=null dimensions=null children=1
         └── Text scope=1:3..1:5 anchor=null attributes={} literal="foo" children=0
 ````````````````````````````````
 
@@ -10354,7 +10356,7 @@ Document scope=1:1..1:13 anchor=null attributes={} children=1
 .
 Document scope=1:1..1:9 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..1:9 anchor=null attributes={} children=1
-    └── Embedded scope=1:1..1:9 anchor=null attributes={} dest=url("/url") title=null dimensions=null children=0
+    └── Embed scope=1:1..1:9 anchor=null attributes={} dest=url("/url") title=null dimensions=null children=0
 ````````````````````````````````
 
 
@@ -10367,7 +10369,7 @@ Reference-style:
 .
 Document scope=1:1..3:11 anchor=null attributes={} children=2
 ├── Paragraph scope=1:1..1:11 anchor=null attributes={} children=1
-│   └── Embedded scope=1:1..1:11 anchor=null attributes={} dest=reference("bar") title=null dimensions=null children=1
+│   └── Embed scope=1:1..1:11 anchor=null attributes={} dest=reference("bar") title=null dimensions=null children=1
 │       └── Text scope=1:3..1:5 anchor=null attributes={} literal="foo" children=0
 └── Reference scope=3:1..3:11 anchor=null attributes={} label="bar" dest=url("/url") title=null children=0
 ````````````````````````````````
@@ -10380,7 +10382,7 @@ Document scope=1:1..3:11 anchor=null attributes={} children=2
 .
 Document scope=1:1..3:11 anchor=null attributes={} children=2
 ├── Paragraph scope=1:1..1:11 anchor=null attributes={} children=1
-│   └── Embedded scope=1:1..1:11 anchor=null attributes={} dest=reference("bar") title=null dimensions=null children=1
+│   └── Embed scope=1:1..1:11 anchor=null attributes={} dest=reference("bar") title=null dimensions=null children=1
 │       └── Text scope=1:3..1:5 anchor=null attributes={} literal="foo" children=0
 └── Reference scope=3:1..3:11 anchor=null attributes={} label="bar" dest=url("/url") title=null children=0
 ````````````````````````````````
@@ -10395,7 +10397,7 @@ Collapsed:
 .
 Document scope=1:1..3:19 anchor=null attributes={} children=2
 ├── Paragraph scope=1:1..1:8 anchor=null attributes={} children=1
-│   └── Embedded scope=1:1..1:8 anchor=null attributes={} dest=reference("foo") title=null dimensions=null children=1
+│   └── Embed scope=1:1..1:8 anchor=null attributes={} dest=reference("foo") title=null dimensions=null children=1
 │       └── Text scope=1:3..1:5 anchor=null attributes={} literal="foo" children=0
 └── Reference scope=3:1..3:19 anchor=null attributes={} label="foo" dest=url("/url") title="title" children=0
 ````````````````````````````````
@@ -10408,7 +10410,7 @@ Document scope=1:1..3:19 anchor=null attributes={} children=2
 .
 Document scope=1:1..3:25 anchor=null attributes={} children=2
 ├── Paragraph scope=1:1..1:14 anchor=null attributes={} children=1
-│   └── Embedded scope=1:1..1:14 anchor=null attributes={} dest=reference("*foo* bar") title=null dimensions=null children=2
+│   └── Embed scope=1:1..1:14 anchor=null attributes={} dest=reference("*foo* bar") title=null dimensions=null children=2
 │       ├── Emphasis scope=1:3..1:7 anchor=null attributes={} children=1
 │       │   └── Text scope=1:4..1:6 anchor=null attributes={} literal="foo" children=0
 │       └── Text scope=1:8..1:11 anchor=null attributes={} literal=" bar" children=0
@@ -10425,7 +10427,7 @@ The labels are case-insensitive:
 .
 Document scope=1:1..3:19 anchor=null attributes={} children=2
 ├── Paragraph scope=1:1..1:8 anchor=null attributes={} children=1
-│   └── Embedded scope=1:1..1:8 anchor=null attributes={} dest=reference("foo") title=null dimensions=null children=1
+│   └── Embed scope=1:1..1:8 anchor=null attributes={} dest=reference("foo") title=null dimensions=null children=1
 │       └── Text scope=1:3..1:5 anchor=null attributes={} literal="Foo" children=0
 └── Reference scope=3:1..3:19 anchor=null attributes={} label="foo" dest=url("/url") title="title" children=0
 ````````````````````````````````
@@ -10442,7 +10444,7 @@ between the two sets of brackets:
 .
 Document scope=1:1..4:19 anchor=null attributes={} children=2
 ├── Paragraph scope=1:1..2:2 anchor=null attributes={} children=3
-│   ├── Embedded scope=1:1..1:6 anchor=null attributes={} dest=reference("foo") title=null dimensions=null children=1
+│   ├── Embed scope=1:1..1:6 anchor=null attributes={} dest=reference("foo") title=null dimensions=null children=1
 │   │   └── Text scope=1:3..1:5 anchor=null attributes={} literal="foo" children=0
 │   ├── SoftBreak scope=1:8..2:0 anchor=null attributes={} children=0
 │   └── Text scope=2:1..2:2 anchor=null attributes={} literal="[]" children=0
@@ -10459,7 +10461,7 @@ Shortcut:
 .
 Document scope=1:1..3:19 anchor=null attributes={} children=2
 ├── Paragraph scope=1:1..1:6 anchor=null attributes={} children=1
-│   └── Embedded scope=1:1..1:6 anchor=null attributes={} dest=reference("foo") title=null dimensions=null children=1
+│   └── Embed scope=1:1..1:6 anchor=null attributes={} dest=reference("foo") title=null dimensions=null children=1
 │       └── Text scope=1:3..1:5 anchor=null attributes={} literal="foo" children=0
 └── Reference scope=3:1..3:19 anchor=null attributes={} label="foo" dest=url("/url") title="title" children=0
 ````````````````````````````````
@@ -10472,7 +10474,7 @@ Document scope=1:1..3:19 anchor=null attributes={} children=2
 .
 Document scope=1:1..3:25 anchor=null attributes={} children=2
 ├── Paragraph scope=1:1..1:12 anchor=null attributes={} children=1
-│   └── Embedded scope=1:1..1:12 anchor=null attributes={} dest=reference("*foo* bar") title=null dimensions=null children=2
+│   └── Embed scope=1:1..1:12 anchor=null attributes={} dest=reference("*foo* bar") title=null dimensions=null children=2
 │       ├── Emphasis scope=1:3..1:7 anchor=null attributes={} children=1
 │       │   └── Text scope=1:4..1:6 anchor=null attributes={} literal="foo" children=0
 │       └── Text scope=1:8..1:11 anchor=null attributes={} literal=" bar" children=0
@@ -10489,7 +10491,7 @@ Note that link labels cannot contain unescaped brackets:
 .
 Document scope=1:1..3:21 anchor=null attributes={} children=2
 ├── Paragraph scope=1:1..1:8 anchor=null attributes={} children=1
-│   └── CrossEmbedded scope=1:1..1:8 anchor=null attributes={} dest=cross(path="foo",anchor=null) label=null dimensions=null children=0
+│   └── CrossEmbed scope=1:1..1:8 anchor=null attributes={} dest=cross(path="foo",anchor=null) label=null dimensions=null children=0
 └── Paragraph scope=3:1..3:21 anchor=null attributes={} children=2
     ├── CrossLink scope=3:1..3:7 anchor=null attributes={} dest=cross(path="foo",anchor=null) label=null children=0
     └── Text scope=3:8..3:21 anchor=null attributes={} literal=": /url \"title\"" children=0
@@ -10505,7 +10507,7 @@ The link labels are case-insensitive:
 .
 Document scope=1:1..3:19 anchor=null attributes={} children=2
 ├── Paragraph scope=1:1..1:6 anchor=null attributes={} children=1
-│   └── Embedded scope=1:1..1:6 anchor=null attributes={} dest=reference("foo") title=null dimensions=null children=1
+│   └── Embed scope=1:1..1:6 anchor=null attributes={} dest=reference("foo") title=null dimensions=null children=1
 │       └── Text scope=1:3..1:5 anchor=null attributes={} literal="Foo" children=0
 └── Reference scope=3:1..3:19 anchor=null attributes={} label="foo" dest=url("/url") title="title" children=0
 ````````````````````````````````
@@ -11552,7 +11554,7 @@ Document scope=1:1..1:5 anchor=null attributes={} children=1
 ### foo\
 .
 Document scope=1:1..1:8 anchor=null attributes={} children=1
-└── Heading scope=1:1..1:8 anchor="foo" attributes={} level=3 children=1
+└── Heading scope=1:1..1:8 anchor=null attributes={} level=3 children=1
     └── Text scope=1:5..1:8 anchor=null attributes={} literal="foo\\" children=0
 ````````````````````````````````
 
@@ -11561,7 +11563,7 @@ Document scope=1:1..1:8 anchor=null attributes={} children=1
 ### foo  
 .
 Document scope=1:1..1:9 anchor=null attributes={} children=1
-└── Heading scope=1:1..1:9 anchor="foo" attributes={} level=3 children=1
+└── Heading scope=1:1..1:9 anchor=null attributes={} level=3 children=1
     └── Text scope=1:5..1:7 anchor=null attributes={} literal="foo" children=0
 ````````````````````````````````
 

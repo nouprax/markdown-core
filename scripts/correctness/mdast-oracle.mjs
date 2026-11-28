@@ -26,7 +26,7 @@ import {
  *     identifier; Markdown Core keeps it as a `Reference` node and has each
  *     reference name its label under the full case fold (registered delta
  *     `reference-resolution-model`). The two label normalizations differ, so
- *     both sides are resolved into the `Link` or `Embedded` each reference
+ *     both sides are resolved into the `Link` or `Embed` each reference
  *     names, carrying the definition's destination and title, and the
  *     definitions leave the tree: this module resolves mdast's references
  *     against mdast's own definitions, and `resolveReferences` this side's --
@@ -48,7 +48,7 @@ const MDAST_KIND = {
     code: "CodeBlock",
     html: "HTML",
     link: "Link",
-    image: "Embedded",
+    image: "Embed",
     list: "List",
     listItem: "ListItem",
     blockquote: "Callout",
@@ -111,7 +111,7 @@ function convert(node, definitions, parentType = "root") {
 
     // Registered shape delta `reference-resolution-model`: a definition
     // leaves the tree, and a reference that resolves is the `Link` or
-    // `Embedded` it names, carrying the definition's destination and title --
+    // `Embed` it names, carrying the definition's destination and title --
     // the shape `resolveReferences` projects this repository's tree onto.
     if (node.type === "definition") return [];
     if (node.type === "linkReference" || node.type === "imageReference") {
@@ -124,7 +124,7 @@ function convert(node, definitions, parentType = "root") {
         }
         return [
             {
-                kind: node.type === "linkReference" ? "Link" : "Embedded",
+                kind: node.type === "linkReference" ? "Link" : "Embed",
                 fields: {
                     dest: urlDestination(definition.url ?? ""),
                     title: definition.title ?? "null"
@@ -148,7 +148,6 @@ function convert(node, definitions, parentType = "root") {
         fields.flavor = node.ordered ? "ordered" : "bullet";
         fields.tight = String(!node.spread && !(node.children ?? []).some((item) => item.spread));
         fields.start = node.ordered ? String(node.start ?? 1) : "null";
-        fields.variant = node.ordered ? "decimal" : "null";
     }
     if (node.type === "listItem") {
         fields.completed = node.checked === null || node.checked === undefined ? "null" : String(node.checked);
@@ -160,8 +159,9 @@ function convert(node, definitions, parentType = "root") {
     // two agree on what the span means; they disagree on which layer states it,
     // and cmark is the authority for the CommonMark layer.
     if (node.type === "inlineCode") fields.literal = (node.value ?? "").replace(/\r\n|\r|\n/g, " ");
-    // mdast strips a code block's trailing line ending; the canonical dump keeps it.
-    if (node.type === "code") fields.literal = `${node.value ?? ""}\n`;
+    // mdast strips a code block's trailing line ending; the canonical dump keeps
+    // it, and the comparison projection drops it from both (`code-block-ends`).
+    if (node.type === "code") fields.literal = node.value ?? "";
     if (node.type === "code") fields.info = node.lang ? node.lang : "null";
     if (node.type === "html") fields.literal = node.value ?? "";
     // Registered shape delta `html-comment-node`: mdast keeps an HTML comment
@@ -279,7 +279,7 @@ export const MDAST_COMPARED = {
     Heading: ["level"],
     // mdast does not retain ordered-list punctuation. The cmark oracle and
     // canonical fixtures cover delimiter spelling without inventing it here.
-    List: ["flavor", "start", "variant", "tight"],
+    List: ["flavor", "start", "tight"],
     ListItem: ["completed"],
     CodeBlock: ["info", "literal"],
     Code: ["literal"],
@@ -287,7 +287,7 @@ export const MDAST_COMPARED = {
     HTML: ["literal"],
     Comment: ["literal"],
     Link: ["dest", "title"],
-    Embedded: ["dest", "title"],
+    Embed: ["dest", "title"],
     Table: ["columns"],
     // §5.6: footnote label bytes used to be compared by NOBODY, on either
     // side. mdast's `label` is the authored spelling and so is this side's, so
@@ -304,8 +304,8 @@ export const MDAST_COMPARED = {
 };
 
 const contract = JSON.parse(fs.readFileSync(new URL("../../docs/specs/canonical-ast.json", import.meta.url), "utf8"));
-// mdast headings have no anchor fact. P3's identifier is checked by the
-// Pandoc oracle and canonical fixtures; every other shared field remains
+// mdast headings have no anchor fact. A heading's explicit anchor is checked
+// by the Pandoc oracle and canonical fixtures; every other shared field remains
 // observable, including explicit directive anchors and heading attributes.
 for (const { name } of contract.kinds) {
     MDAST_COMPARED[name] = [...(name === "Heading" ? [] : ["anchor"]), "attributes", ...(MDAST_COMPARED[name] ?? [])];
@@ -347,6 +347,14 @@ export function projectMdastComparison(node) {
             continue;
         }
         if (value === undefined || value === "") value = key === "literal" ? "" : "null";
+        // Registered comparison boundary `code-block-ends`: mdast states a code
+        // block's literal without its last line ending, so an empty block and
+        // one of a blank line are alike, and only the info string's first word,
+        // its `lang`; the rest is `meta`, which also holds what this
+        // repository reads as attributes. Both sides drop what mdast cannot
+        // state.
+        if (node.kind === "CodeBlock" && key === "literal") value = String(value).replace(/\r?\n$|\r$/u, "");
+        if (node.kind === "CodeBlock" && key === "info" && value !== "null") value = String(value).split(/[ \t]/u)[0];
         fields[key] = String(value);
     }
     return { kind: node.kind, fields, children };

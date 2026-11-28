@@ -12,8 +12,8 @@ The number of signs is its level.
 ```
 
 This produces three `Heading` nodes with levels 1, 2, and 3. Their visible
-content excludes the signs. Each heading receives an [anchor](anchors.md),
-such as `document-title`, for use by applications that support navigation.
+content excludes the signs. A heading has an [anchor](anchors.md) only when
+its attributes declare one, as `# Document title {#title}` does.
 
 An empty heading such as `#` is valid. A nonempty heading needs whitespace
 after its opening signs: `#hashtag` is a paragraph containing a
@@ -51,5 +51,4 @@ and its classes contain `compact`. The closing signs and
 [attribute suffix](attributes.md#headings) are absent from visible content.
 The scope still includes the complete authored heading.
 
-See [anchors](anchors.md) for generated IDs, duplicate headings, and implicit
-links to heading text.
+See [anchors](anchors.md) for linking to a heading and duplicate anchors.

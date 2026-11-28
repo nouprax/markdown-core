@@ -7,9 +7,7 @@ import type { DirectiveLabel } from "../markup/directive-label.js";
 import type { Citation } from "../markup/cite.js";
 import type { Document } from "../markup/document.js";
 import type { Footnote } from "../markup/footnote.js";
-import type { Heading } from "../markup/heading.js";
 import type { Reference } from "../markup/reference.js";
-import type { Specimen } from "../markup/specimen.js";
 import type { ListItem } from "../markup/list.js";
 import type { Markup } from "../markup/markup.js";
 import type { TableCell, TableColumn, TableRow } from "../markup/table.js";
@@ -23,8 +21,8 @@ import type {
     Destination,
     Extent,
     ListFlavor,
+    TaskStatus,
     OrderedListDelimiter,
-    OrderedListVariant,
     Placement,
     Position,
     Run,
@@ -49,40 +47,30 @@ const flows: readonly Flow[] = ["none", "left", "center", "right"];
 const placements: readonly Placement[] = ["embedded", "standalone"];
 const bibModes: readonly BibMode[] = ["normal", "authorInText", "suppressAuthor"];
 const flavors: readonly ListFlavor[] = ["bullet", "ordered"];
+const delimiters: readonly OrderedListDelimiter[] = ["period", "parenthesis"];
+const statuses: readonly TaskStatus[] = ["open", "done", "question", "cancelled"];
 /** `markdown_core_status` by value; 0, success, is never a failure message's. */
 export const errorCodes: { readonly [status: number]: ErrorCode } = {
     1: "allocationFailed",
     2: "outOfBounds",
-    3: "kindMismatch",
-    4: "sessionFlushed",
-    5: "sessionStreaming"
+    3: "kindMismatch"
 };
 
 /** The document's members that are not contract fields: the decoder adds them
  * once the definition tables are read. */
-type DocumentMembers =
-    | "unit"
-    | "footnotes"
-    | "specimens"
-    | "references"
-    | "footnote"
-    | "specimen"
-    | "reference"
-    | "scope"
-    | "nodeAt"
-    | "dump";
+type DocumentMembers = "unit" | "footnotes" | "references" | "footnote" | "reference" | "scope" | "nodeAt" | "dump";
 type MarkupValue = Markup extends infer Node ? (Node extends Document ? Omit<Document, DocumentMembers> : Node) : never;
 type Base<Kind extends Markup["kind"]> = MarkupBase<Kind>;
 /** A node a definition table or the reference label table names. */
-type Target = Footnote | Specimen | Reference | Heading;
+type Target = Footnote | Reference;
 
 export class Decoder {
     private readonly view: DataView;
     private readonly utf8 = new TextDecoder("utf-8", { ignoreBOM: true });
     private offset = 0;
     private readonly stack: Markup[] = [];
-    /** Every Footnote, Specimen, Reference and Heading by id, for the
-     * definition tables and the reference label table. */
+    /** Every Footnote and Reference by id, for the definition tables and
+     * the reference label table. */
     private readonly definitions = new Map<number, Target>();
 
     /** `unit` is the text unit of the document the message decodes to. */
@@ -102,10 +90,9 @@ export class Decoder {
             root = this.record();
         }
         const footnotes = this.table() as Footnote[];
-        const specimens = this.table() as Specimen[];
         const references = this.table() as Reference[];
         const labels = this.labels();
-        return this.document(root, footnotes, specimens, references, labels);
+        return this.document(root, footnotes, references, labels);
     }
 
     /** Status 1 is a failure, whose body is its u32 `markdown_core_status`
@@ -125,12 +112,7 @@ export class Decoder {
         const anchor = this.optional(() => this.string());
         const attributes = this.attributes();
         const node = this.fields(kind, { kind, id, extent, runs, anchor, attributes }) as Markup;
-        if (
-            node.kind === "footnote" ||
-            node.kind === "specimen" ||
-            node.kind === "reference" ||
-            node.kind === "heading"
-        ) {
+        if (node.kind === "footnote" || node.kind === "reference") {
             this.definitions.set(id, node);
         }
         return node;
@@ -189,32 +171,24 @@ export class Decoder {
             case "list": {
                 const flavor = this.index(flavors);
                 const start = this.optional(() => this.int());
-                const variant = this.optional(() => this.variant());
-                const delimiter = this.optional(() => this.delimiter());
+                const delimiter = this.optional(() => this.index(delimiters));
                 const tight = this.bool();
                 const items = this.count();
                 return {
                     ...(base as Base<"list">),
                     flavor,
                     start,
-                    variant,
                     delimiter,
                     tight,
                     items: this.nodes(items).take(items) as ListItem[]
                 };
             }
             case "listItem": {
-                const marker = this.optional(() => this.string());
+                const status = this.optional(() => this.index(statuses));
                 const content = this.count();
                 return {
                     ...(base as Base<"listItem">),
-                    marker,
-                    get tasked() {
-                        return marker !== null;
-                    },
-                    get completed() {
-                        return marker !== null && marker !== " ";
-                    },
+                    status,
                     content: this.nodes(content).take(content)
                 };
             }
@@ -256,7 +230,7 @@ export class Decoder {
                 };
             }
             case "directiveBlock": {
-                const name = this.optional(() => this.string());
+                const name = this.string();
                 const label = this.presence();
                 const content = this.count();
                 const nodes = this.nodes(label + content);
@@ -282,9 +256,9 @@ export class Decoder {
                     dest: this.destination(),
                     label: this.optional(() => this.string())
                 };
-            case "crossEmbedded":
+            case "crossEmbed":
                 return {
-                    ...(base as Base<"crossEmbedded">),
+                    ...(base as Base<"crossEmbed">),
                     dest: this.destination(),
                     label: this.optional(() => this.string()),
                     dimensions: this.optional(() => this.dimensions())
@@ -295,13 +269,13 @@ export class Decoder {
                 const content = this.count();
                 return { ...(base as Base<"link">), dest, title, content: this.nodes(content).take(content) };
             }
-            case "embedded": {
+            case "embed": {
                 const dest = this.destination();
                 const title = this.optional(() => this.string());
                 const dimensions = this.optional(() => this.dimensions());
                 const content = this.count();
                 return {
-                    ...(base as Base<"embedded">),
+                    ...(base as Base<"embed">),
                     dest,
                     title,
                     dimensions,
@@ -365,12 +339,6 @@ export class Decoder {
                 const content = this.count();
                 return { ...(base as Base<"footnote">), label, content: this.nodes(content).take(content) };
             }
-            case "specimen": {
-                const label = this.optional(() => this.string());
-                const start = this.optional(() => this.int());
-                const content = this.count();
-                return { ...(base as Base<"specimen">), label, start, content: this.nodes(content).take(content) };
-            }
             case "metadata": {
                 const value = (): MetadataValue | null => this.optional(() => this.metadataValue());
                 return {
@@ -398,9 +366,9 @@ export class Decoder {
     }
 
     /** The reference label table: each label that resolves, in byte order,
-     * with the Reference or Heading it resolves to. */
-    private labels(): ReadonlyMap<string, Reference | Heading> {
-        return new Map(this.list(() => [this.string(), this.definitions.get(this.id()) as Reference | Heading]));
+     * with the Reference it resolves to. */
+    private labels(): ReadonlyMap<string, Reference> {
+        return new Map(this.list(() => [this.string(), this.definitions.get(this.id()) as Reference]));
     }
 
     /**
@@ -411,21 +379,17 @@ export class Decoder {
     private document(
         root: Omit<Document, DocumentMembers>,
         footnotes: Footnote[],
-        specimens: Specimen[],
         references: Reference[],
-        labels: ReadonlyMap<string, Reference | Heading>
+        labels: ReadonlyMap<string, Reference>
     ): Document {
         const footnoteFor = firstByLabel(footnotes);
-        const specimenFor = firstByLabel(specimens);
         const member = (value: unknown): PropertyDescriptor => ({ value, enumerable: false });
         return Object.defineProperties(root, {
             unit: member(this.unit),
             footnotes: member(footnotes),
-            specimens: member(specimens),
             references: member(references),
             footnote: member((label: string): Footnote | null => footnoteFor.get(label) ?? null),
-            specimen: member((label: string): Specimen | null => specimenFor.get(label) ?? null),
-            reference: member((label: string): Reference | Heading | null => labels.get(label) ?? null),
+            reference: member((label: string): Reference | null => labels.get(label) ?? null),
             scope: member(function (this: Document, node: Markup, source: string) {
                 return scopeOf(this, node, source);
             }),
@@ -475,36 +439,10 @@ export class Decoder {
         switch (this.branch()) {
             case 0:
                 return { kind: "bib", key: this.string(), mode: this.index(bibModes) };
-            case 1:
+            default:
                 return this.branch() === 0
                     ? { kind: "footnote", target: { kind: "label", value: this.string() } }
                     : null;
-            default:
-                return { kind: "specimen", label: this.string() };
-        }
-    }
-
-    private variant(): OrderedListVariant {
-        switch (this.branch()) {
-            case 0:
-                return "decimal";
-            case 1:
-                return { kind: "alpha", lowercased: this.bool() };
-            case 2:
-                return { kind: "roman", lowercased: this.bool() };
-            default:
-                return "default";
-        }
-    }
-
-    private delimiter(): OrderedListDelimiter {
-        switch (this.branch()) {
-            case 0:
-                return "period";
-            case 1:
-                return { kind: "parenthesis", closed: this.bool() };
-            default:
-                return "default";
         }
     }
 
@@ -625,7 +563,7 @@ class Nodes {
 
 /** The first node of each label, in the table's source order. A null label
  * is an inline note's or an anonymous definition's and names nothing. */
-function firstByLabel<Node extends Footnote | Specimen>(nodes: readonly Node[]): ReadonlyMap<string, Node> {
+function firstByLabel<Node extends Footnote>(nodes: readonly Node[]): ReadonlyMap<string, Node> {
     const map = new Map<string, Node>();
     for (const node of nodes) {
         if (node.label !== null && !map.has(node.label)) map.set(node.label, node);

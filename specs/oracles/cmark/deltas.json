@@ -60,12 +60,6 @@
             "handling": "Exact specification inputs only; dialect/topics.md and product fixtures own recognition, names and scopes."
         },
         {
-            "id": "nested-ordered-start",
-            "kind": "deliberate-difference",
-            "summary": "A newly opened ordered list inside a list item or specimen body must start at one under the lists module. CommonMark permits a nested list to start at two.",
-            "handling": "The inherited same-line nested-marker witness remains exact; rejected markers stay ordinary paragraph content."
-        },
-        {
             "id": "spec-text-whitespace",
             "kind": "deliberate-difference",
             "summary": "Where cmark 0.31.2 departs from the text of its own specification about whitespace and control characters, Markdown Core follows the text. cmark treats vertical tab and form feed as whitespace (055b9ea follows the 0.29 definition, which 0.30 removed), lets ASCII control characters into an unbracketed link destination and DEL into an absolute URI, trims a pointy destination, lets a backslash escape a line ending in one, and decodes an info string's references before trimming it.",
@@ -75,8 +69,8 @@
         {
             "id": "reference-definition-node",
             "kind": "deliberate-difference",
-            "summary": "A link reference definition is a `Reference` block where it was written, holding its normalized label, destination and title, and a reference `Link` or `Embedded` names that label (`dest=reference(\"...\")`) with no title. Upstream consumes the definition and copies its destination and title into every occurrence that resolves to it.",
-            "handling": "The shared normalizer projects this side's tree onto upstream's shape (`resolveReferences`): each reference destination takes its target's destination as the document resolves the label -- the url and title of the first `Reference` with the label, or the `#anchor` of the first `Heading` whose text declares it -- every `Reference` leaves the tree, and the projection records that it acted. A model difference, so a projection rather than a list of inputs; which occurrences resolve, and to which target, is compared unchanged.",
+            "summary": "A link reference definition is a `Reference` block where it was written, holding its normalized label, destination and title, and a reference `Link` or `Embed` names that label (`dest=reference(\"...\")`) with no title. Upstream consumes the definition and copies its destination and title into every occurrence that resolves to it.",
+            "handling": "The shared normalizer projects this side's tree onto upstream's shape (`resolveReferences`): each reference destination takes its target's destination as the document resolves the label -- the url and title of the first `Reference` with the label -- every `Reference` leaves the tree, and the projection records that it acted. A model difference, so a projection rather than a list of inputs; which occurrences resolve, and to which target, is compared unchanged.",
             "projected": true
         }
     ],
@@ -182,11 +176,6 @@
             "note": "O9: image suffix syntax and its composed inline contexts are owned by dialect/links-and-images.md and the package fixtures; cmark keeps the suffix in alt content."
         },
         {
-            "id": "nested-ordered-start",
-            "input": "1. - 2. foo\n",
-            "note": "P9a, docs/specs/dialect/lists.md: new nested ordered lists start at one."
-        },
-        {
             "id": "spec-text-whitespace",
             "input": "[a](\n\u000b\n/u)\n",
             "note": "a vertical tab between two line endings: cmark reads a link."
@@ -245,6 +234,16 @@
             "id": "spec-text-whitespace",
             "input": "```&#32;js\ncode\n```\n",
             "note": "cmark decodes `&#32;` before trimming, so its info string is `js`; the text trims first and keeps ` js`."
+        },
+        {
+            "id": "spec-text-whitespace",
+            "input": "```&#10;\n",
+            "note": "cmark decodes `&#10;` before trimming, so its info string is empty; the text trims first and keeps the line feed."
+        },
+        {
+            "id": "spec-text-whitespace",
+            "input": ">  `\n*foo\\\n      with two lines.\n",
+            "note": "Spaces at the beginning of the line after a hard line break are ignored (CommonMark 6.7); cmark keeps them on a lazy continuation line of a block quote, and the text drops them."
         },
         {
             "id": "topics",

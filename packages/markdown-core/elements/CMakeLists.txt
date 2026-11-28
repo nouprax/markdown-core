@@ -2,7 +2,6 @@ set(LIBRARY "libmarkdown-core-elements")
 set(STATICLIBRARY "libmarkdown-core-elements_static")
 set(PUBLIC_STATIC_LIBRARY "libmarkdown-core-public-static")
 set(LIBRARY_SOURCES
-    anchor.c
     ast.c
     attributes.c
     autolink.c
@@ -33,20 +32,17 @@ set(LIBRARY_SOURCES
     html_block.c
     html_scanners.c
     houdini_html_u.c
-    session.c
-    context.c
-    parts.c
+    parse.c
     insertion.c
     line_break.c
     link.c
     link_scanners.c
     list.c
     mark.c
-    embedded.c
+    embed.c
     paragraph.c
     properties.c
     yaml.c
-    specimen.c
     strikethrough.c
     subscript.c
     superscript.c

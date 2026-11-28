@@ -1,0 +1,386 @@
+//! Heading (atx) occurs in the [flow][] content type.
+//!
+//! ## Grammar
+//!
+//! Heading (atx) forms with the following BNF
+//! (<small>see [construct][crate::construct] for character groups</small>):
+//!
+//! ```bnf
+//! heading_atx ::= 1*6'#' [ 1*space_or_tab line [ 1*space_or_tab 1*'#' ] ] *space_or_tab
+//! ```
+//!
+//! As this construct occurs in flow, like all flow constructs, it must be
+//! followed by an eol (line ending) or eof (end of file).
+//!
+//! `CommonMark` introduced the requirement on whitespace existing after the
+//! opening sequence and before text.
+//! In older markdown versions, this was not required, and headings would form
+//! without it.
+//!
+//! In markdown, it is also possible to create headings with a
+//! [heading (setext)][heading_setext] construct.
+//! The benefit of setext headings is that their text can include line endings,
+//! and by extensions also hard breaks (e.g., with
+//! [hard break (escape)][hard_break_escape]).
+//! However, their limit is that they cannot form `<h3>` through `<h6>`
+//! headings.
+//!
+//! > 🏛 **Background**: the word *setext* originates from a small markup
+//! > language by Ian Feldman from 1991.
+//! > See [*§ Setext* on Wikipedia][wiki_setext] for more info.
+//! > The word *atx* originates from a tiny markup language by Aaron Swartz
+//! > from 2002.
+//! > See [*§ atx, the true structured text format* on `aaronsw.com`][atx] for
+//! > more info.
+//!
+//! ## HTML
+//!
+//! Headings in markdown relate to the `<h1>` through `<h6>` elements in HTML.
+//! See [*§ 4.3.6 The `h1`, `h2`, `h3`, `h4`, `h5`, and `h6` elements* in the
+//! HTML spec][html] for more info.
+//!
+//! ## Recommendation
+//!
+//! Always use heading (atx), never heading (setext).
+//!
+//! ## Tokens
+//!
+//! * [`HeadingAtx`][Name::HeadingAtx]
+//! * [`HeadingAtxSequence`][Name::HeadingAtxSequence]
+//! * [`HeadingAtxText`][Name::HeadingAtxText]
+//! * [`SpaceOrTab`][Name::SpaceOrTab]
+//!
+//! ## References
+//!
+//! * [`heading-atx.js` in `micromark`](https://github.com/micromark/micromark/blob/main/packages/micromark-core-commonmark/dev/lib/heading-atx.js)
+//! * [*§ 4.2 ATX headings* in `CommonMark`](https://spec.commonmark.org/0.31/#atx-headings)
+//!
+//! [flow]: crate::construct::flow
+//! [header_setext]: crate::construct::header_setext
+//! [hard_break_escape]: crate::construct::hard_break_escape
+//! [html]: https://html.spec.whatwg.org/multipage/sections.html#the-h1,-h2,-h3,-h4,-h5,-and-h6-elements
+//! [wiki_setext]: https://en.wikipedia.org/wiki/Setext
+//! [atx]: http://www.aaronsw.com/2002/atx/
+
+use crate::choice::Starts;
+use crate::construct::parts;
+use crate::construct::parts::space_or_tab::{space_or_tab, space_or_tab_min_max};
+use crate::event::{Content, Event, Kind, Link, Name};
+use crate::resolve::Name as ResolveName;
+use crate::state::{Name as StateName, State};
+use crate::subtokenize::Subresult;
+use crate::tokenizer::Tokenizer;
+use crate::util::constant::{HEADING_ATX_OPEN_FENCE_SIZE_MAX, TAB_SIZE};
+
+/// Bytes this construct can start at.
+pub const STARTS: Starts = Starts::Bytes(b"\t #");
+
+/// Start of a heading (atx).
+///
+/// ```markdown
+/// > | ## aa
+///     ^
+/// ```
+fn start(tokenizer: &mut Tokenizer) -> State {
+    tokenizer.enter(Name::HeadingAtx);
+    if matches!(tokenizer.current, Some(b'\t' | b' ')) {
+        tokenizer.attempt(State::Next(StateName::HeadingAtx(Step::Before)), State::Nok);
+        State::Redo(space_or_tab_min_max(0, TAB_SIZE - 1))
+    } else {
+        State::Redo(StateName::HeadingAtx(Step::Before))
+    }
+}
+
+/// After optional whitespace, at `#`.
+///
+/// ```markdown
+/// > | ## aa
+///     ^
+/// ```
+fn before(tokenizer: &mut Tokenizer) -> State {
+    if Some(b'#') == tokenizer.current {
+        tokenizer.enter(Name::HeadingAtxSequence);
+        State::Redo(StateName::HeadingAtx(Step::SequenceOpen { size: 0 }))
+    } else {
+        State::Nok
+    }
+}
+
+/// In opening sequence.
+///
+/// ```markdown
+/// > | ## aa
+///     ^
+/// ```
+fn sequence_open(tokenizer: &mut Tokenizer, size: usize) -> State {
+    if tokenizer.current == Some(b'#') && size < HEADING_ATX_OPEN_FENCE_SIZE_MAX {
+        tokenizer.consume();
+        State::Next(StateName::HeadingAtx(Step::SequenceOpen { size: size + 1 }))
+    }
+    // Always at least one `#`.
+    else if matches!(tokenizer.current, None | Some(b'\t' | b'\n' | b' ')) {
+        tokenizer.exit(Name::HeadingAtxSequence);
+        State::Redo(StateName::HeadingAtx(Step::AtBreak))
+    } else {
+        State::Nok
+    }
+}
+
+/// After something, before something else.
+///
+/// ```markdown
+/// > | ## aa
+///       ^
+/// ```
+fn at_break(tokenizer: &mut Tokenizer) -> State {
+    match tokenizer.current {
+        None | Some(b'\n') => {
+            tokenizer.exit(Name::HeadingAtx);
+            tokenizer.register_resolver(ResolveName::HeadingAtx);
+            // Feel free to interrupt.
+            tokenizer.interrupt = false;
+            State::Ok
+        }
+        Some(b'\t' | b' ') => {
+            tokenizer.attempt(
+                State::Next(StateName::HeadingAtx(Step::AtBreak)),
+                State::Nok,
+            );
+            State::Redo(space_or_tab())
+        }
+        // A sequence ends at whitespace, the line's end, or attributes;
+        // otherwise its hashes are text (`# #a`).
+        Some(b'#') if sequence_ends(tokenizer) => {
+            tokenizer.enter(Name::HeadingAtxSequence);
+            State::Redo(StateName::HeadingAtx(Step::SequenceFurther))
+        }
+        // Attributes that end the line, or text.
+        Some(b'{') => {
+            tokenizer.attempt(
+                State::Next(StateName::HeadingAtx(Step::AtBreak)),
+                State::Next(StateName::HeadingAtx(Step::DataStart)),
+            );
+            State::Redo(StateName::Attributes(parts::attributes::Step::Tail))
+        }
+        Some(_) => State::Redo(StateName::HeadingAtx(Step::DataStart)),
+    }
+}
+
+/// Whether the hashes at the current byte end where a sequence may.
+fn sequence_ends(tokenizer: &Tokenizer) -> bool {
+    let bytes = tokenizer.parse_state.bytes;
+    let mut index = tokenizer.point.index;
+    while bytes.get(index) == Some(&b'#') {
+        index += 1;
+    }
+    matches!(
+        bytes.get(index),
+        None | Some(b'\t' | b'\n' | b'\r' | b' ' | b'{')
+    )
+}
+
+/// At text, which is not attributes that end the line.
+///
+/// ```markdown
+/// > | ## a {b
+///          ^
+/// ```
+fn data_start(tokenizer: &mut Tokenizer) -> State {
+    tokenizer.enter_link(
+        Name::Data,
+        Link {
+            previous: None,
+            next: None,
+            content: Content::Text,
+        },
+    );
+    State::Redo(StateName::HeadingAtx(Step::DataFirst))
+}
+
+/// At the first byte of text, which may be a backslash.
+fn data_first(tokenizer: &mut Tokenizer) -> State {
+    let escape = tokenizer.current == Some(b'\\');
+    tokenizer.consume();
+    State::Next(StateName::HeadingAtx(if escape {
+        Step::DataEscape
+    } else {
+        Step::Data
+    }))
+}
+
+/// In further sequence (after whitespace).
+///
+/// Could be normal “visible” hashes in the heading or a final sequence.
+///
+/// ```markdown
+/// > | ## aa ##
+///           ^
+/// ```
+fn sequence_further(tokenizer: &mut Tokenizer) -> State {
+    if let Some(b'#') = tokenizer.current {
+        tokenizer.consume();
+        State::Next(StateName::HeadingAtx(Step::SequenceFurther))
+    } else {
+        tokenizer.exit(Name::HeadingAtxSequence);
+        State::Redo(StateName::HeadingAtx(Step::AtBreak))
+    }
+}
+
+/// In text.
+///
+/// ```markdown
+/// > | ## aa
+///        ^
+/// ```
+fn data(tokenizer: &mut Tokenizer) -> State {
+    match tokenizer.current {
+        // Note: `#` for closing sequence must be preceded by whitespace, otherwise it’s just text.
+        // Attributes may follow text right away.
+        None | Some(b'\t' | b'\n' | b' ' | b'{') => {
+            tokenizer.exit(Name::Data);
+            State::Redo(StateName::HeadingAtx(Step::AtBreak))
+        }
+        // An escaped byte is text.
+        Some(b'\\') => {
+            tokenizer.consume();
+            State::Next(StateName::HeadingAtx(Step::DataEscape))
+        }
+        _ => {
+            tokenizer.consume();
+            State::Next(StateName::HeadingAtx(Step::Data))
+        }
+    }
+}
+
+/// In text, after a backslash.
+///
+/// ```markdown
+/// > | ## a \{b}
+///           ^
+/// ```
+fn data_escape(tokenizer: &mut Tokenizer) -> State {
+    match tokenizer.current {
+        Some(byte) if byte.is_ascii_punctuation() => {
+            tokenizer.consume();
+            State::Next(StateName::HeadingAtx(Step::Data))
+        }
+        _ => State::Redo(StateName::HeadingAtx(Step::Data)),
+    }
+}
+
+/// Resolve heading (atx): its text runs from the first text or sequence
+/// after the opening sequence to the last one before a closing sequence,
+/// so that the sequences in it are text (`# # a`, `# ## ##`).
+pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
+    let mut index = 0;
+    let mut heading_inside = false;
+    // The enter and exit of each text or sequence after the opening one.
+    let mut items: Vec<(usize, usize)> = vec![];
+    let mut opened = false;
+
+    while index < tokenizer.events.len() {
+        let event = &tokenizer.events[index];
+
+        if event.name == Name::HeadingAtx {
+            if event.kind == Kind::Enter {
+                heading_inside = true;
+                opened = false;
+                items.clear();
+            } else {
+                // A sequence that ends the heading closes it.
+                if items
+                    .last()
+                    .is_some_and(|item| tokenizer.events[item.0].name == Name::HeadingAtxSequence)
+                {
+                    items.pop();
+                }
+                if let (Some(first), Some(last)) = (items.first(), items.last()) {
+                    let (start, end) = (first.0, last.1);
+                    for at in [start, end] {
+                        tokenizer.events[at].name = Name::Data;
+                    }
+                    tokenizer.events[start].link = Some(Link {
+                        previous: None,
+                        next: None,
+                        content: Content::Text,
+                    });
+
+                    tokenizer.map.add(
+                        start,
+                        0,
+                        vec![Event {
+                            kind: Kind::Enter,
+                            name: Name::HeadingAtxText,
+                            point: tokenizer.events[start].point.clone(),
+                            link: None,
+                        }],
+                    );
+
+                    // Remove everything between the start and the end.
+                    tokenizer.map.add(start + 1, end - start - 1, vec![]);
+
+                    tokenizer.map.add(
+                        end + 1,
+                        0,
+                        vec![Event {
+                            kind: Kind::Exit,
+                            name: Name::HeadingAtxText,
+                            point: tokenizer.events[end].point.clone(),
+                            link: None,
+                        }],
+                    );
+                }
+
+                heading_inside = false;
+            }
+        } else if heading_inside && matches!(event.name, Name::Data | Name::HeadingAtxSequence) {
+            if event.name == Name::HeadingAtxSequence && !opened {
+                opened = event.kind == Kind::Exit;
+            } else if event.kind == Kind::Enter {
+                items.push((index, index));
+            } else if let Some(item) = items.last_mut() {
+                item.1 = index;
+            }
+        }
+
+        index += 1;
+    }
+
+    tokenizer.map.consume(&mut tokenizer.events);
+    None
+}
+
+/// Steps of this construct.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Step {
+    Start,
+    Before,
+    SequenceOpen { size: usize },
+    AtBreak,
+    SequenceFurther,
+    DataStart,
+    DataFirst,
+    Data,
+    DataEscape,
+}
+
+impl From<Step> for StateName {
+    fn from(step: Step) -> StateName {
+        StateName::HeadingAtx(step)
+    }
+}
+
+/// Run a step.
+pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
+    match step {
+        Step::Start => start(tokenizer),
+        Step::Before => before(tokenizer),
+        Step::SequenceOpen { size } => sequence_open(tokenizer, size),
+        Step::AtBreak => at_break(tokenizer),
+        Step::SequenceFurther => sequence_further(tokenizer),
+        Step::DataStart => data_start(tokenizer),
+        Step::DataFirst => data_first(tokenizer),
+        Step::Data => data(tokenizer),
+        Step::DataEscape => data_escape(tokenizer),
+    }
+}

@@ -11,26 +11,24 @@ public enum ListFlavor: String, Sendable {
     case ordered
 }
 
-/// The numbering system authored for an ordered list.
-public enum OrderedListVariant: Hashable, Sendable {
-    /// ASCII decimal digits.
-    case decimal
-    /// ASCII letters, recording their authored case.
-    case alpha(lowercased: Bool)
-    /// Roman numerals, recording their authored case.
-    case roman(lowercased: Bool)
-    /// A source marker that requests the default numbering variant.
-    case `default`
+/// The punctuation after an ordered-list number.
+public enum OrderedListDelimiter: String, Sendable {
+    /// A period, as in `1.`.
+    case period
+    /// A parenthesis, as in `1)`.
+    case parenthesis
 }
 
-/// The punctuation authored around an ordered-list marker.
-public enum OrderedListDelimiter: Hashable, Sendable {
-    /// A trailing period, as in `1.`.
-    case period
-    /// Parenthesis punctuation. `closed` is false for `1)` and true for `(1)`.
-    case parenthesis(closed: Bool)
-    /// A source marker that requests the default delimiter.
-    case `default`
+/// The status a list item's task check gives it.
+public enum TaskStatus: String, Sendable {
+    /// `[ ]`.
+    case open
+    /// `[x]` or `[X]`.
+    case done
+    /// `[?]`.
+    case question
+    /// `[-]`.
+    case cancelled
 }
 
 /// A bulleted or numbered list.
@@ -54,8 +52,6 @@ public struct List: Markup {
     /// The first number an ordered list counts from, and `nil` for a bulleted
     /// one — which is the only reason it is optional.
     public var start: Int64? { record.start }
-    /// The authored numbering variant, or `nil` for a bullet list.
-    public var variant: OrderedListVariant? { record.variant }
     /// The authored delimiter, or `nil` for a bullet list.
     public var delimiter: OrderedListDelimiter? { record.delimiter }
     /// Whether the source separated the items by blank lines. A loose list
@@ -67,7 +63,6 @@ public struct List: Markup {
 final class ListRecord: MarkupRecord, @unchecked Sendable {
     let flavor: ListFlavor
     let start: Int64?
-    let variant: OrderedListVariant?
     let delimiter: OrderedListDelimiter?
     let tight: Bool
 
@@ -75,14 +70,12 @@ final class ListRecord: MarkupRecord, @unchecked Sendable {
         _ fields: InheritedFields,
         flavor: ListFlavor,
         start: Int64?,
-        variant: OrderedListVariant?,
         delimiter: OrderedListDelimiter?,
         tight: Bool,
         items: [MarkupRecord]
     ) {
         self.flavor = flavor
         self.start = start
-        self.variant = variant
         self.delimiter = delimiter
         self.tight = tight
         super.init(fields, children: items)
@@ -92,8 +85,8 @@ final class ListRecord: MarkupRecord, @unchecked Sendable {
 
     override func hasEqualFields(_ other: MarkupRecord) -> Bool {
         let other = unsafeDowncast(other, to: ListRecord.self)
-        return flavor == other.flavor && start == other.start && variant == other.variant
-            && delimiter == other.delimiter && tight == other.tight
+        return flavor == other.flavor && start == other.start && delimiter == other.delimiter
+            && tight == other.tight
     }
 }
 
@@ -101,15 +94,13 @@ extension ListRecord {
     convenience init(from node: OpaquePointer, items: [MarkupRecord]) {
         var flavor = MARKDOWN_CORE_LIST_FLAVOR_BULLET
         var start = markdown_core_optional_i64()
-        var variant = markdown_core_ordered_list_variant()
-        var delimiter = markdown_core_ordered_list_delimiter()
+        var delimiter = MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD
         var tight = false
-        answered(markdown_core_node_list_properties(node, &flavor, &start, &variant, &delimiter, &tight))
+        answered(markdown_core_node_list_properties(node, &flavor, &start, &delimiter, &tight))
         self.init(
             InheritedFields(from: node),
             flavor: flavor == MARKDOWN_CORE_LIST_FLAVOR_ORDERED ? .ordered : .bullet,
             start: start.has_value ? start.value : nil,
-            variant: start.has_value ? Self.variant(variant) : nil,
             delimiter: start.has_value ? Self.delimiter(delimiter) : nil,
             tight: tight,
             items: items
@@ -117,24 +108,8 @@ extension ListRecord {
     }
 
     static func delimiter(_ value: markdown_core_ordered_list_delimiter) -> OrderedListDelimiter {
-        switch value.kind {
-        case MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD: .period
-        case MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PARENTHESIS: .parenthesis(closed: value.closed)
-        // A C enum switch is never exhaustive in Swift; the one kind
-        // left is MARKDOWN_CORE_ORDERED_LIST_DELIMITER_DEFAULT.
-        default: .default
-        }
-    }
-
-    private static func variant(_ value: markdown_core_ordered_list_variant) -> OrderedListVariant {
-        switch value.kind {
-        case MARKDOWN_CORE_ORDERED_LIST_VARIANT_ALPHA: .alpha(lowercased: value.lowercased)
-        case MARKDOWN_CORE_ORDERED_LIST_VARIANT_ROMAN: .roman(lowercased: value.lowercased)
-        case MARKDOWN_CORE_ORDERED_LIST_VARIANT_DEFAULT: .default
-        // A C enum switch is never exhaustive in Swift; the one kind
-        // left is MARKDOWN_CORE_ORDERED_LIST_VARIANT_DECIMAL.
-        default: .decimal
-        }
+        // Any other value is MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD.
+        value == MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PARENTHESIS ? .parenthesis : .period
     }
 }
 
@@ -158,34 +133,44 @@ public struct ListItem: Markup {
     public var attributes: Attributes { record.attributes }
     /// The item's blocks. Block content, not inline.
     public var content: MarkupCollection<any Markup> { record.collection(record.children.indices) }
-    /// The authored task marker, or `nil` when this is not a task item.
-    public var marker: String? { record.marker }
-    /// Whether this item authored a task marker.
-    public var tasked: Bool { marker != nil }
-    /// Whether this item authored a completed or custom-state task marker.
-    /// Non-task items and the incomplete marker (`" "`) are not complete.
-    public var completed: Bool { marker != nil && marker != " " }
+    /// The status of the item's task check, or `nil` when this is not a task
+    /// item.
+    public var status: TaskStatus? { record.status }
 }
 
 final class ListItemRecord: MarkupRecord, @unchecked Sendable {
-    let marker: String?
+    let status: TaskStatus?
 
-    init(_ fields: InheritedFields, marker: String?, content: [MarkupRecord]) {
-        self.marker = marker
+    init(_ fields: InheritedFields, status: TaskStatus?, content: [MarkupRecord]) {
+        self.status = status
         super.init(fields, children: content)
     }
 
     override var markup: any Markup { ListItem(record: self) }
 
     override func hasEqualFields(_ other: MarkupRecord) -> Bool {
-        marker == unsafeDowncast(other, to: ListItemRecord.self).marker
+        status == unsafeDowncast(other, to: ListItemRecord.self).status
     }
 }
 
 extension ListItemRecord {
     convenience init(from node: OpaquePointer, content: [MarkupRecord]) {
-        let marker = answer(markdown_core_optional_string()) { markdown_core_node_list_item_marker(node, $0) }.string
-        self.init(InheritedFields(from: node), marker: marker, content: content)
+        var task = MARKDOWN_CORE_TASK_STATUS_NONE
+        answered(markdown_core_node_list_item_status(node, &task))
+        self.init(InheritedFields(from: node), status: TaskStatus(task), content: content)
+    }
+}
+
+extension TaskStatus {
+    /// The status the C core reports, `nil` for an item with no check.
+    init?(_ status: markdown_core_task_status) {
+        switch status {
+        case MARKDOWN_CORE_TASK_STATUS_OPEN: self = .open
+        case MARKDOWN_CORE_TASK_STATUS_DONE: self = .done
+        case MARKDOWN_CORE_TASK_STATUS_QUESTION: self = .question
+        case MARKDOWN_CORE_TASK_STATUS_CANCELLED: self = .cancelled
+        default: return nil
+        }
     }
 }
 

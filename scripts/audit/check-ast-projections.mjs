@@ -23,7 +23,7 @@
  *
  * KIND LISTS ARE NOT CHECKED HERE. Every table that enumerates the kinds -- the
  * C enums, dispatch and name tables, the Kotlin and ES wire kinds -- is generated
- * from the contract by scripts/tooling/generate-node-kinds.mjs, whose --check
+ * from the contract by scripts/tools/generate-node-kinds.mjs, whose --check
  * gates staleness. The consumers written by hand over those generated lists
  * (the Kotlin wire decoder's `when`, the ES decoder's switch, the ES walker and
  * visitor mapped types, both dumpers' visitor conformance) are exhaustive by
@@ -41,8 +41,6 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-
-import { buildModel } from "../tooling/generate-node-kinds.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const read = (relative) => fs.readFileSync(path.join(root, relative), "utf8");
@@ -179,7 +177,7 @@ const modelProjections = [
         directories: ["packages/swift-markdown-core/Sources/MarkdownCore"],
         // Public value records may expose stored or computed read-only fields.
         // A kind is declared at the top level, so a nested type that shares
-        // its name, such as `Slot.Insertion`, is not the kind.
+        // its name is not the kind.
         declaration: (kind) => new RegExp(`^public (?:final class|struct) ${kind}\\b[^\\n]*\\{`, "m"),
         field: /public (?:let|var) ([A-Za-z]+)\s*:\s*([^\n{]+)/g,
         optional: (m) => m[2].trim().endsWith("?")
@@ -433,35 +431,6 @@ for (const { label, fieldsOf } of modelProjections) {
             }
         }
     }
-}
-
-/* THE SLOT TABLE of the prose is a copy of the contract's slots too: each
- * slot kind, in ordinal order, with the fields whose source holds one. */
-function proseSlots() {
-    const lines = read(PROSE_PATH).split("\n");
-    const header = lines.findIndex((line) => line.startsWith("| Slot | Fields"));
-    if (header < 0) throw new Error(`${PROSE_PATH}: the slot table is gone or renamed`);
-    const slots = [];
-    for (const line of lines.slice(header + 2)) {
-        if (!line.startsWith("|")) break;
-        const [slot, fields] = line
-            .trim()
-            .replace(/^\||\|$/g, "")
-            .split("|")
-            .map((cell) => cell.trim());
-        slots.push(`${slot.replace(/`/g, "")}: ${[...fields.matchAll(/`([A-Za-z.]+)`/g)].map((m) => m[1]).join(", ")}`);
-    }
-    return slots;
-}
-const contractSlots = buildModel(contract, JSON.parse(read("packages/markdown-core/node-types.json"))).slots.map(
-    (slot) => `${slot.name}: ${slot.fields.join(", ")}`
-);
-const writtenSlots = proseSlots();
-if (JSON.stringify(writtenSlots) !== JSON.stringify(contractSlots)) {
-    console.error(
-        `${PROSE_PATH}: the slot table reads\n  ${writtenSlots.join("\n  ")}\nand the contract says\n  ${contractSlots.join("\n  ")}`
-    );
-    failed = true;
 }
 
 if (failed) {

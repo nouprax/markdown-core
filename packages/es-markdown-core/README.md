@@ -1,7 +1,7 @@
 # @nouprax/es-markdown-core
 
 Cross links (`[[Note#Heading|Label]]`) and embeds (`![[Image.png|100x145]]`)
-produce `CrossLink(dest, label)` and `CrossEmbedded(dest, label, dimensions)`,
+produce `CrossLink(dest, label)` and `CrossEmbed(dest, label, dimensions)`,
 respectively. `dest` is a cross destination with
 raw path and optional anchor; the label is null when no separator was authored
 and an empty string for `[[Note|]]`. These are leaves with exhaustive visit and
@@ -44,11 +44,11 @@ callbacks before content, even when all metadata fields are absent. Every
 scalar/list values do not receive separate Markup callbacks.
 Numbers retain exact decimal strings. Missing fields are null; an authored null
 is a present scalar value. No field order or individual field scope is stored.
-`Embedded.dimensions: Dimensions | null` reads complete `W`, `WxH`, `alt|W` and
+`Embed.dimensions: Dimensions | null` reads complete `W`, `WxH`, `alt|W` and
 `alt|WxH` suffixes on direct and resolved images. Values range from 1 to
 2147483647 without leading zeros; malformed suffixes remain parsed alt content.
 Numeric-only labels have empty alt content. Embedded cross links use the same
-size grammar in `CrossEmbedded.dimensions`, retaining the raw label prefix (empty
+size grammar in `CrossEmbed.dimensions`, retaining the raw label prefix (empty
 for size-only labels). Ordinary cross-link labels and invalid suffixes stay raw.
 `Dimensions` is a node-independent value with required `width` and optional
 `height`; it has no scope or visitor callbacks.
@@ -103,17 +103,15 @@ with a null `label` and the parsed inline body as its content. A referenced
 definition `[^x]: body` is a `Footnote` block where it was written, and a
 `[^x]` call names it by label. `Document.footnotes` lists every footnote,
 inline notes included, in source order, and `document.footnote(label)`
-returns the first one with that label; `Document.specimens` and
-`document.specimen(label)` do the same for specimens.
+returns the first one with that label.
 
 A link reference definition `[r]: /u "t"` is a `Reference` block where it was
 written, with its normalized `label`, its `url` destination and its `title`.
 A reference link or image `[text][r]`, `[r]` or `![alt][r]` has the
 destination `{ kind: "reference", label: "r" }` and a null title.
 `Document.references` lists every `Reference` in source order, and
-`document.reference(label)` returns the node a label names: the first
-`Reference` with that label, else the first `Heading` whose text declares it,
-else null.
+`document.reference(label)` returns the `Reference` a label names: the first
+one with that label, else null.
 
 `%%comment%%` produces `Comment`, the kind an HTML comment already produces,
 inline or as a block when both `%%` fences stand on lines of their own under
@@ -124,14 +122,13 @@ is stripped, and a consumer that does not want comments drops the nodes.
 readonly TypeScript properties. The JavaScript objects are not
 runtime-frozen. The package exposes parsing and typed AST inspection, not
 rendering or AST mutation.
-Ordered lists expose their `variant` and `delimiter`.
+Ordered lists expose their `delimiter`, `"period"` for `1.` and `"parenthesis"` for `1)`.
 
-Task prefixes accept exactly one authored Unicode scalar, such as `- [?]`,
-`- [✓]`, or `- [🚀]`, followed by a space, tab, vertical tab, or form feed.
-The item preserves that scalar in `marker`; completion is derived. Recognition
-is limited to the item's opening line and removes the prefix before deciding
-its first block. Empty or multi-scalar markers and a missing separator remain
-literal text.
+A task prefix is `[ ]`, `[x]` or `[X]`, `[?]` or `[-]`, followed by a space or
+tab; the item's `status` is open, done, question or cancelled, and null for
+an ordinary item. Recognition is limited to the item's opening line and
+removes the prefix before deciding its first block. Any other character
+between the brackets, and a missing separator, remain literal text.
 
 Bracketed spans (`[text]{.class}`) produce `Span(content)` with the shared
 anchor and attributes. Superscript (`^text^`) and subscript (`~text~`) retain
@@ -140,9 +137,8 @@ whitespace. An escaped ASCII space within a completed body becomes NBSP.
 Strikethrough uses `~~text~~`. All three kinds support typed visitor callbacks, and their scopes include their authored delimiters.
 Their ES kind tags are `"span"`, `"superscript"` and `"subscript"`.
 
-Nameless fenced containers (`::: {.class}` or `::: class`) expose
-`DirectiveBlock.name` as null; named and nameless forms share closing and nesting
-rules. A term followed by `: body` or `~ body` produces `DefinitionList` with
+Every fenced container is named (`:::name`), and `DirectiveBlock.name` is
+never null. A term followed by `: body` produces `DefinitionList` with
 ordered `definitions`. Each `Definition` has an inline `term`, ordered block-body
 arrays in `content`, and `compact` determined by the blank line before its first
 body. A body can be empty. Walking visits the term and then the bodies without
@@ -175,118 +171,12 @@ whose runs holds the position; both compute them on request from the runs and
 the source the document was parsed from, with columns in the document's unit,
 and extents take no part.
 
-## Sessions
-
-A `MarkdownSession` holds a text and the document parsed from it, and extends
-both with each append, as text streams in. The new document continues the
-previous one: a node that continues an old node keeps its `id`, so list keys
-and view state survive the append, and an unchanged node is equal to its
-predecessor under `markupEquals`.
-
-```js
-import { MarkdownSession } from "@nouprax/es-markdown-core";
-
-const session = new MarkdownSession("# Hello\n\nwor");
-session.append("ld\n");
-session.append("more\n");
-console.log(session.document.dump(session.text));
-const final = session.flush();             // equals Document.parse(session.text), ids aside
-session.dispose();
-```
-
-A session's documents count scope columns in its `unit`, `"utf16"` by default,
-the unit of JavaScript strings, or `"utf8"`, chosen with
-`new MarkdownSession(source, { unit })`. Every document the session returns is
-an immutable value. Until `flush()`, each document is a snapshot of the text
-so far: a lookup of a reference, footnote or specimen sees only the definitions
-that start before the inline root asking. The caller ends the text with `flush()`, which returns
-the final document; afterwards `append` and `flush` throw
-`sessionFlushed`, and `document` and `text` stay readable. The session
-itself lives in WebAssembly memory: `dispose()` releases it, and a session
-collected without it is released then.
-
-After `flush()`, `edit(start, end, text)` replaces the text between two
-cursors, positions in the session's unit, and returns the parse of the new
-text. The session reads again only the blocks the edit reaches: a node the
-edit did not reach is the old node, and one it read again keeps its `id`. An
-edit before `flush()` throws `sessionStreaming`.
-
-```js
-const session = new MarkdownSession("# Title\n\nfirst\n");
-session.flush();
-session.edit({ line: 3, column: 6 }, { line: 3, column: 6 }, " line"); // "first" becomes "first line"
-session.dispose();
-```
-
-A session also answers an editor's queries from the engine's parse of its
-text, which it holds, so no query parses the text again or takes the source.
-An editor holds one flushed session per open text and edits it as the text
-changes.
-
-```js
-const session = new MarkdownSession("See [[Field notes]]\n");
-session.flush();
-session.locate({ line: 1, column: 12 });       // the session's cursor moves there
-const [slot] = session.context.slots;          // a "dest" of a "crossLink"
-session.spell(slot, "Old notes");              // { text: "Old notes", cursor: 9 }
-const link = session.path({ line: 1, column: 8 }).at(-1); // the cross link, under the root and paragraph
-session.scope(link, "dest");                   // [1:7..1:17]
-session.markers(link);                         // [1:5..1:6, 1:18..1:19], the `[[` and the `]]`
-session.dispose();
-```
-
-The `context` is the session's state at its cursor: `locate` moves the cursor
-and updates it in place to the blocks and inline constructs the text before
-the cursor leaves open and the `Slot`s the cursor may be writing, and adding
-text, `flush()` or an edit clears it. `session.spell(slot, value)` writes a value in
-a slot of the current context in the slot's own syntax, with the closer an
-open construct needs, as an `Edit` whose caret counts columns in the
-session's unit; a slot of a context a later step replaced throws
-`outOfBounds`. Nothing is handed out to free: the context lives and goes with
-the session. `scope` takes
-a `SlotKind`, or null for the fields no slot kind names, and `scope` and
-`markers` take a node of the current document, or one an append left
-unchanged. `Metadata.fields` names the properties fields and `Slot.cues` the
-characters after which a slot may begin empty, an editor's completion
-triggers.
-
-## Language server
-
-The `@nouprax/es-markdown-core/lsp` entry point is the language engine, the
-semantics of the Language Server Protocol 3.17 over the parser, called in
-process: each method of `Server` is one protocol method, and answers as the
-C engine and the JSON-RPC adapter `markdown-core-server` do. Completion
-answers an empty list until the providers land.
-
-```js
-import { Server, ServerError } from "@nouprax/es-markdown-core/lsp";
-
-const server = new Server();
-const { unit, cues } = server.initialize(["utf16"]);   // the protocol's default
-server.open("file:///note.md", 1, "# Title\n\n[a](");
-const end = { line: 2, character: 4 };
-server.update("file:///note.md", 2, [{ scope: { start: end, end }, text: "/url)" }]);
-const { version, count } = server.complete("file:///note.md", end);   // version === 2
-server.close("file:///note.md");
-server.shutdown();
-server.dispose();
-```
-
-Positions count from 0 in the negotiated `unit`; an edit with no `scope`
-replaces the whole text. A method that fails throws `ServerError`, whose
-`code` is `"notInitialized"`, `"invalidRequest"`, `"invalidParams"` or
-`"internalError"` and whose `value` is the protocol's number. A version that
-is not an int32, or a line or character that is not a uint32, is
-`"invalidParams"`. An update checks every edit before the first applies, so
-a refused one leaves the document as it was. `dispose()` releases the
-server's WebAssembly state.
-
 ## Errors
 
 Every failure is a `MarkdownCoreError`, whose `code` is one `ErrorCode`:
 
-- `"allocationFailed"`: a parse or a session step could not allocate, or the
-  text's UTF-8 exceeds the engine's 1 GiB capacity.
+- `"allocationFailed"`: a parse could not allocate, or the text's UTF-8
+  exceeds the engine's 1 GiB capacity.
 - `"outOfBounds"`: `scope` or `dump` got a source that ends before the node
   does, or `nodeAt` got a line or column that is not an integer of at least 1.
   A position past the source, or one no node holds, is not an error: `nodeAt`
@@ -294,8 +184,6 @@ Every failure is a `MarkdownCoreError`, whose `code` is one `ErrorCode`:
 - `"kindMismatch"`: the engine's status for a value that is not of the kind a
   call reads. The binding decodes the whole tree into typed values, so none of
   its calls reports it today; the code keeps the set equal to the engine's.
-- `"sessionFlushed"`: a session's `append` or `flush` after its
-  `flush`.
 
 A node of another document is not checked: pass the document's own nodes.
 
@@ -328,7 +216,7 @@ Object methods such as `heading(node, phase) { ... }` infer `Heading` and
 `node.kind`; its mapped union preserves the correlation without `any` or casts.
 
 Every callback is required; missing callbacks are compile errors. Metadata,
-citations, footnotes and specimens are Markup and use the same callbacks.
+citations and footnotes are Markup and use the same callbacks.
 Visitors process callbacks without recursively visiting descendants; the dumper
 uses the same traversal. The walker schedules each node's typed fields in canonical order. A directive
 label remains the named `label` field, outside directive content.
@@ -352,23 +240,18 @@ occurrence has its own. Image dimension suffixes and dimension attribute records
 remain independent. All returned values use the binding's native collections
 and remain usable after parsing finishes.
 
-Parsed headings receive automatic anchors: `# Hello World` declares
-`hello-world`, with `-1`, `-2`, and later suffixes for collisions. Explicit
-anchors anywhere in the document are reserved first. `[Hello World]`,
-`[Hello World][]`, and `[go][Hello World]` name the label `hello world`, which
-`document.reference` resolves to the heading, including before the heading; an
-explicit reference definition takes priority. Labels use authored heading
-text, so `# *Title*` is referenced by `[*Title*]`. Heading attributes stay on
-the heading, and generated targets add no scope.
+A heading's anchor is the one its attributes write, `# Hello World {#hello}`
+declaring `hello`, which `[go](#hello)` links to; a heading without one has no
+anchor, and the parser derives none from its text. Heading attributes stay on
+the heading.
 
 ### Pandoc-derived syntax
 
 The always-on dialect includes inline code, heading, fenced code and link
-attributes; automatic anchors and implicit heading references; bracketed spans;
-superscript and subscript; bibliography citations; named and nameless fenced
-containers; fancy ordered lists and example lists; and definition lists. These 14
-feature groups use
-one immutable AST and the same behavior on every binding. The
-[dialect contract](../../docs/specs/dialect.md) specifies syntax, precedence and intentional differences
-from the pinned Pandoc reader. Citation numbering, example-list resolution,
-table coordinate expansion and rendering remain consumer responsibilities.
+attributes; bracketed spans; superscript and subscript;
+bibliography citations; and definition
+lists. These feature groups use one immutable AST and the same behavior on
+every binding. The [dialect contract](../../docs/specs/dialect.md) specifies
+syntax, precedence and intentional differences from the pinned Pandoc reader.
+Citation numbering, table coordinate expansion and rendering remain consumer
+responsibilities.

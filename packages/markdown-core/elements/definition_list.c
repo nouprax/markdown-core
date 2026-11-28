@@ -74,11 +74,11 @@ static bool accepts_blank(const markdown_core_element_instance *self, markdown_c
 static inline bool markdown_core_block_definition_marker(markdown_core_reader *reader) {
     const bufsize_t at = reader->nonspace;
     return reader->indent < 4 && !markdown_core_reader_ends(reader, at + 1) &&
-           (markdown_core_reader_peek(reader, at) == ':' || markdown_core_reader_peek(reader, at) == '~') &&
+           markdown_core_reader_peek(reader, at) == ':' &&
            markdown_core_is_whitespace(markdown_core_reader_peek(reader, at + 1));
 }
 
-/* A definition marker is ':' or '~' followed by a space, a tab or the line
+/* A definition marker is ':' followed by a space, a tab or the line
  * end. Asking whether the NEXT line carries one used to mean opening a full
  * lookahead transaction -- chain walk, reserve, snapshot, then a line pulled
  * at 548 Ir -- on every line of every document, because a definition TERM is
@@ -115,12 +115,12 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool definition_next_line
         const markdown_core_node *container = parent;
         while (c >= 0 && parser->dialect->container_prefix[c]) {
             /* A declared prefix byte that is also a marker byte -- a
-             * container whose continuation strips ':' or '~' -- cannot be
+             * container whose continuation strips ':' -- cannot be
              * told from the marker here; only the transaction can, so the
              * key admits. No element declares one today; the rule is what
              * lets one do so without this key silently refusing the
              * definitions inside it. */
-            if (c == ':' || c == '~') {
+            if (c == ':') {
                 return true;
             }
             if (!markdown_core_is_space_or_tab((unsigned char)c)) {
@@ -135,7 +135,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool definition_next_line
             return false;
         }
         if (!markdown_core_is_line_end((unsigned char)c)) {
-            if (c != ':' && c != '~') {
+            if (c != ':') {
                 return false;
             }
             const int next = markdown_core_reader_byte(reader, parser, at + 1);
@@ -278,13 +278,8 @@ static bool markdown_core_definition_list_scan(const markdown_core_element_insta
                                                block_start_context *context, block_start *start) {
     (void)self;
     markdown_core_reader *reader = context->reader;
-    int first = reader->nonspace;
     if (!(context->container->kind == MARKDOWN_CORE_NODE_DEFINITION && markdown_core_block_definition_marker(reader))) {
         return false;
-    }
-    if (parser->sink && self->peers[DEFINITION_DIRECTIVE] && markdown_core_reader_peek(reader, first) == ':' &&
-        markdown_core_is_line_end(markdown_core_reader_peek(reader, first + 1))) {
-        markdown_core_directive_report_line(parser, first);
     }
     start->kind = MARKDOWN_CORE_NODE_DEFINITION_BODY;
     start->open = markdown_core_definition_list_open;
@@ -372,58 +367,6 @@ static bool close_block(const markdown_core_element_instance *self, markdown_cor
     return true;
 }
 
-static const markdown_core_node_type DEFINITION_LIST_KINDS[] = {MARKDOWN_CORE_NODE_DEFINITION_LIST,
-                                                                MARKDOWN_CORE_NODE_NONE};
-
-/* The reading takes a definition's old bodies back only after a body that
- * holds a node: an empty body stands where the one before it ends (ast.c,
- * publish_body), so the bodies taken back are measured from where the last
- * node before them ends either way. */
-static bool resumes(const markdown_core_element_instance *self, const markdown_core_parser *parser,
-                    const markdown_core_node *node, const markdown_core_node *next) {
-    (void)self;
-    (void)parser;
-    (void)next;
-    const markdown_core_node *last = node->child_count ? node->children[node->child_count - 1] : NULL;
-    return !last || last->kind != MARKDOWN_CORE_NODE_DEFINITION_BODY || last->child_count;
-}
-
-/* A body reopened at the start of a child's line: the line a blank line's
- * reading found the body goes on to is no later than that line, as a parse
- * of the text before it found, which a line past it no longer reads. */
-static void reopen_block(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                         markdown_core_node *node, const markdown_core_node *next, bool blank) {
-    (void)self;
-    (void)parser;
-    (void)next;
-    (void)blank;
-    if (node->kind == MARKDOWN_CORE_NODE_DEFINITION_BODY) {
-        node->as.definition_body->continuation_line = 0;
-    }
-}
-
-/* A definition holding no open block closes as the next one's term opens,
- * whatever its prefixes carry (markdown_core_block_open_definition). */
-static bool yields(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                   const markdown_core_node *open, markdown_core_node_type kind) {
-    (void)self;
-    (void)parser;
-    return open->kind == MARKDOWN_CORE_NODE_DEFINITION && kind == MARKDOWN_CORE_NODE_DEFINITION;
-}
-
-/* A definition's bodies each start with their own marker. */
-static const markdown_core_node_type DEFINITION_KINDS[] = {MARKDOWN_CORE_NODE_DEFINITION, MARKDOWN_CORE_NODE_NONE};
-
-static const markdown_core_edit_ops DEFINITION_LIST_EDIT = {
-    .reopens = true,
-    /* A term after blank lines joins the list before it. */
-    .awaits = DEFINITION_LIST_KINDS,
-    .abuts = DEFINITION_KINDS,
-    .reopen_block = reopen_block,
-    .resumes = resumes,
-    .yields = yields,
-};
-
 static const markdown_core_candidate_ops DEFINITION_LIST_CANDIDATE = {
     .feed = feed_candidate,
     .reads = definition_reads,
@@ -433,7 +376,7 @@ static const markdown_core_candidate_ops DEFINITION_LIST_CANDIDATE = {
 static const markdown_core_open_ops DEFINITION_LIST_OPENS = {
     .indent = 3,
     .scan = markdown_core_definition_list_scan,
-    .scan_needs = {.bytes = ":~"},
+    .scan_needs = {.bytes = ":"},
     .last = try_paragraph,
 };
 
@@ -445,7 +388,6 @@ static const markdown_core_line_ops DEFINITION_LIST_LINES = {
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_DEFINITION_LIST = {
     .peers = DEFINITION_PEERS,
-    .edit = &DEFINITION_LIST_EDIT,
     .state_size = sizeof(markdown_core_definition_list_work),
     .name = "definition_list",
     .candidate = &DEFINITION_LIST_CANDIDATE,

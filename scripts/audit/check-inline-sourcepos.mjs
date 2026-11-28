@@ -62,7 +62,7 @@ const ours = requireBinary(root, "build/cmake/packages/markdown-core/core/markdo
 const upstream = requireBinary(
     root,
     `.tools/cmark/${upstreamVersion}/build/src/cmark`,
-    "scripts/tooling/setup-environment.sh --install oracle-cmark"
+    "scripts/tools/setup-environment.sh --install oracle-cmark"
 );
 
 const SUBJECT = new Set(["Code", "HTML", "Comment"]);

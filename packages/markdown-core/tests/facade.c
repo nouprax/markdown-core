@@ -178,15 +178,15 @@ static void check_null_and_empty(void) {
         {"[a](/u)\n", MARKDOWN_CORE_KIND_LINK, "/u", false, ""},
         {"[a](/u \"\")\n", MARKDOWN_CORE_KIND_LINK, "/u", true, ""},
         {"[a](/u \"t\")\n", MARKDOWN_CORE_KIND_LINK, "/u", true, "t"},
-        {"![a]()\n", MARKDOWN_CORE_KIND_EMBEDDED, "", false, ""},
-        {"![a](/s \"\")\n", MARKDOWN_CORE_KIND_EMBEDDED, "/s", true, ""},
+        {"![a]()\n", MARKDOWN_CORE_KIND_EMBED, "", false, ""},
+        {"![a](/s \"\")\n", MARKDOWN_CORE_KIND_EMBED, "/s", true, ""},
         /* M2: a resolved reference names its definition by label, and the
          * Reference the document resolves it to answers what the definition
          * stated, through the same accessors. */
         {"[a]: <>\n\n[a]\n", MARKDOWN_CORE_KIND_LINK, "", false, ""},
         {"[a]: <> \"\"\n\n[a][]\n", MARKDOWN_CORE_KIND_LINK, "", true, ""},
         {"[a]: /u \"t\"\n\n[x][a]\n", MARKDOWN_CORE_KIND_LINK, "/u", true, "t"},
-        {"![a][r]\n\n[r]: /s \"\"\n", MARKDOWN_CORE_KIND_EMBEDDED, "/s", true, ""},
+        {"![a][r]\n\n[r]: /s \"\"\n", MARKDOWN_CORE_KIND_EMBED, "/s", true, ""},
     };
     static const struct {
         const char *source;
@@ -292,7 +292,7 @@ static void check_image_dimensions(void) {
     int index = 0;
     for (size_t at = 0; at < inlines.count; at++) {
         const markdown_core_node *node = inlines.items[at];
-        if (markdown_core_node_get_kind(node) != MARKDOWN_CORE_KIND_EMBEDDED) {
+        if (markdown_core_node_get_kind(node) != MARKDOWN_CORE_KIND_EMBED) {
             continue;
         }
         const markdown_core_dimensions *dimensions = NULL;
@@ -342,7 +342,7 @@ static void check_reference_resolution(void) {
     for (size_t index = 0; index < inlines.count; index++) {
         const markdown_core_node *child = inlines.items[index];
         markdown_core_node_kind kind = markdown_core_node_get_kind(child);
-        if (kind != MARKDOWN_CORE_KIND_LINK && kind != MARKDOWN_CORE_KIND_EMBEDDED) {
+        if (kind != MARKDOWN_CORE_KIND_LINK && kind != MARKDOWN_CORE_KIND_EMBED) {
             others++;
             continue;
         }
@@ -558,7 +558,7 @@ static void check_dialect_is_whole(void) {
         {"| a |\n| --- |\n| b |\n", "Table scope="},
         {"~~x~~\n", "Strikethrough scope="},
         {"www.example.com\n", "Link scope="},
-        {"- [x] task\n", "marker=\"x\""},
+        {"- [x] task\n", "status=done"},
         {"ref[^a]\n\n[^a]: note\n", "Cite scope="},
         {"$x$\n", "Formula scope="},
         {":badge[label]\n", "Directive scope="},
@@ -639,7 +639,7 @@ static void check_table_model(void) {
 }
 
 static void check_definition_model(void) {
-    static const uint8_t input[] = "::: box\n*T*\n: one\n~\n\nU\n\n: two\n:::\n\n:::named\n:::\n";
+    static const uint8_t input[] = ":::box\n*T*\n: one\n:\n\nU\n\n: two\n:::\n\n:::named\n:::\n";
     markdown_core_document *document = parse(input, sizeof(input) - 1);
     if (!document) {
         return;
@@ -648,11 +648,11 @@ static void check_definition_model(void) {
     const markdown_core_node *block = child_at(root, 0);
     const markdown_core_node *list = child_at(block, 0);
     const markdown_core_node *definition = child_at(list, 0);
-    markdown_core_optional_string name = {true, {NULL, 0}};
+    markdown_core_string name = {NULL, 0};
     ok(markdown_core_node_directive_properties(block, &name), "a directive block answers its name");
-    check(!name.has_value, "nameless block name is absent");
+    check(name.length == 3 && memcmp(name.data, "box", 3) == 0, "a block retains its name");
     ok(markdown_core_node_directive_properties(child_at(root, 1), &name), "a directive block answers its name");
-    check(name.has_value && name.value.length == 5, "named block retains its name");
+    check(name.length == 5, "named block retains its name");
     check(markdown_core_node_get_kind(list) == MARKDOWN_CORE_KIND_DEFINITION_LIST && child_count(list) == 2,
           "definition list has typed members");
     check(markdown_core_node_get_kind(definition) == MARKDOWN_CORE_KIND_DEFINITION, "definition kind");
@@ -697,9 +697,9 @@ static void check_kind_boundary(void) {
     const markdown_core_metadata_value *value = NULL;
     markdown_core_list_flavor flavor;
     markdown_core_optional_i64 start = {true, 7};
-    markdown_core_ordered_list_variant variant;
     markdown_core_ordered_list_delimiter delimiter;
     markdown_core_optional_string optional = {true, {NULL, 7}};
+    markdown_core_task_status task = MARKDOWN_CORE_TASK_STATUS_DONE;
     markdown_core_optional_bool optional_bool;
     markdown_core_string string = {NULL, 7};
     markdown_core_placement placement;
@@ -712,14 +712,14 @@ static void check_kind_boundary(void) {
     /* A paragraph has no field any kind accessor reads. */
     const markdown_core_status statuses[] = {
         markdown_core_node_heading_level(paragraph, &level),
-        markdown_core_node_list_properties(paragraph, &flavor, &start, &variant, &delimiter, &flag),
-        markdown_core_node_list_item_marker(paragraph, &optional),
+        markdown_core_node_list_properties(paragraph, &flavor, &start, &delimiter, &flag),
+        markdown_core_node_list_item_status(paragraph, &task),
         markdown_core_node_code_block_properties(paragraph, &optional, &optional, &string, &flag, &flag),
         markdown_core_node_literal(paragraph, &string),
         markdown_core_node_formula_properties(paragraph, &placement, &string),
         markdown_core_node_table_properties(paragraph, &size, &size, &size),
         markdown_core_node_table_column_at(paragraph, 0, &column),
-        markdown_core_node_directive_properties(paragraph, &optional),
+        markdown_core_node_directive_properties(paragraph, &string),
         markdown_core_node_definition_compact(paragraph, &flag),
         markdown_core_node_definition_term(paragraph, &nodes),
         markdown_core_node_definition_body_count(paragraph, &size),
@@ -738,8 +738,6 @@ static void check_kind_boundary(void) {
         markdown_core_citation_suffix(paragraph, &nodes),
         markdown_core_footnote_label(paragraph, &optional),
         markdown_core_footnote_content(paragraph, &nodes),
-        markdown_core_specimen_properties(paragraph, &optional, &start),
-        markdown_core_specimen_content(paragraph, &nodes),
         markdown_core_node_document_metadata(paragraph, &node),
         markdown_core_metadata_name(paragraph, &value),
         markdown_core_metadata_title(paragraph, &value),
@@ -756,7 +754,8 @@ static void check_kind_boundary(void) {
         check(statuses[index] == MARKDOWN_CORE_KIND_MISMATCH, "a kind accessor refuses a node of another kind");
     }
     check(node == paragraph && !nodes.items && nodes.count == 7 && !dimensions && !value && level == 7 &&
-              start.value == 7 && optional.value.length == 7 && string.length == 7,
+              start.value == 7 && optional.value.length == 7 && string.length == 7 &&
+              task == MARKDOWN_CORE_TASK_STATUS_DONE,
           "a refused accessor writes none of its out-parameters");
     /* The kind is the node's own, not its neighbour's: a Text answers the
      * literal its Paragraph does not. */
@@ -793,9 +792,7 @@ static void check_index_boundary(void) {
           "a column at the count is out of bounds");
 
     check(markdown_core_document_footnote_count(document) == 0 &&
-              markdown_core_document_footnote_at(document, 0, &node) == MARKDOWN_CORE_OUT_OF_BOUNDS &&
-              markdown_core_document_specimen_count(document) == 0 &&
-              markdown_core_document_specimen_at(document, 0, &node) == MARKDOWN_CORE_OUT_OF_BOUNDS && node == root,
+              markdown_core_document_footnote_at(document, 0, &node) == MARKDOWN_CORE_OUT_OF_BOUNDS && node == root,
           "a definition at the count is out of bounds");
 
     check(markdown_core_node_get_kind(directive) == MARKDOWN_CORE_KIND_DIRECTIVE &&
@@ -859,39 +856,6 @@ static void check_index_boundary(void) {
               kind_name == NULL,
           "a value outside the kinds has no name");
 
-    const char *slot_name = NULL;
-    check(markdown_core_slot_kind_name(MARKDOWN_CORE_SLOT_DEST, &slot_name) == MARKDOWN_CORE_OK &&
-              strcmp(slot_name, "dest") == 0 &&
-              markdown_core_slot_kind_name(MARKDOWN_CORE_SLOT_VALUE, &slot_name) == MARKDOWN_CORE_OK &&
-              strcmp(slot_name, "value") == 0,
-          "a slot kind answers its contract name");
-    slot_name = NULL;
-    check(markdown_core_slot_kind_name((markdown_core_slot_kind)(MARKDOWN_CORE_SLOT_VALUE + 1), &slot_name) ==
-                  MARKDOWN_CORE_OUT_OF_BOUNDS &&
-              markdown_core_slot_kind_name((markdown_core_slot_kind)-1, &slot_name) == MARKDOWN_CORE_OUT_OF_BOUNDS &&
-              slot_name == NULL,
-          "a value outside the slot kinds has no name");
-
-    static const char *const fields[] = {"name",    "title",    "subtitle", "time",  "date",
-                                         "authors", "keywords", "abstract", "state", "comment"};
-    bool listed = markdown_core_metadata_field_count() == sizeof(fields) / sizeof(*fields);
-    for (size_t i = 0; listed && i < sizeof(fields) / sizeof(*fields); i++) {
-        markdown_core_string field = {0};
-        listed = markdown_core_metadata_field_at(i, &field) == MARKDOWN_CORE_OK && field.length == strlen(fields[i]) &&
-                 memcmp(field.data, fields[i], field.length) == 0;
-    }
-    markdown_core_string past = {0};
-    check(listed &&
-              markdown_core_metadata_field_at(sizeof(fields) / sizeof(*fields), &past) == MARKDOWN_CORE_OUT_OF_BOUNDS &&
-              past.data == NULL,
-          "the metadata field names are the dialect's, in its order");
-    const markdown_core_string cues = markdown_core_slot_cues();
-    bool ascending = cues.length > 0;
-    for (size_t i = 1; ascending && i < cues.length; i++) {
-        ascending = cues.data[i - 1] < cues.data[i];
-    }
-    check(ascending && memchr(cues.data, '[', cues.length) && !memchr(cues.data, '>', cues.length),
-          "the slot cues are distinct bytes in ascending order");
     markdown_core_document_free(metadata_document);
     markdown_core_document_free(document);
 }
@@ -969,205 +933,6 @@ static void check_source_boundary(void) {
     markdown_core_dump_free(NULL);
 }
 
-/* A context query reads the text before a position the document's unit
- * counts, answers each list's entries by index, and refuses a position no
- * source holds; the path of a position is the nodes that hold it, the
- * root first. */
-static void check_context_query(void) {
-    static const char source[] = "\xc3\xa9 [[No]]\n";
-    const size_t length = sizeof(source) - 1;
-    markdown_core_document *document = NULL;
-    if (!ok(markdown_core_document_parse_in((const uint8_t *)source, length, MARKDOWN_CORE_TEXT_UNIT_UTF16, &document),
-            "a UTF-16 document parses")) {
-        return;
-    }
-    markdown_core_context *context = NULL;
-    markdown_core_slot slot;
-    markdown_core_opener opener;
-    markdown_core_string prefix;
-    /* The cursor is after `No`: `é` is one UTF-16 unit. */
-    check(markdown_core_document_context(document, (const uint8_t *)source, length, (markdown_core_position){1, 7},
-                                         &context) == MARKDOWN_CORE_OK &&
-              markdown_core_context_block_count(context) == 1 && markdown_core_context_slot_count(context) == 1 &&
-              markdown_core_context_slot_at(context, 0, &slot) == MARKDOWN_CORE_OK &&
-              slot.kind == MARKDOWN_CORE_SLOT_DEST && slot.owner == MARKDOWN_CORE_KIND_CROSS_LINK && slot.closed &&
-              slot.before.start.column == 5 && slot.before.end.column == 6 && slot.prefix_count == 0,
-          "a context query reads the slot before a cursor its unit counts");
-    check(markdown_core_context_block_at(context, 1, &opener) == MARKDOWN_CORE_OUT_OF_BOUNDS &&
-              markdown_core_context_inline_at(context, markdown_core_context_inline_count(context), &opener) ==
-                  MARKDOWN_CORE_OUT_OF_BOUNDS &&
-              markdown_core_context_slot_at(context, 1, &slot) == MARKDOWN_CORE_OUT_OF_BOUNDS &&
-              markdown_core_context_slot_prefix_at(context, 0, 0, &prefix) == MARKDOWN_CORE_OUT_OF_BOUNDS &&
-              markdown_core_context_slot_prefix_at(context, 1, 0, &prefix) == MARKDOWN_CORE_OUT_OF_BOUNDS,
-          "a context entry at its list's count is out of bounds");
-    markdown_core_context_free(context);
-    markdown_core_context_free(NULL);
-
-    /* A destination the text's end opens: the query reads no byte past the
-     * text, which a buffer of the text's own size shows a sanitizer. */
-    context = NULL;
-    uint8_t *opened = malloc(4);
-    markdown_core_document *link = NULL;
-    if (opened) {
-        memcpy(opened, "[a](", 4);
-    }
-    check(opened && markdown_core_document_parse(opened, 4, &link) == MARKDOWN_CORE_OK &&
-              markdown_core_document_context(link, opened, 4, (markdown_core_position){1, 5}, &context) ==
-                  MARKDOWN_CORE_OK &&
-              markdown_core_context_slot_count(context) == 1 &&
-              markdown_core_context_slot_at(context, 0, &slot) == MARKDOWN_CORE_OK &&
-              slot.kind == MARKDOWN_CORE_SLOT_DEST,
-          "a context query at the end of an opened destination reads only the text");
-    markdown_core_context_free(context);
-    markdown_core_document_free(link);
-    free(opened);
-
-    const markdown_core_position outside[] = {{0, 1}, {1, 0}, {3, 1}, {1, 40}};
-    for (size_t index = 0; index < sizeof(outside) / sizeof(*outside); index++) {
-        context = NULL;
-        check(markdown_core_document_context(document, (const uint8_t *)source, length, outside[index], &context) ==
-                      MARKDOWN_CORE_OUT_OF_BOUNDS &&
-                  context == NULL,
-              "a context query at a position no source holds is out of bounds");
-    }
-
-    const markdown_core_node **nodes = NULL;
-    size_t count = 0;
-    check(markdown_core_document_path(document, (markdown_core_position){1, 5}, (const uint8_t *)source, length, &nodes,
-                                      &count) == MARKDOWN_CORE_OK &&
-              count == 3 && markdown_core_node_get_kind(nodes[0]) == MARKDOWN_CORE_KIND_DOCUMENT &&
-              markdown_core_node_get_kind(nodes[2]) == MARKDOWN_CORE_KIND_CROSS_LINK,
-          "a path holds the nodes over a position, the root first");
-    markdown_core_path_free(nodes);
-    markdown_core_document_free(document);
-}
-
-/* A session keeps its context as its state: the state stays where the
- * session lends it, a locate updates it in place and a failed one keeps it,
- * spelling reads it as it stands, and an append and the flush empty it. */
-static void check_session_context(void) {
-    static const char source[] = "\xc3\xa9 [[No";
-    markdown_core_session *session = NULL;
-    if (!ok(markdown_core_session_new((const uint8_t *)source, sizeof(source) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF16,
-                                      &session),
-            "a UTF-16 session starts")) {
-        return;
-    }
-    const markdown_core_context *context = markdown_core_session_context(session);
-    markdown_core_slot slot;
-    markdown_core_insertion *insertion = NULL;
-    check(context != NULL && markdown_core_context_block_count(context) == 0 &&
-              markdown_core_context_slot_count(context) == 0,
-          "a session not yet located has an empty context");
-    check(markdown_core_session_locate(session, (markdown_core_position){1, 7}) == MARKDOWN_CORE_OK &&
-              markdown_core_session_context(session) == context && markdown_core_context_block_count(context) == 1 &&
-              markdown_core_context_slot_count(context) == 1 &&
-              markdown_core_context_slot_at(context, 0, &slot) == MARKDOWN_CORE_OK &&
-              slot.kind == MARKDOWN_CORE_SLOT_DEST && !slot.closed && slot.before.start.column == 5,
-          "a locate updates the session's context in place");
-    check(markdown_core_session_locate(session, (markdown_core_position){3, 1}) == MARKDOWN_CORE_OUT_OF_BOUNDS &&
-              markdown_core_context_slot_count(context) == 1,
-          "a failed locate keeps the context");
-    check(markdown_core_slot_spell(context, 0, (const uint8_t *)"x", 1, &insertion) == MARKDOWN_CORE_OK &&
-              insertion != NULL && insertion->size == 3 && memcmp(insertion->text, "x]]", 3) == 0,
-          "a slot of the session's context spells");
-    markdown_core_insertion_free(insertion);
-    check(markdown_core_session_locate(session, (markdown_core_position){1, 1}) == MARKDOWN_CORE_OK &&
-              markdown_core_context_slot_count(context) == 0,
-          "a locate elsewhere replaces the state");
-    const markdown_core_document *document = NULL;
-    check(markdown_core_session_locate(session, (markdown_core_position){1, 7}) == MARKDOWN_CORE_OK &&
-              markdown_core_session_append(session, (const uint8_t *)"]]", 2, &document) == MARKDOWN_CORE_OK &&
-              markdown_core_context_slot_count(context) == 0 && markdown_core_context_block_count(context) == 0,
-          "an append empties the context");
-    check(markdown_core_session_locate(session, (markdown_core_position){1, 7}) == MARKDOWN_CORE_OK &&
-              markdown_core_context_slot_count(context) == 1 &&
-              markdown_core_context_slot_at(context, 0, &slot) == MARKDOWN_CORE_OK && slot.closed &&
-              markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK &&
-              markdown_core_context_slot_count(context) == 0,
-          "a locate reads the appended text, and the flush empties the context");
-    check(markdown_core_session_locate(session, (markdown_core_position){1, 7}) == MARKDOWN_CORE_OK &&
-              markdown_core_context_slot_count(context) == 1,
-          "a flushed session still locates");
-    markdown_core_session_close(session);
-}
-
-/* Whether `scopes` hold one scope on line 1 from `start` to `end`. */
-static bool one_scope(const markdown_core_scope *scopes, size_t count, int32_t start, int32_t end) {
-    return count == 1 && scopes[0].start.line == 1 && scopes[0].start.column == start && scopes[0].end.line == 1 &&
-           scopes[0].end.column == end;
-}
-
-/* A field query answers the scopes of a node's fields of one slot kind, in
- * the document's unit, and a marker query the rest of the node's own
- * source; a value that is no slot kind, or a source that ends before the
- * node, is out of bounds. */
-static void check_fields(void) {
-    static const char source[] = "\xc3\xa9 [x](/u#a \"t\"){#i .c}\n";
-    const size_t length = sizeof(source) - 1;
-    const uint8_t *text = (const uint8_t *)source;
-    markdown_core_document *document = NULL;
-    if (!ok(markdown_core_document_parse_in(text, length, MARKDOWN_CORE_TEXT_UNIT_UTF16, &document),
-            "a UTF-16 document parses")) {
-        return;
-    }
-    const markdown_core_node **nodes = NULL;
-    size_t count = 0;
-    const bool read =
-        ok(markdown_core_document_path(document, (markdown_core_position){1, 4}, text, length, &nodes, &count),
-           "the path to a link's text reads");
-    const bool linked = read && count == 4 && markdown_core_node_get_kind(nodes[2]) == MARKDOWN_CORE_KIND_LINK;
-    check(linked, "the path holds the link");
-    if (!linked) {
-        markdown_core_path_free(nodes);
-        markdown_core_document_free(document);
-        return;
-    }
-    const markdown_core_node *link = nodes[2];
-    markdown_core_path_free(nodes);
-    static const struct {
-        markdown_core_slot_kind slot;
-        int32_t start, end;
-    } fields[] = {{MARKDOWN_CORE_SLOT_DEST, 7, 8},
-                  {MARKDOWN_CORE_SLOT_ANCHOR, 10, 10},
-                  {MARKDOWN_CORE_SLOT_ID, 18, 18},
-                  {MARKDOWN_CORE_SLOT_CLASS, 21, 21},
-                  {MARKDOWN_CORE_SLOT_NONE, 13, 13}};
-    markdown_core_scope *scopes = NULL;
-    for (size_t i = 0; i < sizeof(fields) / sizeof(*fields); i++) {
-        check(markdown_core_document_field(document, link, fields[i].slot, text, length, &scopes, &count) ==
-                      MARKDOWN_CORE_OK &&
-                  one_scope(scopes, count, fields[i].start, fields[i].end),
-              "a field query answers the scope of the field as written");
-        markdown_core_scopes_free(scopes);
-    }
-    check(markdown_core_document_field(document, link, MARKDOWN_CORE_SLOT_LABEL, text, length, &scopes, &count) ==
-                  MARKDOWN_CORE_OK &&
-              scopes == NULL && count == 0,
-          "a field query for a slot kind the node does not write answers none");
-    /* `[`, `](`, `#`, ` "`, `"){#`, ` .` and `}`: the text `x` is the
-     * link's child's. */
-    static const int32_t markers[][2] = {{3, 3}, {5, 6}, {9, 9}, {11, 12}, {14, 17}, {19, 20}, {22, 22}};
-    bool same = markdown_core_document_markers(document, link, text, length, &scopes, &count) == MARKDOWN_CORE_OK &&
-                count == sizeof(markers) / sizeof(*markers);
-    for (size_t i = 0; same && i < count; i++) {
-        same = scopes[i].start.line == 1 && scopes[i].start.column == markers[i][0] && scopes[i].end.line == 1 &&
-               scopes[i].end.column == markers[i][1];
-    }
-    check(same, "a marker query answers the node's own source no field holds");
-    markdown_core_scopes_free(scopes);
-    scopes = (markdown_core_scope *)1;
-    check(markdown_core_document_field(document, link, (markdown_core_slot_kind)99, text, length, &scopes, &count) ==
-                  MARKDOWN_CORE_OUT_OF_BOUNDS &&
-              scopes == NULL && count == 0,
-          "a field query for a value that is no slot kind is out of bounds");
-    check(markdown_core_document_markers(document, link, text, 6, &scopes, &count) == MARKDOWN_CORE_OUT_OF_BOUNDS &&
-              scopes == NULL && count == 0,
-          "a marker query over a source that ends before the node is out of bounds");
-    markdown_core_scopes_free(NULL);
-    markdown_core_document_free(document);
-}
-
 int main(int argc, char **argv) {
     const char *fixture_dir;
     int i;
@@ -1192,9 +957,6 @@ int main(int argc, char **argv) {
     check_kind_boundary();
     check_index_boundary();
     check_source_boundary();
-    check_context_query();
-    check_session_context();
-    check_fields();
     for (i = 3; i < argc; i++) {
         check_fixture(fixture_dir, argv[i]);
     }

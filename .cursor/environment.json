@@ -5,5 +5,5 @@
         "dockerfile": "Dockerfile",
         "context": ".."
     },
-    "install": "scripts/tooling/setup-environment.sh --install emscripten dependencies tools && scripts/tooling/setup-environment.sh --check core node java wrappers android emscripten dependencies tools"
+    "install": "scripts/tools/setup-environment.sh --install emscripten dependencies tools && scripts/tools/setup-environment.sh --check core node java wrappers android emscripten dependencies tools"
 }

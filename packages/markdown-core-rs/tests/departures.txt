@@ -1,0 +1,630 @@
+# Intended departures from the C fixtures.
+#
+# Each entry replaces the expected dump of one fixture example, where the
+# Rust parser follows the letter of the CommonMark spec, or of the dialect
+# documents, and C does not. The entries are written back into the fixtures
+# when the C version is removed.
+
+```````````````````````````````` departure dialect-block-identifiers.txt 60
+A list is loose when an item directly holds two blocks with a blank line
+between them (CommonMark 5.3), and a link reference definition is a block
+(4.7); cmark drops definitions before it decides, so C keeps the list tight.
+.
+Document scope=1:1..7:5 anchor=null attributes={} children=2
+├── List scope=1:1..5:6 anchor="list" attributes={} flavor=bullet start=null delimiter=null tight=false children=1
+│   └── ListItem scope=1:1..4:0 anchor=null attributes={} status=null children=2
+│       ├── Paragraph scope=1:3..1:3 anchor=null attributes={} children=1
+│       │   └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
+│       └── Reference scope=3:3..3:11 anchor=null attributes={} label="ref" dest=url("/x") title=null children=0
+└── Paragraph scope=7:1..7:5 anchor=null attributes={} children=1
+    └── Link scope=7:1..7:5 anchor=null attributes={} dest=reference("ref") title=null children=1
+        └── Text scope=7:2..7:4 anchor=null attributes={} literal="ref" children=0
+````````````````````````````````
+
+```````````````````````````````` departure dialect-block-identifiers.txt 66
+A list is loose when an item directly holds two blocks with a blank line
+between them (CommonMark 5.3), and a link reference definition is a block
+(4.7); cmark drops definitions before it decides, so C keeps the list tight.
+.
+Document scope=1:1..7:3 anchor=null attributes={} children=2
+├── List scope=1:1..4:0 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=false children=1
+│   └── ListItem scope=1:1..4:0 anchor=null attributes={} status=null children=2
+│       ├── Paragraph scope=1:3..1:3 anchor=null attributes={} children=1
+│       │   └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
+│       └── Reference scope=3:3..3:9 anchor=null attributes={} label="r" dest=url("/x") title=null children=0
+└── Callout scope=5:1..7:3 anchor="q" attributes={} variant=null collapsed=null children=1
+    └── Paragraph scope=5:3..5:3 anchor=null attributes={} children=1
+        └── Text scope=5:3..5:3 anchor=null attributes={} literal="b" children=0
+````````````````````````````````
+
+```````````````````````````````` departure dialect-block-identifiers.txt 67
+A list is loose when an item directly holds two blocks with a blank line
+between them (CommonMark 5.3), and a link reference definition is a block
+(4.7); cmark drops definitions before it decides, so C keeps the list tight.
+.
+Document scope=1:1..7:5 anchor=null attributes={} children=1
+└── Callout scope=1:1..7:5 anchor=null attributes={} variant=null collapsed=null children=2
+    ├── List scope=1:3..4:1 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=false children=1
+    │   └── ListItem scope=1:3..4:1 anchor=null attributes={} status=null children=2
+    │       ├── Paragraph scope=1:5..1:5 anchor=null attributes={} children=1
+    │       │   └── Text scope=1:5..1:5 anchor=null attributes={} literal="a" children=0
+    │       └── Reference scope=3:5..3:11 anchor=null attributes={} label="r" dest=url("/x") title=null children=0
+    └── Callout scope=5:3..7:5 anchor="q" attributes={} variant=null collapsed=null children=1
+        └── Paragraph scope=5:5..5:5 anchor=null attributes={} children=1
+            └── Text scope=5:5..5:5 anchor=null attributes={} literal="b" children=0
+````````````````````````````````
+
+```````````````````````````````` departure dialect-block-identifiers.txt 68
+A list is loose when an item directly holds two blocks with a blank line
+between them (CommonMark 5.3), and a link reference definition is a block
+(4.7); cmark drops definitions before it decides, so C keeps the list tight.
+.
+Document scope=1:1..7:3 anchor=null attributes={} children=2
+├── List scope=1:1..5:6 anchor="list" attributes={} flavor=bullet start=null delimiter=null tight=false children=1
+│   └── ListItem scope=1:1..4:0 anchor="item" attributes={} status=null children=2
+│       ├── Paragraph scope=1:3..1:8 anchor=null attributes={} children=0
+│       └── Reference scope=3:3..3:9 anchor=null attributes={} label="r" dest=url("/x") title=null children=0
+└── Paragraph scope=7:1..7:3 anchor=null attributes={} children=1
+    └── Link scope=7:1..7:3 anchor=null attributes={} dest=reference("r") title=null children=1
+        └── Text scope=7:2..7:2 anchor=null attributes={} literal="r" children=0
+````````````````````````````````
+
+```````````````````````````````` departure regression.txt 69
+An extended email autolink's domain has at least one period (GFM 6.9);
+cmark-gfm keeps the periods it counted before a second `@`, so C links
+`.b@a`.
+.
+Document scope=1:1..3:6 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:9 anchor=null attributes={} children=2
+│   ├── Text scope=1:1..1:2 anchor=null attributes={} literal="r@" children=0
+│   └── Link scope=1:3..1:9 anchor=null attributes={} dest=url("mailto:b.c@d.e") title=null children=1
+│       └── Text scope=1:3..1:9 anchor=null attributes={} literal="b.c@d.e" children=0
+└── Paragraph scope=3:1..3:6 anchor=null attributes={} children=1
+    └── Text scope=3:1..3:6 anchor=null attributes={} literal="d@.b@a" children=0
+````````````````````````````````
+
+```````````````````````````````` departure regression.txt 72
+An `xmpp:` autolink is `xmpp:` before a valid email address, whose local
+part has one or more characters (GFM 6.9); cmark-gfm links an empty one.
+.
+Document scope=1:1..1:8 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:8 anchor=null attributes={} children=1
+    └── Text scope=1:1..1:8 anchor=null attributes={} literal="xmpp:@.o" children=0
+````````````````````````````````
+
+```````````````````````````````` departure regression.txt 73
+A code span begins with a backtick string and ends with the next backtick
+string of equal length (CommonMark 6.1), so `` `r` `` is one; cmark
+remembers where it last saw a string of each length while it looked for a
+closer of the two backticks that open the line, and finds none for it.
+.
+Document scope=1:1..1:10 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:10 anchor=null attributes={} children=4
+    ├── Text scope=1:1..1:3 anchor=null attributes={} literal="``u" children=0
+    ├── Code scope=1:4..1:6 anchor=null attributes={} literal="c" children=0
+    ├── Text scope=1:7..1:7 anchor=null attributes={} literal="d" children=0
+    └── Code scope=1:8..1:10 anchor=null attributes={} literal="r" children=0
+````````````````````````````````
+
+```````````````````````````````` departure regression.txt 81
+Links may not contain other links (CommonMark 6.3): the link `[]()` makes
+the bracket before it inactive, so its `]()` is text; cmark-gfm still
+links it around the inner link.
+.
+Document scope=1:1..1:10 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:10 anchor=null attributes={} children=3
+    ├── Text scope=1:1..1:1 anchor=null attributes={} literal="[" children=0
+    ├── Link scope=1:2..1:5 anchor=null attributes={} dest=url("") title=null children=0
+    └── Text scope=1:6..1:10 anchor=null attributes={} literal="[]]()" children=0
+````````````````````````````````
+
+```````````````````````````````` departure regression.txt 84
+A domain has no underscore in its last two segments (GFM 6.9), and that
+does not depend on where the paragraph ends; cmark-gfm's domain scan stops
+one byte short of the paragraph's end, so it links `http://x.com` before a
+final `_` and not before `_ here`.
+.
+Document scope=1:1..3:23 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:18 anchor=null attributes={} children=1
+│   └── Emphasis scope=1:1..1:18 anchor=null attributes={} children=1
+│       └── Text scope=1:2..1:17 anchor=null attributes={} literal="see http://x.com" children=0
+└── Paragraph scope=3:1..3:23 anchor=null attributes={} children=2
+    ├── Emphasis scope=3:1..3:18 anchor=null attributes={} children=1
+    │   └── Text scope=3:2..3:17 anchor=null attributes={} literal="see http://x.com" children=0
+    └── Text scope=3:19..3:23 anchor=null attributes={} literal=" here" children=0
+````````````````````````````````
+
+```````````````````````````````` departure regression.txt 88
+An HTML comment is `<!--`, text not holding `-->`, and `-->` (CommonMark
+6.6), so `<!----->` holds `-`; a declaration is `<!`, a letter, text
+without `>`, and `>`, so `<!l>` is one after an unclosed `<!--`. cmark
+keeps both as text.
+.
+Document scope=1:1..3:12 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:12 anchor=null attributes={} children=3
+│   ├── Text scope=1:1..1:2 anchor=null attributes={} literal="a " children=0
+│   ├── Comment scope=1:3..1:10 anchor=null attributes={} literal="-" children=0
+│   └── Text scope=1:11..1:12 anchor=null attributes={} literal=" b" children=0
+└── Paragraph scope=3:1..3:12 anchor=null attributes={} children=3
+    ├── Text scope=3:1..3:6 anchor=null attributes={} literal="a <!--" children=0
+    ├── HTML scope=3:7..3:10 anchor=null attributes={} literal="<!l>" children=0
+    └── Text scope=3:11..3:12 anchor=null attributes={} literal=" b" children=0
+````````````````````````````````
+
+```````````````````````````````` departure dialect-citations.txt 52
+An attribute container owns its bytes, its backtick included, and only
+braces owned by code or HTML tokens do not count in a braced key
+(citations.md); C pairs the container's backtick with the key's as a code
+span when it scans the key, so the key has no braces of its own.
+.
+Document scope=1:1..1:11 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:11 anchor=null attributes={} children=3
+    ├── Code scope=1:1..1:6 anchor=null attributes={`="true"} literal="a" children=0
+    ├── Text scope=1:7..1:7 anchor=null attributes={} literal=" " children=0
+    └── Cite scope=1:8..1:11 anchor=null attributes={} children=1
+        └── Citation scope=1:8..1:11 anchor=null attributes={} referent=bib(key="`",mode=authorInText) children=0
+            ├── CitationPrefix children=0
+            └── CitationSuffix children=0
+````````````````````````````````
+
+```````````````````````````````` departure dialect-tables.txt 35
+The head row is the paragraph's last line when the delimiter row has as
+many cells (GFM 4.10); cmark-gfm tries a paragraph once, so after the
+failed try at `-|-` under `e` it never makes the next `-|-` a table.
+.
+Document scope=1:1..3:3 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:1 anchor=null attributes={} children=1
+│   └── Text scope=1:1..1:1 anchor=null attributes={} literal="e" children=0
+└── Table scope=2:1..3:3 anchor=null attributes={} columns=[none,none] children=1
+    ├── TableHead children=1
+    │   └── TableRow scope=2:1..2:3 anchor=null attributes={} children=2
+    │       ├── TableCell scope=2:1..2:1 anchor=null attributes={} children=1
+    │       │   └── Text scope=2:1..2:1 anchor=null attributes={} literal="-" children=0
+    │       └── TableCell scope=2:3..2:3 anchor=null attributes={} children=1
+    │           └── Text scope=2:3..2:3 anchor=null attributes={} literal="-" children=0
+    └── TableBody children=0
+````````````````````````````````
+
+```````````````````````````````` departure regression.txt 94
+An HTML comment is `<!--`, text that does not hold `-->`, and `-->`
+(CommonMark 6.6), so `<!----->` is one, with the text `-`; cmark leaves it
+text and C follows cmark.
+.
+Document scope=1:1..1:9 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:9 anchor=null attributes={} children=2
+    ├── Text scope=1:1..1:1 anchor=null attributes={} literal="x" children=0
+    └── Comment scope=1:2..1:9 anchor=null attributes={} literal="-" children=0
+````````````````````````````````
+
+```````````````````````````````` departure regression.txt 95
+`<!--` with no `-->` after it opens no comment, and the `<!l>` after it is a
+declaration (CommonMark 6.6); cmark leaves both text and C follows cmark.
+.
+Document scope=1:1..1:9 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:9 anchor=null attributes={} children=2
+    ├── Text scope=1:1..1:5 anchor=null attributes={} literal="a<!--" children=0
+    └── HTML scope=1:6..1:9 anchor=null attributes={} literal="<!l>" children=0
+````````````````````````````````
+
+```````````````````````````````` departure regression.txt 96
+A backtick string is neither preceded nor followed by a backtick (CommonMark
+6.1), so after the code span `c` the single backticks around `r` make another;
+cmark misses it and C follows cmark.
+.
+Document scope=1:1..1:10 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:10 anchor=null attributes={} children=4
+    ├── Text scope=1:1..1:3 anchor=null attributes={} literal="``u" children=0
+    ├── Code scope=1:4..1:6 anchor=null attributes={} literal="c" children=0
+    ├── Text scope=1:7..1:7 anchor=null attributes={} literal="d" children=0
+    └── Code scope=1:8..1:10 anchor=null attributes={} literal="r" children=0
+````````````````````````````````
+
+```````````````````````````````` departure regression.txt 97
+Links may not contain other links (CommonMark 6.3): the inner `[]()` makes the
+bracket before it inactive, so that bracket is text; cmark nests the links and
+C follows cmark.
+.
+Document scope=1:1..1:10 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:10 anchor=null attributes={} children=3
+    ├── Text scope=1:1..1:1 anchor=null attributes={} literal="[" children=0
+    ├── Link scope=1:2..1:5 anchor=null attributes={} dest=url("") title=null children=0
+    └── Text scope=1:6..1:10 anchor=null attributes={} literal="[]]()" children=0
+````````````````````````````````
+
+```````````````````````````````` departure regression.txt 98
+An extended email autolink's domain holds at least one period (GFM 6.9), and
+`a` holds none; cmark-gfm links `.b@a` and C follows cmark-gfm.
+.
+Document scope=1:1..1:6 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:6 anchor=null attributes={} children=1
+    └── Text scope=1:1..1:6 anchor=null attributes={} literal="d@.b@a" children=0
+````````````````````````````````
+
+```````````````````````````````` departure regression.txt 99
+An xmpp autolink is `xmpp:` followed by a valid email autolink (GFM 6.9), and
+`@.o` has no local part; cmark-gfm links it and C follows cmark-gfm.
+.
+Document scope=1:1..1:8 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:8 anchor=null attributes={} children=1
+    └── Text scope=1:1..1:8 anchor=null attributes={} literal="xmpp:@.o" children=0
+````````````````````````````````
+
+```````````````````````````````` departure elements-formula-conflicts.txt 11
+A `$` body that begins with a backtick must end with one, and an unmatched
+opener releases its source (formulas.md), so the second `$` can open `$d$`; C
+keeps the rejected pair and leaves the rest text.
+.
+Document scope=1:1..1:5 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:5 anchor=null attributes={} children=2
+    ├── Text scope=1:1..1:2 anchor=null attributes={} literal="$`" children=0
+    └── Formula scope=1:3..1:5 anchor=null attributes={} mode=embedded literal="d" children=0
+````````````````````````````````
+
+```````````````````````````````` departure dialect-citations.txt 53
+The code span's attribute block takes the backtick inside it, so no code span
+owns the braces of the braced key `@{`}` (citations.md); C pairs the backticks
+before the attribute block takes its own and leaves the citation text.
+.
+Document scope=1:1..1:10 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:10 anchor=null attributes={} children=2
+    ├── Code scope=1:1..1:6 anchor=null attributes={`="true"} literal="a" children=0
+    └── Cite scope=1:7..1:10 anchor=null attributes={} children=1
+        └── Citation scope=1:7..1:10 anchor=null attributes={} referent=bib(key="`",mode=authorInText) children=0
+            ├── CitationPrefix children=0
+            └── CitationSuffix children=0
+````````````````````````````````
+
+```````````````````````````````` departure regression.txt 100
+No underscore may be in the last two segments of an extended autolink's valid
+domain (GFM 6.9), and `m_` and `c_` hold one; cmark-gfm links the text before
+the underscore and C follows cmark-gfm.
+.
+Document scope=1:1..1:22 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:22 anchor=null attributes={} children=1
+    └── Text scope=1:1..1:22 anchor=null attributes={} literal="www.m_ and http://m.c_" children=0
+````````````````````````````````
+
+```````````````````````````````` departure regression.txt 101
+A mailto autolink is `mailto:` followed by a valid email autolink (GFM 6.9),
+and `@.c` has no local part; cmark-gfm links it and C follows cmark-gfm.
+.
+Document scope=1:1..1:10 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:10 anchor=null attributes={} children=1
+    └── Text scope=1:1..1:10 anchor=null attributes={} literal="mailto:@.c" children=0
+````````````````````````````````
+
+```````````````````````````````` departure regression.txt 103
+A link label must contain a character that is not a space, tab, or line ending
+(CommonMark 6.3), so `[ ]` is no label and not the `[]` of a collapsed
+reference: `[foo]` is a shortcut reference followed by the text `[ ]`. cmark
+reads `[ ]` as collapsed.
+.
+Document scope=1:1..3:9 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:8 anchor=null attributes={} children=2
+│   ├── Link scope=1:1..1:5 anchor=null attributes={} dest=reference("foo") title=null children=1
+│   │   └── Text scope=1:2..1:4 anchor=null attributes={} literal="foo" children=0
+│   └── Text scope=1:6..1:8 anchor=null attributes={} literal="[ ]" children=0
+└── Reference scope=3:1..3:9 anchor=null attributes={} label="foo" dest=url("/l") title=null children=0
+````````````````````````````````
+
+```````````````````````````````` departure regression.txt 104
+The language is the first space/tab-delimited token of the decoded info string
+(code.md); a decoded line feed is neither, so the language is the line feed. C
+trims it as whitespace and has no language.
+.
+Document scope=1:1..1:8 anchor=null attributes={} children=1
+└── CodeBlock scope=1:1..1:8 anchor=null attributes={} info="\n" language="\n" literal="" fenced=true closed=false children=0
+````````````````````````````````
+
+```````````````````````````````` departure dialect-directives.txt 33
+Only an unmatched opening quote is part of an unquoted value
+(attributes.md); this quote is matched, so the value is `}` and the container
+never closes: it is invalid and the line stays text, as in remark-directive.
+C retries the matched quote as an unquoted value ending at the `}`, here and
+after any owner (`` `x`{k="}"} ``).
+.
+Document scope=1:1..1:8 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:8 anchor=null attributes={} children=1
+    └── Text scope=1:1..1:8 anchor=null attributes={} literal=":n{k=\"}\"" children=0
+````````````````````````````````
+
+```````````````````````````````` departure dialect-citations.txt 58
+A bracket holding a key is a citation group, and an inline note in it is
+prefix content, as in Pandoc (citations.md: inline notes are opaque children).
+C reads `[` as text and the note and `@b` as separate citations.
+.
+Document scope=1:1..1:9 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:9 anchor=null attributes={} children=1
+    └── Cite scope=1:1..1:9 anchor=null attributes={} children=1
+        └── Citation scope=1:2..1:8 anchor=null attributes={} referent=bib(key="b",mode=normal) children=0
+            ├── CitationPrefix children=1
+            │   └── Cite scope=1:2..1:6 anchor=null attributes={} children=1
+            │       └── Citation scope=1:4..1:5 anchor=null attributes={} referent=footnote(note) children=0
+            │           ├── Footnote scope=1:2..1:6 anchor=null attributes={} label=null children=1
+            │           │   └── Text scope=1:4..1:5 anchor=null attributes={} literal="[]" children=0
+            │           ├── CitationPrefix children=0
+            │           └── CitationSuffix children=0
+            └── CitationSuffix children=0
+````````````````````````````````
+
+```````````````````````````````` departure regression.txt 110
+The domain is `www._..`; its last two segments are empty, so no underscore is
+in them (GFM 6.9), and the trailing punctuation `._..` is not part of the
+literal: the link is `www`. cmark-gfm keeps the text, and C follows cmark-gfm.
+.
+Document scope=1:1..1:7 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:7 anchor=null attributes={} children=2
+    ├── Link scope=1:1..1:3 anchor=null attributes={} dest=url("http://www") title=null children=1
+    │   └── Text scope=1:1..1:3 anchor=null attributes={} literal="www" children=0
+    └── Text scope=1:4..1:7 anchor=null attributes={} literal="._.." children=0
+````````````````````````````````
+
+```````````````````````````````` departure regression.txt 112
+A backslash before ASCII punctuation is an escape in an info string
+(CommonMark 2.4, 4.5), so `\&` is a literal `&` and `&uml;` is no character
+reference: the info string is `&uml;`. cmark decodes the reference first and
+keeps the backslash, and C follows cmark.
+.
+Document scope=1:1..1:9 anchor=null attributes={} children=1
+└── CodeBlock scope=1:1..1:9 anchor=null attributes={} info="&uml;" language="&uml;" literal="" fenced=true closed=false children=0
+````````````````````````````````
+
+```````````````````````````````` departure regression.txt 113
+An extended email autolink's domain needs at least one period (GFM 6.9); `a`
+has none, so nothing links. cmark-gfm links `.c@a`, and C follows cmark-gfm.
+.
+Document scope=1:1..1:10 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:10 anchor=null attributes={} children=1
+    └── Text scope=1:1..1:10 anchor=null attributes={} literal="a@.c@a" children=0
+````````````````````````````````
+
+```````````````````````````````` departure dialect-citations.txt 60
+An inline note's body must hold more than spaces and tabs (footnotes.md), so
+`^[]` is text, and the bracket holding `@b` is a citation group with the
+prefix `^[]`. C keeps the whole as text with an author-in-text citation;
+Pandoc reads an empty note.
+.
+Document scope=1:1..1:7 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:7 anchor=null attributes={} children=1
+    └── Cite scope=1:1..1:7 anchor=null attributes={} children=1
+        └── Citation scope=1:2..1:6 anchor=null attributes={} referent=bib(key="b",mode=normal) children=0
+            ├── CitationPrefix children=1
+            │   └── Text scope=1:2..1:4 anchor=null attributes={} literal="^[]" children=0
+            └── CitationSuffix children=0
+````````````````````````````````
+
+```````````````````````````````` departure regression.txt 118
+A code span begins with a backtick string and ends with the next backtick
+string of equal length (CommonMark 6.1), so after the code span `x` the
+backticks around `;` make another; cmark remembers that it found no closer of
+length one while it looked for one for the escaped fence's two backticks, and
+C follows cmark.
+.
+Document scope=1:1..2:7 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..2:7 anchor=null attributes={} children=5
+    ├── Text scope=1:1..1:4 anchor=null attributes={} literal="```" children=0
+    ├── SoftBreak scope=1:5..2:0 anchor=null attributes={} children=0
+    ├── Code scope=2:1..2:3 anchor=null attributes={} literal="x" children=0
+    ├── Text scope=2:4..2:4 anchor=null attributes={} literal="e" children=0
+    └── Code scope=2:5..2:7 anchor=null attributes={} literal=";" children=0
+````````````````````````````````
+
+```````````````````````````````` departure dialect-citations.txt 61
+The formula `a` ends at the second `$`, and the braced key `@{a}` after it is
+an author-in-text citation (citations.md); the last backtick has no closer and
+is text. C pairs that backtick with the formula's as a code span and keeps the
+key as text.
+.
+Document scope=1:1..1:9 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:9 anchor=null attributes={} children=3
+    ├── Formula scope=1:1..1:4 anchor=null attributes={} mode=embedded literal="a`" children=0
+    ├── Cite scope=1:5..1:8 anchor=null attributes={} children=1
+    │   └── Citation scope=1:5..1:8 anchor=null attributes={} referent=bib(key="a",mode=authorInText) children=0
+    │       ├── CitationPrefix children=0
+    │       └── CitationSuffix children=0
+    └── Text scope=1:9..1:9 anchor=null attributes={} literal="`" children=0
+````````````````````````````````
+
+```````````````````````````````` departure dialect-tables.txt 36
+A table is a header row, a delimiter row, and body rows (GFM 4.10); `-|-` is a
+row of two cells, so over the delimiter row `-|-` it is a table's header,
+which ends the paragraph `a`. cmark-gfm, having refused the first `-|-` as a
+delimiter row for `a`, keeps the lines as text, and C follows cmark-gfm.
+.
+Document scope=1:1..3:3 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:1 anchor=null attributes={} children=1
+│   └── Text scope=1:1..1:1 anchor=null attributes={} literal="a" children=0
+└── Table scope=2:1..3:3 anchor=null attributes={} columns=[none,none] children=1
+    ├── TableHead children=1
+    │   └── TableRow scope=2:1..2:3 anchor=null attributes={} children=2
+    │       ├── TableCell scope=2:1..2:1 anchor=null attributes={} children=1
+    │       │   └── Text scope=2:1..2:1 anchor=null attributes={} literal="-" children=0
+    │       └── TableCell scope=2:3..2:3 anchor=null attributes={} children=1
+    │           └── Text scope=2:3..2:3 anchor=null attributes={} literal="-" children=0
+    └── TableBody children=0
+````````````````````````````````
+
+```````````````````````````````` departure regression.txt 122
+A link may not contain another link (CommonMark 6.3): when `[]()` becomes a
+link, every `[` opener before it is deactivated, so the `]` before the last
+`()` finds the opener at the start inactive and is literal. cmark nests the
+first opener's link around the inner one, and C follows cmark.
+.
+Document scope=1:1..1:12 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:12 anchor=null attributes={} children=3
+    ├── Text scope=1:1..1:3 anchor=null attributes={} literal="[]" children=0
+    ├── Link scope=1:4..1:7 anchor=null attributes={} dest=url("") title=null children=0
+    └── Text scope=1:8..1:12 anchor=null attributes={} literal="[]]()" children=0
+````````````````````````````````
+
+```````````````````````````````` departure dialect-tables.txt 37
+A table is a header row, a delimiter row, and body rows (GFM 4.10); `-|-` is a
+row of two cells, so over the delimiter row `-|-` it is a table's header,
+which ends the paragraph `-+`. cmark-gfm, having refused the first `-|-` as a
+delimiter row for `-+`, keeps the lines as text, and C follows cmark-gfm.
+.
+Document scope=1:1..3:3 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:2 anchor=null attributes={} children=1
+│   └── Text scope=1:1..1:2 anchor=null attributes={} literal="-+" children=0
+└── Table scope=2:1..3:3 anchor=null attributes={} columns=[none,none] children=1
+    ├── TableHead children=1
+    │   └── TableRow scope=2:1..2:3 anchor=null attributes={} children=2
+    │       ├── TableCell scope=2:1..2:1 anchor=null attributes={} children=1
+    │       │   └── Text scope=2:1..2:1 anchor=null attributes={} literal="-" children=0
+    │       └── TableCell scope=2:3..2:3 anchor=null attributes={} children=1
+    │           └── Text scope=2:3..2:3 anchor=null attributes={} literal="-" children=0
+    └── TableBody children=0
+````````````````````````````````
+
+```````````````````````````````` departure dialect-tables.txt 38
+A table is a header row, a delimiter row, and body rows (GFM 4.10); `i` is a
+row of one cell, so over the delimiter row `-|` it is a table's header, which
+ends the paragraph. cmark-gfm, having refused `-|-` as a delimiter row for
+`c`, keeps the lines as text, and C follows cmark-gfm.
+.
+Document scope=1:1..4:2 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..2:3 anchor=null attributes={} children=3
+│   ├── Text scope=1:1..1:1 anchor=null attributes={} literal="c" children=0
+│   ├── SoftBreak scope=1:2..2:0 anchor=null attributes={} children=0
+│   └── Text scope=2:1..2:3 anchor=null attributes={} literal="-|-" children=0
+└── Table scope=3:1..4:2 anchor=null attributes={} columns=[none] children=1
+    ├── TableHead children=1
+    │   └── TableRow scope=3:1..3:1 anchor=null attributes={} children=1
+    │       └── TableCell scope=3:1..3:1 anchor=null attributes={} children=1
+    │           └── Text scope=3:1..3:1 anchor=null attributes={} literal="i" children=0
+    └── TableBody children=0
+````````````````````````````````
+
+```````````````````````````````` departure regression.txt 124
+A code span begins with a backtick string and ends with the next backtick
+string of equal length (CommonMark 6.1): ``` `` ``` finds no closer and is
+literal, then the two pairs of single backticks are code spans. cmark, having
+scanned for ``` `` ``` once, keeps the last pair as text, and C follows cmark.
+.
+Document scope=1:1..1:10 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:10 anchor=null attributes={} children=4
+    ├── Text scope=1:1..1:3 anchor=null attributes={} literal="``x" children=0
+    ├── Code scope=1:4..1:6 anchor=null attributes={} literal=" " children=0
+    ├── Text scope=1:7..1:7 anchor=null attributes={} literal="x" children=0
+    └── Code scope=1:8..1:10 anchor=null attributes={} literal=" " children=0
+````````````````````````````````
+
+```````````````````````````````` departure regression.txt 125
+A mailto autolink is `mailto:` followed by a valid email autolink (GFM 6.9);
+`l@o` is none, so `mailto:l@` is text, and `o@.b`, a valid email autolink,
+links to `mailto:o@.b`. cmark-gfm gives it the destination `o@.b`, and C
+follows cmark-gfm.
+.
+Document scope=1:1..1:13 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:13 anchor=null attributes={} children=2
+    ├── Text scope=1:1..1:9 anchor=null attributes={} literal="mailto:l@" children=0
+    └── Link scope=1:10..1:13 anchor=null attributes={} dest=url("mailto:o@.b") title=null children=1
+        └── Text scope=1:10..1:13 anchor=null attributes={} literal="o@.b" children=0
+````````````````````````````````
+
+```````````````````````````````` departure regression.txt 126
+A link may not contain another link (CommonMark 6.3), and an extended autolink
+is a link, so inside link text `a@.c` is text, as it is in `[a@.c]()`. cmark-
+gfm links it after an autolink in the same text, and C follows cmark-gfm.
+.
+Document scope=1:1..1:13 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:13 anchor=null attributes={} children=1
+    └── Link scope=1:1..1:13 anchor=null attributes={} dest=url("") title=null children=2
+        ├── Link scope=1:2..1:6 anchor=null attributes={} dest=url("mailto:O@Z") title=null children=1
+        │   └── Text scope=1:3..1:5 anchor=null attributes={} literal="O@Z" children=0
+        └── Text scope=1:7..1:10 anchor=null attributes={} literal="a@.c" children=0
+````````````````````````````````
+
+```````````````````````````````` departure dialect-attributes.txt 50
+A NUL byte is an ordinary character of the input, which the AST keeps as
+written; only an HTML renderer writes U+FFFD for it (owner ruling 2026-11-24).
+C replaces it with U+FFFD while parsing, as cmark does (CommonMark 2.3).
+.
+Document scope=1:1..3:3 anchor=null attributes={} children=1
+└── CodeBlock scope=1:1..3:3 anchor=null attributes={} info="\u0000 python {.x} y" language="\u0000" literal="z\n" fenced=true closed=true children=0
+````````````````````````````````
+
+```````````````````````````````` departure dialect-attributes.txt 51
+A NUL byte is an ordinary character of the input, which the AST keeps as
+written; only an HTML renderer writes U+FFFD for it (owner ruling 2026-11-24).
+C replaces it with U+FFFD while parsing, as cmark does (CommonMark 2.3).
+.
+Document scope=1:1..15:3 anchor=null attributes={} children=4
+├── CodeBlock scope=1:1..3:3 anchor="code" attributes={.c} info=null language=null literal="x\n" fenced=true closed=true children=0
+├── CodeBlock scope=5:1..7:3 anchor=null attributes={.numberLines startFrom="10"} info="C++" language="C++" literal="x\n" fenced=true closed=true children=0
+├── CodeBlock scope=9:1..11:3 anchor=null attributes={} info="\u0000 Python {.}" language="\u0000" literal="y\n" fenced=true closed=true children=0
+└── CodeBlock scope=13:1..15:3 anchor=null attributes={} info="lang {#unclosed" language="lang" literal="y\n" fenced=true closed=true children=0
+````````````````````````````````
+
+```````````````````````````````` departure dialect-attributes.txt 52
+A NUL byte is an ordinary character of the input, which the AST keeps as
+written; only an HTML renderer writes U+FFFD for it (owner ruling 2026-11-24).
+C replaces it with U+FFFD while parsing, as cmark does (CommonMark 2.3).
+.
+Document scope=1:1..13:4 anchor=null attributes={} children=4
+├── Paragraph scope=1:1..5:13 anchor=null attributes={} children=9
+│   ├── Text scope=1:1..1:10 anchor=null attributes={} literal="\u0000<![CDATA[" children=0
+│   ├── SoftBreak scope=1:11..2:0 anchor=null attributes={} children=0
+│   ├── Text scope=2:1..2:21 anchor=null attributes={} literal="function matchwo(a,b)" children=0
+│   ├── SoftBreak scope=2:22..3:0 anchor=null attributes={} children=0
+│   ├── Text scope=3:1..3:1 anchor=null attributes={} literal="{" children=0
+│   ├── SoftBreak scope=3:2..4:0 anchor=null attributes={} children=0
+│   ├── Text scope=4:3..4:28 anchor=null attributes={} literal="if (a < b && a < 0) then {" children=0
+│   ├── SoftBreak scope=4:29..5:0 anchor=null attributes={} children=0
+│   └── Text scope=5:5..5:13 anchor=null attributes={} literal="return 1;" children=0
+├── Paragraph scope=7:3..7:10 anchor=null attributes={} children=1
+│   └── Text scope=7:3..7:10 anchor=null attributes={} literal="} else {" children=0
+├── CodeBlock scope=9:5..9:13 anchor=null attributes={} info=null language=null literal="return 0;\n" fenced=false closed=true children=0
+└── Paragraph scope=10:3..13:4 anchor=null attributes={} children=7
+    ├── Text scope=10:3..10:3 anchor=null attributes={} literal="}" children=0
+    ├── SoftBreak scope=10:4..11:0 anchor=null attributes={} children=0
+    ├── Text scope=11:1..11:1 anchor=null attributes={} literal="}" children=0
+    ├── SoftBreak scope=11:2..12:0 anchor=null attributes={} children=0
+    ├── Text scope=12:1..12:3 anchor=null attributes={} literal="]]>" children=0
+    ├── SoftBreak scope=12:4..13:0 anchor=null attributes={} children=0
+    └── Text scope=13:1..13:4 anchor=null attributes={} literal="okay" children=0
+````````````````````````````````
+
+```````````````````````````````` departure regression.txt 130
+A CDATA section is `<![CDATA[`, text that does not hold `]]>`, and `]]>`
+(CommonMark 6.6), so `<![CDATA[>&<]]]>` is one, with the text `>&<]`. cmark
+reads `]]]` as no part of the text, finds no `]]>` after it, and keeps the
+whole as text; C follows cmark.
+.
+Document scope=1:1..1:20 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:20 anchor=null attributes={} children=2
+    ├── Text scope=1:1..1:4 anchor=null attributes={} literal="foo " children=0
+    └── HTML scope=1:5..1:20 anchor=null attributes={} literal="<![CDATA[>&<]]]>" children=0
+````````````````````````````````
+
+```````````````````````````````` departure regression.txt 131
+A NUL byte is an ordinary character of the input, which the AST keeps as
+written; only an HTML renderer writes U+FFFD for it (owner ruling 2026-11-24).
+C replaces it with U+FFFD while parsing, as cmark does (CommonMark 2.3).
+.
+Document scope=1:1..1:20 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:20 anchor=null attributes={} children=1
+    └── Text scope=1:1..1:20 anchor=null attributes={} literal="foo <![CDATA[>&<]]\u0000>" children=0
+````````````````````````````````
+
+```````````````````````````````` departure regression.txt 137
+A link label holds at most 999 characters (CommonMark 6.3), and this shortcut
+reference holds 1000; cmark counts at most 1000 bytes.
+.
+Document scope=1:1..3:1002 anchor=null attributes={} children=2
+├── Reference scope=1:1..1:9 anchor=null attributes={} label="a b" dest=url("/u") title=null children=0
+└── Paragraph scope=3:1..3:1002 anchor=null attributes={} children=1
+    └── Text scope=3:1..3:1002 anchor=null attributes={} literal="[a                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      b]" children=0
+````````````````````````````````
+
+```````````````````````````````` departure regression.txt 138
+A link label holds at most 999 characters (CommonMark 6.3), and these labels
+hold 999, in 1998 bytes; cmark counts at most 1000 bytes, so neither is a
+label to C.
+.
+Document scope=1:1..3:2000 anchor=null attributes={} children=2
+├── Reference scope=1:1..1:2004 anchor=null attributes={} label="ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé" dest=url("/u") title=null children=0
+└── Paragraph scope=3:1..3:2000 anchor=null attributes={} children=1
+    └── Link scope=3:1..3:2000 anchor=null attributes={} dest=reference("ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé") title=null children=1
+        └── Text scope=3:2..3:1999 anchor=null attributes={} literal="ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé" children=0
+````````````````````````````````

@@ -50,7 +50,7 @@ jobs:
             - name: Install JavaScript dependencies
               run: pnpm install --frozen-lockfile
             - name: Check prepared repository environment
-              run: scripts/tooling/setup-environment.sh --check node java wrappers dependencies
+              run: scripts/tools/setup-environment.sh --check node java wrappers dependencies
             - name: Check cross-platform contracts
               run: pnpm check:contracts
             - name: Audit test layout and public surface
@@ -68,9 +68,7 @@ jobs:
                   pnpm audit:allocator-seam
                   pnpm audit:source-lists
                   pnpm audit:node-kinds
-                  pnpm audit:incremental-set
                   pnpm audit:ast-projections
-                  pnpm audit:context-coverage
 
     health-check-c:
         needs: changes
@@ -88,7 +86,7 @@ jobs:
                   version: 11.28.7
             - name: Install C health-check dependencies
               run: |
-                  scripts/tooling/install-clang-format.sh
+                  scripts/tools/install-clang-format.sh
                   sudo apt-get update
                   sudo apt-get install --no-install-recommends --yes valgrind
                   pnpm install --frozen-lockfile
@@ -193,7 +191,7 @@ jobs:
                   sdkmanager "platforms;android-36" "cmake;3.22.1" "ndk;28.2.13676358"
                   pnpm install --frozen-lockfile
             - name: Check prepared package-audit environment
-              run: scripts/tooling/setup-environment.sh --check core node java wrappers android emscripten dependencies
+              run: scripts/tools/setup-environment.sh --check core node java wrappers android emscripten dependencies
             - name: Audit installed and published package contents
               run: pnpm audit:packages
 
@@ -215,11 +213,39 @@ jobs:
                   run_install: false
                   version: 11.28.7
             - name: Check prepared Swift environment
-              run: scripts/tooling/setup-environment.sh --check node wrappers swift
+              run: scripts/tools/setup-environment.sh --check node wrappers swift
             - name: Check Swift formatting
-              run: scripts/tooling/format-swift.sh --check
+              run: scripts/tools/format-swift.sh --check
             - name: Lint Swift
-              run: scripts/tooling/lint-swift.sh
+              run: scripts/tools/lint-swift.sh
+
+    health-check-rust:
+        needs: changes
+        if: ${{ needs.changes.outputs.required == 'true' }}
+        name: Health Check - Rust
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  persist-credentials: false
+            - name: Install the pinned Rust toolchain
+              run: scripts/tools/setup-environment.sh --install rust
+            - name: Check prepared Rust environment
+              run: scripts/tools/setup-environment.sh --check rust
+            - name: Check Rust formatting
+              run: scripts/tools/format-rust.sh --check
+            - name: Lint Rust
+              run: scripts/tools/lint-rust.sh
+            - name: Check Rust call cycles
+              run: node scripts/tools/check-rust-recursion.mjs
+            - name: Check Rust transition coverage
+              run: node scripts/correctness/cover.mjs --check
+            - name: Install callgrind
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install --no-install-recommends --yes valgrind
+            - name: Check Rust parse cost is linear
+              run: node scripts/correctness/check-rust-linear.mjs
 
     health-checks-ready:
         name: Health Checks - Ready
@@ -229,6 +255,7 @@ jobs:
             - health-check-es
             - health-check-kotlin
             - health-check-swift
+            - health-check-rust
         runs-on: ubuntu-latest
         steps:
             - name: Release checked source to build producers
@@ -988,11 +1015,6 @@ jobs:
                       suite: conformance
                       label: Linux · Clang · Shared · Conformance
                     - os: ubuntu-latest
-                      compiler: clang
-                      shared: "ON"
-                      suite: incremental
-                      label: Linux · Clang · Shared · Incremental
-                    - os: ubuntu-latest
                       compiler: gcc
                       shared: "OFF"
                       suite: correctness
@@ -1002,11 +1024,6 @@ jobs:
                       shared: "OFF"
                       suite: conformance
                       label: Linux · GCC · Static · Conformance
-                    - os: ubuntu-latest
-                      compiler: gcc
-                      shared: "OFF"
-                      suite: incremental
-                      label: Linux · GCC · Static · Incremental
                     - os: macos-latest
                       compiler: clang
                       shared: "ON"
@@ -1017,11 +1034,6 @@ jobs:
                       shared: "ON"
                       suite: conformance
                       label: macOS · Clang · Shared · Conformance
-                    - os: macos-latest
-                      compiler: clang
-                      shared: "ON"
-                      suite: incremental
-                      label: macOS · Clang · Shared · Incremental
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
             - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -1043,8 +1055,6 @@ jobs:
                       label: Windows · Static · Correctness
                     - suite: conformance
                       label: Windows · Static · Conformance
-                    - suite: incremental
-                      label: Windows · Static · Incremental
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
             - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -1132,6 +1142,24 @@ jobs:
             - name: Release build-tested artifacts to parallel test consumers
               run: echo "Every platform build test passed."
 
+    rust-test:
+        needs: changes
+        if: ${{ needs.changes.outputs.required == 'true' }}
+        name: Test - Rust
+        runs-on: ubuntu-latest
+        defaults:
+            run:
+                working-directory: packages/markdown-core-rs
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  persist-credentials: false
+            - name: Install the pinned Rust toolchain
+              working-directory: .
+              run: scripts/tools/setup-environment.sh --install rust
+            - name: Test the Rust core
+              run: cargo test --locked
+
     tests-ready:
         name: Tests - Ready
         if: ${{ always() && needs.changes.outputs.required == 'true' }}
@@ -1145,6 +1173,7 @@ jobs:
             - c-test-windows
             - c-debug-test
             - c-sanitizer-test
+            - rust-test
         runs-on: ubuntu-latest
         steps:
             - name: Require every platform test
@@ -1157,6 +1186,7 @@ jobs:
                   C_TEST_WINDOWS: ${{ needs.c-test-windows.result }}
                   C_DEBUG_TEST: ${{ needs.c-debug-test.result }}
                   C_SANITIZER_TEST: ${{ needs.c-sanitizer-test.result }}
+                  RUST_TEST: ${{ needs.rust-test.result }}
               run: |
                   for result in \
                       "$SWIFT_TEST" \
@@ -1166,7 +1196,8 @@ jobs:
                       "$C_TEST" \
                       "$C_TEST_WINDOWS" \
                       "$C_DEBUG_TEST" \
-                      "$C_SANITIZER_TEST"
+                      "$C_SANITIZER_TEST" \
+                      "$RUST_TEST"
                   do
                       if [ "$result" != success ]; then
                           echo "A required test dependency concluded: $result" >&2
@@ -1197,7 +1228,7 @@ jobs:
             - name: Build this parser
               run: pnpm build:c
             - name: Build the pinned parser oracles
-              run: scripts/tooling/setup-environment.sh --install oracle-cmark oracle-cmark-gfm oracle-pandoc
+              run: scripts/tools/setup-environment.sh --install oracle-cmark oracle-cmark-gfm oracle-pandoc
             - name: Compare CommonMark against current cmark
               run: pnpm check:commonmark-parity
             - name: Compare GFM extensions against cmark-gfm

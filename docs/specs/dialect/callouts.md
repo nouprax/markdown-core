@@ -34,6 +34,25 @@ Types contain one or more ASCII letters, digits, underscores, or hyphens.
 They are preserved exactly, including case. `[!NOTE]` and custom types are
 accepted, with no built-in list, alias mapping, icon, color, or generated title.
 
+## Attributes
+
+An [attribute container](attributes.md) that ends the marker line, after
+the title and the spaces or tabs before it, belongs to the callout:
+
+```markdown
+> [!note] Read **carefully** {#careful .compact}
+> This is the body.
+
+> [!tip]- {.quiet}
+> Folded.
+```
+
+The first callout has anchor `careful` and class `compact`, and its title is
+`Read` and strong `carefully`. The second has class `quiet` and a null
+title. A token of the title that owns the brace, such as a code span, keeps
+it, an escaped brace is text, and a container followed by other text stays
+in the title. An ordinary quote's first line takes no container.
+
 ## Fold state
 
 Put `+` or `-` immediately after the marker:

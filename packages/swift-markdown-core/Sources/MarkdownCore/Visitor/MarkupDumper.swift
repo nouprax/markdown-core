@@ -104,7 +104,6 @@ private struct LineVisitor: MarkupVisitor {
             fields: [
                 "flavor=\(node.flavor.rawValue)",
                 "start=\(node.start.map(String.init) ?? "null")",
-                "variant=\(dump(variant: node.variant))",
                 "delimiter=\(dump(delimiter: node.delimiter))",
                 "tight=\(dump(boolean: node.tight))",
             ],
@@ -113,7 +112,7 @@ private struct LineVisitor: MarkupVisitor {
     }
 
     mutating func visit(_ node: ListItem, phase: MarkupVisitPhase) {
-        line("ListItem", node, fields: ["marker=\(dump(optional: node.marker))"], children: node.content.count)
+        line("ListItem", node, fields: ["status=\(node.status?.rawValue ?? "null")"], children: node.content.count)
     }
 
     mutating func visit(_ node: CodeBlock, phase: MarkupVisitPhase) {
@@ -148,7 +147,7 @@ private struct LineVisitor: MarkupVisitor {
     }
 
     mutating func visit(_ node: DirectiveBlock, phase: MarkupVisitPhase) {
-        line("DirectiveBlock", node, fields: ["name=\(dump(optional: node.name))"], children: node.content.count)
+        line("DirectiveBlock", node, fields: ["name=\(dump(escaped: node.name))"], children: node.content.count)
     }
 
     mutating func visit(_ node: DirectiveLabel, phase: MarkupVisitPhase) {
@@ -183,9 +182,9 @@ private struct LineVisitor: MarkupVisitor {
         )
     }
 
-    mutating func visit(_ node: CrossEmbedded, phase: MarkupVisitPhase) {
+    mutating func visit(_ node: CrossEmbed, phase: MarkupVisitPhase) {
         line(
-            "CrossEmbedded",
+            "CrossEmbed",
             node,
             fields: [
                 "dest=\(dump(destination: node.dest))",
@@ -245,9 +244,9 @@ private struct LineVisitor: MarkupVisitor {
         )
     }
 
-    mutating func visit(_ node: Embedded, phase: MarkupVisitPhase) {
+    mutating func visit(_ node: Embed, phase: MarkupVisitPhase) {
         line(
-            "Embedded",
+            "Embed",
             node,
             fields: [
                 "dest=\(dump(destination: node.dest))",
@@ -282,18 +281,6 @@ private struct LineVisitor: MarkupVisitor {
 
     mutating func visit(_ node: Footnote, phase: MarkupVisitPhase) {
         line("Footnote", node, fields: ["label=\(dump(optional: node.label))"], children: node.content.count)
-    }
-
-    mutating func visit(_ node: Specimen, phase: MarkupVisitPhase) {
-        line(
-            "Specimen",
-            node,
-            fields: [
-                "label=\(dump(optional: node.label))",
-                "start=\(node.start.map(String.init) ?? "null")",
-            ],
-            children: node.content.count
-        )
     }
 
     mutating func visit(_ node: Metadata, phase: MarkupVisitPhase) {
@@ -349,7 +336,6 @@ private func dump(referent value: CitationReferent) -> String {
     case .bib(let key, let mode): "bib(key=\(dump(escaped: key)),mode=\(mode.rawValue))"
     case .footnote(.label(let label)): "footnote(label=\(dump(escaped: label)))"
     case .footnote(.note): "footnote(note)"
-    case .specimen(let label): "specimen(label=\(dump(escaped: label)))"
     }
 }
 
@@ -363,22 +349,7 @@ private func dump(destination value: Destination) -> String {
 }
 
 private func dump(delimiter value: OrderedListDelimiter?) -> String {
-    switch value {
-    case .period: "period"
-    case .parenthesis(let closed): "parenthesis(closed=\(dump(boolean: closed)))"
-    case .default: "default"
-    case nil: "null"
-    }
-}
-
-private func dump(variant value: OrderedListVariant?) -> String {
-    switch value {
-    case .decimal: "decimal"
-    case .alpha(let lowercased): "alpha(lowercased=\(dump(boolean: lowercased)))"
-    case .roman(let lowercased): "roman(lowercased=\(dump(boolean: lowercased)))"
-    case .default: "default"
-    case nil: "null"
-    }
+    value?.rawValue ?? "null"
 }
 
 private func dump(optional value: String?) -> String {

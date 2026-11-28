@@ -113,7 +113,7 @@ public interface MarkupVisitor {
     ): Unit
 
     public fun visit(
-        crossEmbedded: CrossEmbedded,
+        crossEmbed: CrossEmbed,
         phase: MarkupVisitPhase,
     ): Unit
 
@@ -178,7 +178,7 @@ public interface MarkupVisitor {
     ): Unit
 
     public fun visit(
-        embedded: Embedded,
+        embed: Embed,
         phase: MarkupVisitPhase,
     ): Unit
 
@@ -204,11 +204,6 @@ public interface MarkupVisitor {
 
     public fun visit(
         footnote: Footnote,
-        phase: MarkupVisitPhase,
-    ): Unit
-
-    public fun visit(
-        specimen: Specimen,
         phase: MarkupVisitPhase,
     ): Unit
 

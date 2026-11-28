@@ -78,8 +78,8 @@
         {
             "id": "task-marker-completion",
             "kind": "deliberate-difference",
-            "summary": "Boolean-only oracles retain task completion but lose the authored marker spelling, including x versus X.",
-            "handling": "Compare the three shared states: absent, incomplete and complete. Exact marker spelling remains covered by canonical fixtures and binding tests; the non-leading [x] witness still compares unequal completion states.",
+            "summary": "Boolean-only oracles retain task completion but not the dialect's status: question and cancelled are checked boxes there.",
+            "handling": "Compare the three shared states: absent, incomplete and complete. The exact status remains covered by canonical fixtures and binding tests; the non-leading [x] witness still compares unequal completion states.",
             "projected": true
         },
         {
@@ -92,8 +92,8 @@
         {
             "id": "task-prefix-grammar",
             "kind": "deliberate-difference",
-            "summary": "The task prefix is exactly one Unicode scalar plus a space or tab, consumed once when any inherited list item opens, before deciding its first block. cmark-gfm only recognizes ASCII task states, misses quoted containers and can recognize later paragraphs.",
-            "handling": "Exact module and historical fixture inputs pin custom markers, containers, opening-line ownership, block decisions and opaque bodies. No comparison erases task syntax."
+            "summary": "The task prefix is `[ ]`, `[x]`, `[X]`, `[?]` or `[-]` plus a space or tab, consumed once when any inherited list item opens, before deciding its first block. cmark-gfm only recognizes open and done, misses quoted containers and can recognize later paragraphs.",
+            "handling": "Exact fixture inputs pin the question and cancelled statuses, containers, opening-line ownership and block decisions. No comparison erases task syntax."
         },
         {
             "id": "single-tilde-subscript",
@@ -122,8 +122,8 @@
         {
             "id": "reference-definition-node",
             "kind": "deliberate-difference",
-            "summary": "A link reference definition is a `Reference` block where it was written, holding its normalized label, destination and title, and a reference `Link` or `Embedded` names that label (`dest=reference(\"...\")`) with no title. Upstream consumes the definition and copies its destination and title into every occurrence that resolves to it.",
-            "handling": "The shared normalizer projects this side's tree onto upstream's shape (`resolveReferences`): each reference destination takes its target's destination as the document resolves the label -- the url and title of the first `Reference` with the label, or the `#anchor` of the first `Heading` whose text declares it -- every `Reference` leaves the tree, and the projection records that it acted. A model difference, so a projection rather than a list of inputs; which occurrences resolve, and to which target, is compared unchanged.",
+            "summary": "A link reference definition is a `Reference` block where it was written, holding its normalized label, destination and title, and a reference `Link` or `Embed` names that label (`dest=reference(\"...\")`) with no title. Upstream consumes the definition and copies its destination and title into every occurrence that resolves to it.",
+            "handling": "The shared normalizer projects this side's tree onto upstream's shape (`resolveReferences`): each reference destination takes its target's destination as the document resolves the label -- the url and title of the first `Reference` with the label -- every `Reference` leaves the tree, and the projection records that it acted. A model difference, so a projection rather than a list of inputs; which occurrences resolve, and to which target, is compared unchanged.",
             "projected": true
         }
     ],
@@ -174,74 +174,9 @@
             "note": "The non-table lead is parsed once, so an escaped backslash remains distinct from a pipe escape."
         },
         {
-            "id": "task-prefix-grammar",
-            "input": "- [x] foo\n  - [ ] bar\n  - [x] baz\n- [ ] bim\n\nShow a regular (non task) list to show that it has the same structure\n- [@] foo\n  - [@] bar\n  - [@] baz\n- [@] bim\n",
-            "note": "O5 task-lists.md: one authored scalar, the complete structural separator run, and opening-line-only recognition precede the first block. The opacity witness also retains formula, CrossLink and Comment bodies under their existing modules."
-        },
-        {
-            "id": "task-prefix-grammar",
-            "input": "- [x] foo\n    - [ ] bar\n    - [x] baz\n- [ ] bim\n\nShow a regular (non task) list to show that it has the same structure\n- [@] foo\n    - [@] bar\n    - [@] baz\n- [@] bim\n",
-            "note": "O5 task-lists.md: one authored scalar, the complete structural separator run, and opening-line-only recognition precede the first block. The opacity witness also retains formula, CrossLink and Comment bodies under their existing modules."
-        },
-        {
-            "id": "task-prefix-grammar",
-            "input": "> - [ ] a\n",
-            "note": "O5 task-lists.md: one authored scalar, the complete structural separator run, and opening-line-only recognition precede the first block. The opacity witness also retains formula, CrossLink and Comment bodies under their existing modules."
-        },
-        {
-            "id": "task-prefix-grammar",
-            "input": "- [?] a\n- [-] b\n- [✓] c\n",
-            "note": "O5 task-lists.md: one authored scalar, the complete structural separator run, and opening-line-only recognition precede the first block. The opacity witness also retains formula, CrossLink and Comment bodies under their existing modules."
-        },
-        {
-            "id": "task-prefix-grammar",
-            "input": "- [é] two\n- [🚀] four\n- [́] combining scalar\n- [[] open bracket\n- []] close bracket\n- [\\] backslash\n- [\t] tab marker\n- [\u000b] vertical tab marker\n- [\f] form feed marker\n",
-            "note": "O5 task-lists.md: one authored scalar, the complete structural separator run, and opening-line-only recognition precede the first block. The opacity witness also retains formula, CrossLink and Comment bodies under their existing modules."
-        },
-        {
-            "id": "task-prefix-grammar",
-            "input": "- [?] space\n- [✓]\ttab\n- [?] \t  mixed\n",
-            "note": "O5 task-lists.md: one authored scalar, the complete structural separator run, and opening-line-only recognition precede the first block. The opacity witness also retains formula, CrossLink and Comment bodies under their existing modules."
-        },
-        {
-            "id": "task-prefix-grammar",
-            "input": "- [x]\u000bvertical\n- [🚀]\u000bvertical\n- [ ]\fform\n- [?] \u000b\f  mixed\n",
-            "note": "O5 task-lists.md: only a space or a tab separates a task prefix. cmark-gfm's scanner also takes vertical tab and form feed, which are not whitespace here (docs/specs/dialect.md), so it makes the first and third items tasks."
-        },
-        {
-            "id": "task-prefix-grammar",
-            "input": "> 1. [🚀] outer\n>    - [?] middle\n>      2) [✓] inner\n>         continuation\n",
-            "note": "O5 task-lists.md: one authored scalar, the complete structural separator run, and opening-line-only recognition precede the first block. The opacity witness also retains formula, CrossLink and Comment bodies under their existing modules."
-        },
-        {
-            "id": "task-prefix-grammar",
-            "input": "- [✓] [?] second prefix\n\n  [x] later paragraph\n- ordinary\n\n  [?] later paragraph\n-\n  [x] later first block\n",
-            "note": "O5 task-lists.md: one authored scalar, the complete structural separator run, and opening-line-only recognition precede the first block. The opacity witness also retains formula, CrossLink and Comment bodies under their existing modules."
-        },
-        {
-            "id": "task-prefix-grammar",
-            "input": "- [?] # heading\n- [✓] > quote\n- [🚀] - [?] nested item\n- [-] ```text\n  code\n  ```\n- [?] $$\n  formula\n  $$\n- [✓] :::note\n  body\n  :::\n",
-            "note": "O5 task-lists.md: one authored scalar, the complete structural separator run, and opening-line-only recognition precede the first block. The opacity witness also retains formula, CrossLink and Comment bodies under their existing modules."
-        },
-        {
-            "id": "task-prefix-grammar",
-            "input": "- [?] \t \noutside\n",
-            "note": "O5 task-lists.md: one authored scalar, the complete structural separator run, and opening-line-only recognition precede the first block. The opacity witness also retains formula, CrossLink and Comment bodies under their existing modules."
-        },
-        {
-            "id": "task-prefix-grammar",
-            "input": "- `- [?] code`\n- $- [✓] formula$\n- <i title=\"- [🚀] html\">text</i>\n- [[- [?] link]]\n- %% - [✓] inline comment %%\n\n%%\n- [?] block comment\n%%\n\n```\n- [🚀] fenced\n```\n",
-            "note": "O5 task-lists.md: one authored scalar, the complete structural separator run, and opening-line-only recognition precede the first block. The opacity witness also retains formula, CrossLink and Comment bodies under their existing modules."
-        },
-        {
             "id": "text-directive",
             "input": "- [x]\n:n{class=\"a b c\u000bv\ff\" .a class=tail}a}*.foo.*\n:x{:_a}\n",
             "note": "O5 fuzz witness: the initial [x] has no structural separator, so both parsers keep it literally. The following text directives belong to the dialect and remain literal in cmark-gfm."
-        },
-        {
-            "id": "task-prefix-grammar",
-            "input": "- [?] - \tchild\n- [é] - \tchild\n- [✓] - \tchild\n- [🚀] - \tchild\n",
-            "note": "O5 review regression: each Unicode scalar occupies one virtual indentation column while node scopes retain UTF-8 byte columns. cmark-gfm keeps custom prefixes as text."
         },
         {
             "id": "single-tilde-subscript",
@@ -277,6 +212,51 @@
             "id": "autolink-domain-characters",
             "input": "www.例_b.c\nwww.a _b.c\nhttps://例_b.c\nwww.例.com\n",
             "note": "cmark-gfm links the first three lines; the underscore is in each domain's last two segments, so Markdown Core keeps them as text, as it keeps www.a_b.c. Both link www.例.com."
+        },
+        {
+            "id": "task-prefix-grammar",
+            "input": "- [?] space\n- [x]\ttab\n- [?] \t  mixed\n",
+            "note": "O5 task-lists.md: five markers, the complete structural separator run, and opening-line-only recognition precede the first block. The opacity witness also retains formula, CrossLink and Comment bodies under their existing modules."
+        },
+        {
+            "id": "task-prefix-grammar",
+            "input": "- [x]\u000bvertical\n- [-]\u000bvertical\n- [ ]\fform\n- [?] \u000b\f  mixed\n",
+            "note": "O5 task-lists.md: five markers, the complete structural separator run, and opening-line-only recognition precede the first block. The opacity witness also retains formula, CrossLink and Comment bodies under their existing modules."
+        },
+        {
+            "id": "task-prefix-grammar",
+            "input": "> 1. [-] outer\n>    - [?] middle\n>      2) [x] inner\n>         continuation\n",
+            "note": "O5 task-lists.md: five markers, the complete structural separator run, and opening-line-only recognition precede the first block. The opacity witness also retains formula, CrossLink and Comment bodies under their existing modules."
+        },
+        {
+            "id": "task-prefix-grammar",
+            "input": "- [?] # heading\n- [x] > quote\n- [-] - [?] nested item\n- [-] ```text\n  code\n  ```\n- [?] $$\n  formula\n  $$\n- [x] :::note\n  body\n  :::\n",
+            "note": "O5 task-lists.md: five markers, the complete structural separator run, and opening-line-only recognition precede the first block. The opacity witness also retains formula, CrossLink and Comment bodies under their existing modules."
+        },
+        {
+            "id": "task-prefix-grammar",
+            "input": "- [?] - \tchild\n- [ ] - \tchild\n- [x] - \tchild\n- [-] - \tchild\n",
+            "note": "O5 task-lists.md: five markers, the complete structural separator run, and opening-line-only recognition precede the first block. The opacity witness also retains formula, CrossLink and Comment bodies under their existing modules."
+        },
+        {
+            "id": "task-prefix-grammar",
+            "input": "> - [ ] a\n",
+            "note": "O5 task-lists.md: five markers, the complete structural separator run, and opening-line-only recognition precede the first block. The opacity witness also retains formula, CrossLink and Comment bodies under their existing modules."
+        },
+        {
+            "id": "task-prefix-grammar",
+            "input": "- [?] a\n- [-] b\n- [✓] c\n",
+            "note": "O5 task-lists.md: five markers, the complete structural separator run, and opening-line-only recognition precede the first block. The opacity witness also retains formula, CrossLink and Comment bodies under their existing modules."
+        },
+        {
+            "id": "task-prefix-grammar",
+            "input": "- [?] \t \noutside\n",
+            "note": "O5 task-lists.md: five markers, the complete structural separator run, and opening-line-only recognition precede the first block. The opacity witness also retains formula, CrossLink and Comment bodies under their existing modules."
+        },
+        {
+            "id": "task-prefix-grammar",
+            "input": "- `- [?] code`\n- $- [✓] formula$\n- <i title=\"- [🚀] html\">text</i>\n- [[- [?] link]]\n- %% - [✓] inline comment %%\n\n%%\n- [?] block comment\n%%\n\n```\n- [🚀] fenced\n```\n",
+            "note": "O5 task-lists.md: five markers, the complete structural separator run, and opening-line-only recognition precede the first block. The opacity witness also retains formula, CrossLink and Comment bodies under their existing modules."
         }
     ],
     "notDeltas": [],

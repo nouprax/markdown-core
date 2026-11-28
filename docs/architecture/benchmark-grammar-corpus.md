@@ -2,14 +2,14 @@
 
 The deliverable is the corpus, its generative grammars, and the proofs below.
 [The checked-in corpus catalog](../../packages/markdown-core/benchmarks/grammar-corpus.json)
-contains all 186 certificates, their concrete grammars, normal forms and two
-complete examples per family. The run emits 792 documents, each measured once:
-in each of [two alphabets](#alphabets), 180 whole declared-language pairs, 6
+contains all 175 certificates, their concrete grammars, normal forms and two
+complete examples per family. The run emits 748 documents, each measured once:
+in each of [two alphabets](#alphabets), 169 whole declared-language pairs, 6
 local boundary pairs with complete hosts, and 12 controls for
 [rejection certificates](#rejection-certificates). The [feature acceptance ledger](benchmark-grammar-coverage.md) covers all
-31 syntax-guide features, 133 sections and 36 registered elements. Its explicit
-section mapping names certificates for 128 source-language sections and gives
-reviewed context-only dispositions for five sections. Certificates are registered
+30 syntax-guide features, 129 sections and 34 registered elements. Its explicit
+section mapping names certificates for 123 source-language sections and gives
+reviewed context-only dispositions for six sections. Certificates are registered
 directly from their source grammars and specification obligations.
 
 CommonMark/GFM features use the same input on both sides. Extensions use proved
@@ -115,7 +115,7 @@ Atom   = Word | OPEN Body CLOSE ;
 A field annotated `source-bytes <= n` restricts that lexical language on **both**
 sides. Link reference labels are bounded by 1,000 source bytes. GFM footnote
 calls count the authored caret in that limit, so their ASCII key domain is at
-most 999 bytes. A specimen or heading key paired with one of these labels takes
+most 999 bytes. A heading key paired with one of these labels takes
 the same bound; an unbounded Word would not prove a valid native counterpart.
 Repeated occurrences retain the same bound. The decoder rejects the first byte
 beyond it, and the generated schedule reaches each bound.
@@ -202,7 +202,6 @@ catalog's `grammars` entries and in `productGrammar`. In the table `B=Body`,
 | inline-directive | body:B, key:W | directive label / link label and destination |
 | empty-directive | body:E, key:W | empty directive / empty link label |
 | leaf-directive | body:B, key:W | directive block / link paragraph |
-| anonymous-container | body:B, tail:B | anonymous fence / quoted paragraphs |
 | named-container | body:B, key:W, tail:B | named fence / quoted name and paragraphs |
 | loose-definition | body:B, literal:P | definition term and body / loose list paragraphs |
 | anchor | body:B, key:W | quote and anchor declaration / quote and reference declaration |
@@ -270,7 +269,7 @@ The catalog marks these certificates `identity: true`, the generator emits equal
 bytes, and the checker compares the productions and independently decodes both.
 
 Native output differences affect performance interpretation without changing
-source grammar identity. A quote's node name, automatic heading anchors, source
+source grammar identity. A quote's node name, source
 positions and emitted definition retention are output-model questions. For
 example `footnote-retention` uses the identical reference-definition grammar,
 while Core retains authored definitions and GFM emits used definitions. The
@@ -281,20 +280,11 @@ parity/regression, not by an AST assertion in the grammar corpus.
 
 A finite lexical grammar is an explicit injective table `e : D -> Tokens`. The
 catalog records **every** token, not just the generated examples. All encodings
-for one type have the same domain. For Ordinal, `D = {1,...,26}`; the five tables
-are decimal, lower/upper ASCII letters, and canonical lower/upper Roman spellings.
-For State, `D = {plain,closed,open}`; encodings are the callout suffixes
-`epsilon,-,+` and the link-title words `plain,closed,open`. Distinctness of all
+for one type have the same domain. For State, `D = {plain,closed,open}`;
+encodings are the callout suffixes `epsilon,-,+` and the link-title words
+`plain,closed,open`. Distinctness of all
 entries proves bijectivity onto each finite lexical language. Compose their
 inverses with T3's frame substitution. Token length need not be equal.
-
-In the four ordered-list productions, an initial `a)`, `(A)`, `i.` or `I)` fixes
-the source variant; the reference begins with `1.`. The second marker is the
-variable ordinal. Thus `i` inside an established alpha list does not accidentally
-select a fresh Roman list. The two default-marker families now map to fixed `1.`
-or `1)` markers: there is no unmatched variable start on only one side. The
-canonical Roman domain is explicitly 1..26. Noncanonical numerals and the entire
-999,999,999-valued language are **not** proved equivalent to decimal conversion.
 
 For repeated bindings, let the distinct fields be `x_1,...,x_n`, and let a frame
 mention a field several times. Its language includes the equality constraint
@@ -304,28 +294,15 @@ Encoding substitutes that value at every declared occurrence. Therefore each
 encoded occurrence is recovered, and the tuple is recovered in the other
 direction. The occurrence count may differ between encodings; it is a recorded
 fixed part of the grammar transformation, not a deleted variable or a claim of
-zero copying cost. This covers reference-label reuse, specimen definition/call
-bindings and inherited attributes. Equality constraints are checked from bytes;
+zero copying cost. This covers reference-label reuse and inherited attributes. Equality constraints are checked from bytes;
 an inconsistent second label is rejected instead of overwritten in a map.
 
-T3 and T7 now provide whole declared-language counterparts for eleven formerly
-split families: four numeral lists, two default lists, all three callout states,
-citation affixes, mixed definitions, specimen binding, and specimen resets. Prefix/key/suffix fields all survive independently.
-Named containers use the `:::name` production; `::: name` belongs to the
-nameless grammar. The source encoding preserves that normative distinction.
-
-Specimen resets add a shared lexical nonterminal
-`Positive9 = [1-9][0-9]{0,8}`. The reset marker `(n@key)` is translated to an
-ordered-list start `n.` plus a reference definition/call carrying the same key.
-Both spellings recognize the same bounded decimal field. The group certificate
-uses the common first-marker rule: the first reset/ordered marker establishes
-the start, later authored numbers do not restart the group, blank lines preserve
-the group, and an outside paragraph separates it from the next group. Anonymous
-and duplicate labels are retained as declared repeated fields, rather than
-requiring the reference to use footnotes. The declared group productions retain
-the first start (`5`) and subsequent authored reset markers. The variable-reset
-family exercises `999999999` as well as small starts. This proves the declared
-single-line-body reset grammar, not every unrestricted continuation shape.
+T3 and T7 now provide whole declared-language counterparts for formerly split
+families, among them the default lists, all three callout states, citation
+affixes and mixed definitions. Prefix/key/suffix fields all survive
+independently.
+Named containers use the `:::name` production; `::: name` opens no
+container.
 
 ## Boundary corpus and its limits (T5)
 
@@ -351,9 +328,9 @@ proofs. The feature ledger must not label these hosts whole-grammar certified.
 Each host is partitioned as an ordered sequence of residual literal byte ranges
 and named typed slots. Extents are contiguous, disjoint and exhaustive; joining
 them must recover the exact host. Both sides must yield the same labelled slot
-set and values. Repeated occurrences of a specimen key must agree; the equality
-check and binding work remain in the residual. That key is decoded once in the
-local product, not deceptively charged once for each original occurrence.
+set and values. Repeated occurrences of a key must agree; the equality check and binding work
+remain in the residual. That key is decoded once in the local product, not
+deceptively charged once for each original occurrence.
 
 Each field is re-embedded with the **same explicit parser entry grammar** on
 both sides: Body as a paragraph, Word/Phrase inside a one-backtick code span,

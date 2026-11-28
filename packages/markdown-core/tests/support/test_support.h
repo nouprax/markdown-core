@@ -122,7 +122,7 @@ const markdown_core_node *ts_ast_range_outside(const markdown_core_node *root, s
  * TS_KIND_COUNT entries. Returns 0 on success, -1 if traversal fails or a
  * node kind exceeds the counter capacity. */
 int ts_ast_count_kinds(const markdown_core_node *root, size_t *counts);
-/* BEGIN GENERATED node kinds by scripts/tooling/generate-node-kinds.mjs; edit the node-kind schemas instead. */
+/* BEGIN GENERATED node kinds by scripts/tools/generate-node-kinds.mjs; edit the node-kind schemas instead. */
 #define TS_KIND_COUNT (MARKDOWN_CORE_KIND_TOPIC + 1)
 /* END GENERATED */
 
@@ -152,9 +152,6 @@ char *ts_repeat(const char *unit, size_t count, size_t *length);
 
 /* Monotonic clock in nanoseconds for relative benchmark measurements. */
 uint64_t ts_monotonic_ns(void);
-
-/* Whether two contexts list the same blocks, inlines and slots. */
-bool ts_same_context(const markdown_core_context *a, const markdown_core_context *b);
 
 #ifdef __cplusplus
 }

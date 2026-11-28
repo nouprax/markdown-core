@@ -15,7 +15,7 @@ extern "C" {
 #define MARKDOWN_CORE_NODE_TYPE_MASK (0xc000)
 #define MARKDOWN_CORE_NODE_VALUE_MASK (0x3fff)
 
-/* BEGIN GENERATED node kinds by scripts/tooling/generate-node-kinds.mjs; edit the node-kind schemas instead. */
+/* BEGIN GENERATED node kinds by scripts/tools/generate-node-kinds.mjs; edit the node-kind schemas instead. */
 /* One past the largest value either class uses, so `kind & VALUE_MASK` is a
  * dense index into a per-class table. */
 #define MARKDOWN_CORE_NODE_KIND_COUNT (0x0019)
@@ -54,20 +54,17 @@ typedef enum {
      * which content the node sits in, which is what containment checks and the
      * inline parser ask. */
     MARKDOWN_CORE_NODE_COMMENT_BLOCK = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0010,
-    /* A specimen definition: a block that stays in the tree where it was
-     * written. */
-    MARKDOWN_CORE_NODE_SPECIMEN = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0011,
-    MARKDOWN_CORE_NODE_DEFINITION_LIST = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0012,
-    MARKDOWN_CORE_NODE_DEFINITION = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0013,
+    MARKDOWN_CORE_NODE_DEFINITION_LIST = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0011,
+    MARKDOWN_CORE_NODE_DEFINITION = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0012,
     /* A private collection root, not a public Markup kind. */
-    MARKDOWN_CORE_NODE_DEFINITION_BODY = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0014,
+    MARKDOWN_CORE_NODE_DEFINITION_BODY = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0013,
     /* Read by the document element's prefix reader (properties.c) and never
      * parsed as a block, so no element defines its structure. */
-    MARKDOWN_CORE_NODE_METADATA = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0015,
+    MARKDOWN_CORE_NODE_METADATA = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0014,
     /* A link reference definition: a leaf block the close of the paragraph that
      * held it makes whole, so it is never open on the spine and no element
      * defines its structure. */
-    MARKDOWN_CORE_NODE_REFERENCE = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0016,
+    MARKDOWN_CORE_NODE_REFERENCE = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0015,
 
     /* Inline */
     MARKDOWN_CORE_NODE_TEXT = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x0001,
@@ -78,7 +75,7 @@ typedef enum {
     MARKDOWN_CORE_NODE_EMPHASIS = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x0006,
     MARKDOWN_CORE_NODE_STRONG = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x0007,
     MARKDOWN_CORE_NODE_LINK = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x0008,
-    MARKDOWN_CORE_NODE_EMBEDDED = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x0009,
+    MARKDOWN_CORE_NODE_EMBED = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x0009,
     /* A citation cluster. Its items, CITATION nodes in source order, are the
      * node's children array; the public model gives a Cite no children and
      * reads the items as its citations. */
@@ -99,7 +96,7 @@ typedef enum {
     MARKDOWN_CORE_NODE_CITATION = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x0010,
     MARKDOWN_CORE_NODE_CROSS_LINK = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x0011,
     MARKDOWN_CORE_NODE_MARK = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x0012,
-    MARKDOWN_CORE_NODE_CROSS_EMBEDDED = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x0013,
+    MARKDOWN_CORE_NODE_CROSS_EMBED = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x0013,
     MARKDOWN_CORE_NODE_INSERTION = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x0014,
     /* Built by the link element's bracket closer when a bracket matches no
      * link; it takes no structure hooks from any element. */

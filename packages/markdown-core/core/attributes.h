@@ -60,11 +60,5 @@ bool markdown_core_attributes_own(markdown_core_attributes *view, const markdown
  * a member there, and `value`'s anchor string when it reads that, and owns
  * everything it holds; `value` then holds them without owning them. */
 void markdown_core_attributes_adopt(markdown_core_attributes *view, markdown_core_attributes *value);
-/* A value holding one class, `bytes`, and nothing else: the value an element
- * makes when its syntax names a class without an attribute container. The
- * caller supplies an empty value. Returns 0 on allocation failure, leaving it
- * empty. */
-int markdown_core_attributes_single_class(markdown_core_attributes *value, const unsigned char *bytes,
-                                          bufsize_t length);
 
 #endif

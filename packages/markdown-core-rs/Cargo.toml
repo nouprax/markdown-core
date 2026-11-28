@@ -1,0 +1,21 @@
+[package]
+authors = ["Titus Wormer <tituswormer@gmail.com>"]
+categories = ["compilers", "encoding", "parser-implementations", "parsing", "text-processing"]
+description = "CommonMark compliant markdown parser in Rust with ASTs and extensions"
+edition = "2021"
+homepage = "https://github.com/nouprax/markdown-core"
+include = ["src/", "license"]
+keywords = ["commonmark", "markdown", "parse", "render", "tokenize"]
+license = "MIT"
+name = "markdown-core"
+repository = "https://github.com/nouprax/markdown-core"
+rust-version = "1.88"
+version = "1.0.0"
+
+[dependencies]
+stacker = "0.1.25"
+
+[features]
+# Record which state machine steps run on which scalars, for the coverage
+# tools in scripts/correctness.
+cover = []

@@ -122,7 +122,7 @@ static const char OOM_LINE_AND_CORE_CORPUS[] = "# heading\r\n"
 static const char OOM_ELEMENT_EDGE_CORPUS[] = "probe $x$ $$ y $$ \\\\(z\\)q\\\\) $`x`$\n\n"
                                               "$$ padded $$\n\n```formula\n padded \n```\n\n"
                                               "$$\n padded \n$$\n\n$$\n$$\n\n"
-                                              "::: {.a k=1} trailing\n\n::: {.a k=1\n\n"
+                                              ":::x{.a k=1} trailing\n\n:::x{.a k=1\n\n"
                                               ":inline[label]{.a class=\"\" .b id=x id=y entity=&amp;}\n"
                                               "\n"
                                               ":::outer[lab]{empty=\"\" key='value'}\n"
@@ -229,10 +229,10 @@ static const char OOM_CITATION_CORPUS[] = "^^ *^^* ^^^^ [^^]{} ^[^^]\n\n"
                                           "iv. first\nv. next\n\n(A) upper\n(B) next\n\n";
 
 static const char OOM_DEFINITION_LIST_CORPUS[] =
-    "# Reserved\n\n::: {#reserved .box k=value}\n*Term* @key\n: first ^[footnote]\n: second\n\n"
-    "Loose\n\n~ inner\n  : body\n\n    continued\n\n"
+    "# Reserved\n\n:::box{#reserved .box k=value}\n*Term* @key\n: first ^[footnote]\n: second\n\n"
+    "Loose\n\n: inner\n  : body\n\n    continued\n\n"
     "Code\n: ```\n  :::\n  ```\n\n"
-    "[reference]: /url {.attr}\n\nT\n: [reference]\n::: \n\n::: warning\n:::\n\n::: {}\n:::\n";
+    "[reference]: /url {.attr}\n\nT\n: [reference]\n::: \n\n:::warning\n:::\n\n:::x{}\n:::\n";
 
 static const char OOM_TABLE_CORPUS[] =
     "+---+---+\r| \0 | b |\r+---+---+\r| c | \0 |\r+---+---+\r\r"
@@ -254,15 +254,15 @@ static const char OOM_TABLE_CORPUS[] =
     "|\n+-------------------------------+\n\nTable: *caption*\n\nh   j\n--- ---\nv   w\n\n-------\nh   j\n--- ---\nv   "
     "w\n\nx   y\n-------\n\nTable: after\n\n+---+---+\n| a | b |\n+   +   +\n| c | d |\n+---+---+\n"
     "\n: candidate\n:::note[label]{#id .class k=value}\n---- ----\na    b\n:::\n\n"
-    "| h |\n| - |\n| b |\n: cap\n::: {.note}\nbody\n:::\n\n"
+    "| h |\n| - |\n| b |\n: cap\n:::x{.note}\nbody\n:::\n\n"
     "| h |\n| - |\n| b |\n: cap\n%%\ncomment\n%%\n\n"
     "| h |\n| - |\n| b |\n: cap\n:::note[bad\n%%\nunclosed\n";
 
 static const oom_case OOM_CASES[] = {
     {"pipe tables beside the bytes of other table syntax", OOM_TABLE_CORPUS, sizeof(OOM_TABLE_CORPUS) - 1},
-    {"definition term/body ownership and nameless containers", OOM_DEFINITION_LIST_CORPUS,
+    {"definition term/body ownership and directive containers", OOM_DEFINITION_LIST_CORPUS,
      sizeof(OOM_DEFINITION_LIST_CORPUS) - 1},
-    {"citation ownership and specimen definitions", OOM_CITATION_CORPUS, sizeof(OOM_CITATION_CORPUS) - 1},
+    {"citation ownership", OOM_CITATION_CORPUS, sizeof(OOM_CITATION_CORPUS) - 1},
     {"heading declarations and anchors", OOM_HEADING_CORPUS, sizeof(OOM_HEADING_CORPUS) - 1},
     {"inline ownership composition", OOM_INLINE_OWNERSHIP_CORPUS, sizeof(OOM_INLINE_OWNERSHIP_CORPUS) - 1},
     {"image dimensions", OOM_IMAGE_DIMENSIONS_CORPUS, sizeof(OOM_IMAGE_DIMENSIONS_CORPUS) - 1},
@@ -374,90 +374,6 @@ static int sweep_dump(const oom_case *test) {
     return result;
 }
 
-/* A context query refuses each allocation in turn the same way: no context
- * and ALLOCATION_FAILED. The cursors read slots of every reporting path:
- * an envelope's member's, an inline run's, a line's and a definition's. */
-static const char OOM_CONTEXT_SOURCE[] = "---\ntitle: Hi\n---\n"
-                                         "See [[Note#He]] and [t](pa#se){.c} @do\n"
-                                         "> [!no]\n"
-                                         "```py {#a r=v}\n"
-                                         "```\n"
-                                         "[x]: /u#an\n"
-                                         "a `x [[No para #id#\n";
-static const markdown_core_position OOM_CONTEXT_CURSORS[] = {{2, 3}, {2, 9}, {4, 14}, {4, 29}, {4, 34}, {4, 39},
-                                                             {5, 7}, {6, 6}, {6, 14}, {8, 10}, {9, 12}, {9, 19}};
-
-/* Each allocation of a context query fails it, and each of a session's
- * locate fails the locate and keeps the session's context as the last
- * locate left it: here, the slots at the first cursor. */
-static int sweep_context(void) {
-    const size_t length = sizeof(OOM_CONTEXT_SOURCE) - 1;
-    markdown_core_document *document = NULL;
-    markdown_core_session *session = NULL;
-    int result = 0;
-    allocation_count = 0;
-    fail_at = 0;
-    if (markdown_core_document_parse((const uint8_t *)OOM_CONTEXT_SOURCE, length, &document) != MARKDOWN_CORE_OK ||
-        markdown_core_session_new((const uint8_t *)OOM_CONTEXT_SOURCE, length, MARKDOWN_CORE_TEXT_UNIT_UTF8,
-                                  &session) != MARKDOWN_CORE_OK ||
-        markdown_core_session_locate(session, OOM_CONTEXT_CURSORS[0]) != MARKDOWN_CORE_OK) {
-        fputs("context: parse for the context sweep failed\n", stderr);
-        markdown_core_document_free(document);
-        markdown_core_session_close(session);
-        return -1;
-    }
-    const markdown_core_context *state = markdown_core_session_context(session);
-    const size_t kept = markdown_core_context_slot_count(state);
-    for (size_t cursor = 0; result == 0 && cursor < sizeof(OOM_CONTEXT_CURSORS) / sizeof(*OOM_CONTEXT_CURSORS);
-         cursor++) {
-        const markdown_core_position position = OOM_CONTEXT_CURSORS[cursor];
-        markdown_core_context *context = NULL;
-        allocation_count = 0;
-        if (markdown_core_document_context(document, (const uint8_t *)OOM_CONTEXT_SOURCE, length, position, &context) !=
-                MARKDOWN_CORE_OK ||
-            markdown_core_context_slot_count(context) == 0) {
-            fprintf(stderr, "context %d:%d: counting query read no slot\n", position.line, position.column);
-            markdown_core_context_free(context);
-            result = -1;
-            break;
-        }
-        markdown_core_context_free(context);
-        const unsigned long total = allocation_count;
-        for (unsigned long allocation = 1; result == 0 && allocation <= total; allocation++) {
-            allocation_count = 0;
-            fail_at = allocation;
-            failure_fired = 0;
-            context = NULL;
-            markdown_core_status status = markdown_core_document_context(document, (const uint8_t *)OOM_CONTEXT_SOURCE,
-                                                                         length, position, &context);
-            fail_at = 0;
-            if (!failure_fired || context || status != MARKDOWN_CORE_ALLOCATION_FAILED) {
-                fprintf(stderr, "context %d:%d: allocation %lu / %lu was not reported as OOM\n", position.line,
-                        position.column, allocation, total);
-                markdown_core_context_free(context);
-                result = -1;
-            }
-            if (cursor == 0) {
-                continue;
-            }
-            allocation_count = 0;
-            fail_at = allocation;
-            failure_fired = 0;
-            status = markdown_core_session_locate(session, position);
-            fail_at = 0;
-            if (!failure_fired || status != MARKDOWN_CORE_ALLOCATION_FAILED ||
-                markdown_core_context_slot_count(state) != kept) {
-                fprintf(stderr, "context %d:%d: a locate failing at allocation %lu / %lu did not keep the state\n",
-                        position.line, position.column, allocation, total);
-                result = -1;
-            }
-        }
-    }
-    markdown_core_document_free(document);
-    markdown_core_session_close(session);
-    return result;
-}
-
 static int case_strict_oom(void) {
     size_t index;
     for (index = 0; index < sizeof(OOM_CASES) / sizeof(OOM_CASES[0]); index++) {
@@ -465,7 +381,7 @@ static int case_strict_oom(void) {
             return -1;
         }
     }
-    return sweep_context();
+    return 0;
 }
 
 int main(int argc, char **argv) {

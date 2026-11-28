@@ -38,12 +38,12 @@ declaration-side `Markup.anchor`; the projection does not copy that value into
 the reference node's own anchor field.
 
 The corpus contains inputs and exact reader strings only. Install its pinned
-host executable explicitly with `scripts/tooling/setup-environment.sh --install oracle-pandoc`;
+host executable explicitly with `scripts/tools/setup-environment.sh --install oracle-pandoc`;
 `--check oracle-pandoc` verifies it without downloads. `pnpm check:pandoc-parity`
 runs CLI canaries, both parsers and the fail-closed digest registry. Normal
 builds and tests never install the executable or access the network.
 
-The active corpus has 143 cases: 107 agreements, 36 documented differences and no
+The active corpus has 107 cases: 45 agreements, 62 documented differences and no
 missing-feature gaps. Three width differences retain the normative interior
 ratios and the oracle's page-relative widths without hiding either value. Every difference
 pins input/reader, oracle projection and product projection SHA-256 digests.
@@ -65,13 +65,13 @@ Unicode whitespace, decoded TAB preservation, maximal tilde runs and code-token
 opacity retain exact drift witnesses, subject to the provenance qualifications
 above. Inline-footnote composition
 is tested in the product fixtures, where the note owned by its citation and
-source scopes are observable. P3/P4 compositions agree for heading text,
-script-bearing heading references and Span precedence over implicit shortcuts;
-the later Span ID reservation retains its exact global-reservation difference.
+source scopes are observable. P3/P4 compositions agree for heading text; the
+later Span ID reservation retains its exact global-reservation difference.
 
-Seven isolated audit controls verify implicit image references, authored versus
-plain heading labels, connector/combining-mark retention, and successful script
-space escaping. The last control enables `all_symbols_escapable` solely as the
+Isolated audit controls verify connector/combining-mark retention and
+successful script space escaping; the implicit image references and authored
+heading labels among them are exact differences now that the dialect has no
+implicit heading references. The last control enables `all_symbols_escapable` solely as the
 Pandoc reader prerequisite for the adopted script escape. It does not adopt that
 extension's unrelated grammar into the product. The older `p6-escaped-space`
 compound case retains a different reader and mixes this configuration effect
@@ -83,13 +83,13 @@ necessarily differ from Pandoc.
 `link-and-image-attributes` agree; `pandoc-reference-attribute-merge` remains an
 exact deliberate difference, with an executable `combineAttr` canary.
 
-P3/P4 retire `gfm-auto-anchors` and `implicit-header-references`. Added agreements
-cover empty fallback, authored markup labels, forward and duplicate labels,
-explicit-definition priority, occurrence attributes, and a heading reference
-inside declaration-shaped paragraph text (the reduced CI seed-1 witness). Exact deliberate
-differences retain global explicit-anchor reservation (including inline code),
-Unicode simple lowercase, `White_Space`, permitted scalars without emoji aliases,
-and CommonMark reference adjacency. CLI canaries independently pin these Pandoc
+The dialect has no automatic heading anchors, so every case read with
+Pandoc's `auto_identifiers` (`gfm-auto-anchors`, empty fallback, Unicode
+scalars, explicit IDs elsewhere, heading content) is an exact deliberate
+difference in its headings' anchors. It has no implicit heading references
+either, so every case read with Pandoc's `implicit_header_references`
+(authored markup labels, forward and duplicate labels, occurrence attributes,
+adjacency, images) is one too. CLI canaries independently pin these Pandoc
 behaviors; the projections preserve both sides rather than erase differences.
 P11 implemented captions, simple, multiline and grid tables; they have since
 left the dialect, which keeps pipe tables only, and their cases left the
@@ -123,22 +123,22 @@ Cite comparison keeps every key, mode and ordered prefix/suffix tree. Pandoc's
 second Cite tuple member is fallback rendering for consumers without citation
 processing, not another semantic child list; it has no canonical counterpart.
 The key and affix trees are compared directly, with unit tests ensuring a
-changed key, mode, prefix or suffix cannot pass. Specimen definitions retain
-label/start/content where they were written, and references their exact
-labels, on the product side. Pandoc's example lists
-and rendered numbers remain exact model differences. Affix trimming, nested
+changed key, mode, prefix or suffix cannot pass. Numbered examples are no
+longer part of the dialect, so Pandoc's example lists and rendered numbers
+remain exact differences. Affix trimming, nested
 author tails, malformed candidates, underscore boundaries and unresolved
 reference tails retain isolated witnesses. Direct/resolving tails and Spans,
 complete citation versus virtual heading shortcut, ordinary author tails,
 alphabetic/Roman/default markers and capital-period spacing have agreements.
 
-P8/P10 retire both definition-list gaps and `fenced-divs-nested` by agreement.
-The Div projection uses `name=null`. DefinitionList projects each term and its
+P8/P10 retire both definition-list gaps. The dialect has no nameless fenced
+divs, so every fenced-div case, `fenced-divs-nested` included, is an exact
+difference; the Div projection keeps `name=null`. DefinitionList projects each term and its
 ordered body collections to Definition, including empty bodies. A first body
 starting with Plain means compact, with Para means loose; other first-body
 shapes expose no flag, so Pandoc projects null and the product boolean remains
-compared. Exact differences cover those unobservable flags, the dialect's
-minimum closer width, and global explicit-ID reservation. Unit tests detect
+compared. Exact differences cover those unobservable flags and global
+explicit-ID reservation. Unit tests detect
 changed names, compact flags, terms and body grouping independently.
 
 The composition runner now exercises 488 inputs: 306 ordered pairs, 54 nested or

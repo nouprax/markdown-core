@@ -47,7 +47,7 @@ jobs:
                   sudo apt-get update
                   sudo apt-get install --no-install-recommends --yes valgrind
             - name: Build the pinned reference checkouts
-              run: scripts/tooling/setup-environment.sh --install oracle-cmark oracle-cmark-gfm
+              run: scripts/tools/setup-environment.sh --install oracle-cmark oracle-cmark-gfm
             - name: Measure every engine and compare source-stage regressions
               env:
                   BASE_REVISION: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
@@ -103,7 +103,7 @@ jobs:
                   sudo apt-get update
                   sudo apt-get install --no-install-recommends --yes valgrind
             - name: Build the pinned lexbor baseline
-              run: scripts/tooling/setup-environment.sh --install oracle-lexbor
+              run: scripts/tools/setup-environment.sh --install oracle-lexbor
             # A separate job from the stage measurement, for the same reason it
             # is a separate driver: the two baselines cannot be given the same
             # bytes, so this compares one grammar against one grammar rather
@@ -128,147 +128,5 @@ jobs:
                       build/benchmark-attributes/attributes.json
                       build/benchmark-attributes/callgrind
                       build/benchmark-attributes/input
-                  if-no-files-found: error
-                  retention-days: 30
-
-    # The grammar corpus's workloads: every feature under every stream family
-    # it runs, measured on this revision and on the base revision, which is
-    # rebuilt with this revision's harness for 6.4. They take hours of
-    # callgrind on one runner, so each shard measures the workloads at
-    # positions shard, shard + N, ... of the set on its own runner, and the job
-    # below joins the parts and applies the gates. The shapes are measured at
-    # their four sizes together, outside this workflow.
-    stream-shards:
-        name: Measure - streams, part ${{ matrix.shard }}
-        runs-on: ubuntu-latest
-        strategy:
-            fail-fast: false
-            matrix:
-                shard: [0, 1, 2, 3, 4, 5, 6, 7]
-        steps:
-            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-              with:
-                  persist-credentials: false
-                  fetch-depth: 0
-            - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-              with:
-                  node-version: 26.12.1
-            - name: Install callgrind
-              run: |
-                  sudo apt-get update
-                  sudo apt-get install --no-install-recommends --yes valgrind
-            # The stream benchmark is built by the stage benchmark's own build,
-            # references included, so its binaries are the ones that report
-            # describes.
-            - name: Build the pinned reference checkouts
-              run: scripts/tooling/setup-environment.sh --install oracle-cmark oracle-cmark-gfm
-            - name: Measure this part of the streams against the base revision
-              env:
-                  BASE_REVISION: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
-              run: |
-                  if [ -z "$BASE_REVISION" ] || [ "$BASE_REVISION" = 0000000000000000000000000000000000000000 ]; then
-                      BASE_REVISION=$(git rev-parse HEAD^)
-                  fi
-                  node scripts/benchmark/streams.mjs --set corpus --quiet \
-                      --shard "${{ strategy.job-index }}/${{ strategy.job-total }}" --baseline-ref "$BASE_REVISION"
-            - name: Upload this part for the join
-              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-              with:
-                  name: benchmark-streams-part-${{ matrix.shard }}-${{ github.sha }}-${{ github.run_attempt }}
-                  path: build/benchmark-streams/streams.json
-                  if-no-files-found: error
-                  retention-days: 30
-            - name: Upload the raw profiles and workloads
-              if: ${{ always() }}
-              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-              with:
-                  name: benchmark-streams-profiles-${{ matrix.shard }}-${{ github.sha }}-${{ github.run_attempt }}
-                  path: |
-                      build/benchmark-streams/callgrind
-                      build/benchmark-streams/workloads
-                      build/benchmark-streams/baseline/callgrind
-                  if-no-files-found: error
-                  retention-days: 30
-
-    streams:
-        name: Measure - streams
-        needs: stream-shards
-        runs-on: ubuntu-latest
-        steps:
-            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-              with:
-                  persist-credentials: false
-            - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-              with:
-                  node-version: 26.12.1
-            - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-              with:
-                  pattern: benchmark-streams-part-*-${{ github.sha }}-${{ github.run_attempt }}
-                  path: build/benchmark-stream-parts
-            - name: Join the parts into one report
-              run: node scripts/benchmark/streams.mjs --merge build/benchmark-stream-parts --quiet
-            - name: Upload structured results for the PR comment
-              if: ${{ always() }}
-              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-              with:
-                  name: benchmark-report-streams-${{ github.run_attempt }}
-                  path: build/benchmark-streams/streams.json
-                  if-no-files-found: warn
-                  retention-days: 30
-            - name: Upload the report
-              if: ${{ always() }}
-              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-              with:
-                  name: benchmark-streams-${{ github.sha }}-${{ github.run_attempt }}
-                  path: |
-                      build/benchmark-streams/streams.md
-                      build/benchmark-streams/streams.json
-                  if-no-files-found: error
-                  retention-days: 30
-
-    # What the language engine pays per completion request (docs/plans/
-    # 2026-10-23-lsp-completion-engine.md, section 7): the stream benchmark's
-    # edit scripts sent as didChange, each measured request followed by a
-    # completion, on the grammar corpus and the shapes up to 256 KiB. Report
-    # only: nothing is gated until the providers land (D5).
-    completion:
-        name: Measure - completion latency
-        runs-on: ubuntu-latest
-        steps:
-            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-              with:
-                  persist-credentials: false
-            - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-              with:
-                  node-version: 26.12.1
-            - name: Install callgrind
-              run: |
-                  sudo apt-get update
-                  sudo apt-get install --no-install-recommends --yes valgrind
-            # The runner is built by the stage benchmark's own build, references
-            # included, so its identity is recorded as theirs is.
-            - name: Build the pinned reference checkouts
-              run: scripts/tooling/setup-environment.sh --install oracle-cmark oracle-cmark-gfm
-            - name: Measure completion requests
-              run: node scripts/benchmark/completion.mjs --quiet
-            - name: Upload structured results for the PR comment
-              if: ${{ always() }}
-              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-              with:
-                  name: benchmark-report-completion-${{ github.run_attempt }}
-                  path: build/benchmark-completion/completion.json
-                  if-no-files-found: warn
-                  retention-days: 30
-            - name: Upload the report, every request and the costliest profiles
-              if: ${{ always() }}
-              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-              with:
-                  name: benchmark-completion-${{ github.sha }}-${{ github.run_attempt }}
-                  path: |
-                      build/benchmark-completion/completion.md
-                      build/benchmark-completion/completion.json
-                      build/benchmark-completion/requests.json
-                      build/benchmark-completion/callgrind
-                      build/benchmark-completion/workloads
                   if-no-files-found: error
                   retention-days: 30

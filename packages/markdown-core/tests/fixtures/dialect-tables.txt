@@ -130,7 +130,7 @@ Document scope=1:1..5:5 anchor=null attributes={} children=3
 │       └── TableRow scope=3:1..3:5 anchor=null attributes={} children=1
 │           └── TableCell scope=3:2..3:4 anchor=null attributes={} children=1
 │               └── Text scope=3:3..3:3 anchor=null attributes={} literal="b" children=0
-├── Heading scope=4:1..4:3 anchor="h" attributes={} level=1 children=1
+├── Heading scope=4:1..4:3 anchor=null attributes={} level=1 children=1
 │   └── Text scope=4:3..4:3 anchor=null attributes={} literal="h" children=0
 └── Paragraph scope=5:1..5:5 anchor=null attributes={} children=1
     └── Text scope=5:1..5:5 anchor=null attributes={} literal="| c |" children=0
@@ -234,8 +234,8 @@ Document scope=1:1..7:16 anchor=null attributes={} children=2
 │               │       └── Text scope=3:6..3:13 anchor=null attributes={} literal="汉|字" children=0
 │               └── TableCell scope=3:17..3:26 anchor=null attributes={} children=1
 │                   └── Code scope=3:18..3:25 anchor=null attributes={} literal="😀|" children=0
-└── List scope=5:1..7:16 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
-    └── ListItem scope=5:1..7:16 anchor=null attributes={} marker=null children=1
+└── List scope=5:1..7:16 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=1
+    └── ListItem scope=5:1..7:16 anchor=null attributes={} status=null children=1
         └── Table scope=5:3..7:16 anchor=null attributes={} columns=[none,none] children=2
             ├── TableHead children=1
             │   └── TableRow scope=5:3..5:14 anchor=null attributes={} children=2
@@ -479,8 +479,8 @@ Document scope=1:1..5:6 anchor=null attributes={} children=3
 .
 Document scope=1:1..5:10 anchor=null attributes={} children=1
 └── Callout scope=1:1..5:10 anchor=null attributes={} variant=null collapsed=null children=1
-    └── List scope=1:3..5:10 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=false children=1
-        └── ListItem scope=1:3..5:10 anchor=null attributes={} marker=null children=3
+    └── List scope=1:3..5:10 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=false children=1
+        └── ListItem scope=1:3..5:10 anchor=null attributes={} status=null children=3
             ├── Reference scope=1:5..1:16 anchor=null attributes={} label="link" dest=url("/url") title=null children=0
             ├── Table scope=2:5..3:9 anchor=null attributes={} columns=[none] children=1
             │   ├── TableHead children=1
@@ -568,7 +568,7 @@ Document scope=1:1..5:9 anchor=null attributes={} children=2
 │       └── TableRow scope=4:1..4:8 anchor=null attributes={} children=1
 │           └── TableCell scope=4:1..4:8 anchor=null attributes={} children=1
 │               └── Text scope=4:1..4:8 anchor=null attributes={} literal="Table: A" children=0
-└── Heading scope=5:1..5:9 anchor="heading" attributes={} level=1 children=1
+└── Heading scope=5:1..5:9 anchor=null attributes={} level=1 children=1
     └── Text scope=5:3..5:9 anchor=null attributes={} literal="Heading" children=0
 ````````````````````````````````
 
@@ -754,8 +754,8 @@ Document scope=1:1..7:8 anchor=null attributes={} children=2
 │       └── TableRow scope=4:1..4:5 anchor=null attributes={} children=1
 │           └── TableCell scope=4:1..4:5 anchor=null attributes={} children=1
 │               └── Text scope=4:1..4:5 anchor=null attributes={} literal=": cap" children=0
-└── List scope=5:1..7:8 anchor=null attributes={} flavor=ordered start=2 variant=decimal delimiter=period tight=true children=1
-    └── ListItem scope=5:1..7:8 anchor=null attributes={} marker=null children=1
+└── List scope=5:1..7:8 anchor=null attributes={} flavor=ordered start=2 delimiter=period tight=true children=1
+    └── ListItem scope=5:1..7:8 anchor=null attributes={} status=null children=1
         └── Paragraph scope=5:4..7:0,7:4..7:8 anchor=null attributes={} children=5
             ├── Text scope=5:4..5:8 anchor=null attributes={} literal="stays" children=0
             ├── SoftBreak scope=5:9..6:0 anchor=null attributes={} children=0
@@ -915,8 +915,118 @@ a
 ===
 .
 Document scope=1:1..3:3 anchor=null attributes={} children=1
-└── Heading scope=1:1..3:3 anchor="a-------" attributes={} level=1 children=3
+└── Heading scope=1:1..3:3 anchor=null attributes={} level=1 children=3
     ├── Text scope=1:1..1:1 anchor=null attributes={} literal="a" children=0
     ├── SoftBreak scope=1:2..2:0 anchor=null attributes={} children=0
     └── Text scope=2:1..2:9 anchor=null attributes={} literal="|---|---|" children=0
+````````````````````````````````
+
+A head row that goes on a paragraph is a line of it, at any indent.
+
+```````````````````````````````` example
+x
+    o|p
+-|-
+.
+Document scope=1:1..3:3 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:1 anchor=null attributes={} children=1
+│   └── Text scope=1:1..1:1 anchor=null attributes={} literal="x" children=0
+└── Table scope=2:5..3:3 anchor=null attributes={} columns=[none,none] children=1
+    ├── TableHead children=1
+    │   └── TableRow scope=2:5..2:7 anchor=null attributes={} children=2
+    │       ├── TableCell scope=2:5..2:5 anchor=null attributes={} children=1
+    │       │   └── Text scope=2:5..2:5 anchor=null attributes={} literal="o" children=0
+    │       └── TableCell scope=2:7..2:7 anchor=null attributes={} children=1
+    │           └── Text scope=2:7..2:7 anchor=null attributes={} literal="p" children=0
+    └── TableBody children=0
+````````````````````````````````
+
+A paragraph's last line is a table's head row when a delimiter row with as
+many cells follows it, whatever lines before it failed to be one.
+
+```````````````````````````````` example
+e
+-|-
+-|-
+.
+Document scope=1:1..3:3 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..3:3 anchor=null attributes={} children=5
+    ├── Text scope=1:1..1:1 anchor=null attributes={} literal="e" children=0
+    ├── SoftBreak scope=1:2..2:0 anchor=null attributes={} children=0
+    ├── Text scope=2:1..2:3 anchor=null attributes={} literal="-|-" children=0
+    ├── SoftBreak scope=2:4..3:0 anchor=null attributes={} children=0
+    └── Text scope=3:1..3:3 anchor=null attributes={} literal="-|-" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+a
+-|-
+-|-
+.
+Document scope=1:1..3:3 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..3:3 anchor=null attributes={} children=5
+    ├── Text scope=1:1..1:1 anchor=null attributes={} literal="a" children=0
+    ├── SoftBreak scope=1:2..2:0 anchor=null attributes={} children=0
+    ├── Text scope=2:1..2:3 anchor=null attributes={} literal="-|-" children=0
+    ├── SoftBreak scope=2:4..3:0 anchor=null attributes={} children=0
+    └── Text scope=3:1..3:3 anchor=null attributes={} literal="-|-" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+-+
+-|-
+-|-
+.
+Document scope=1:1..3:3 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..3:3 anchor=null attributes={} children=5
+    ├── Text scope=1:1..1:2 anchor=null attributes={} literal="-+" children=0
+    ├── SoftBreak scope=1:3..2:0 anchor=null attributes={} children=0
+    ├── Text scope=2:1..2:3 anchor=null attributes={} literal="-|-" children=0
+    ├── SoftBreak scope=2:4..3:0 anchor=null attributes={} children=0
+    └── Text scope=3:1..3:3 anchor=null attributes={} literal="-|-" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+c
+-|-
+i
+-|
+.
+Document scope=1:1..4:2 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..4:2 anchor=null attributes={} children=7
+    ├── Text scope=1:1..1:1 anchor=null attributes={} literal="c" children=0
+    ├── SoftBreak scope=1:2..2:0 anchor=null attributes={} children=0
+    ├── Text scope=2:1..2:3 anchor=null attributes={} literal="-|-" children=0
+    ├── SoftBreak scope=2:4..3:0 anchor=null attributes={} children=0
+    ├── Text scope=3:1..3:1 anchor=null attributes={} literal="i" children=0
+    ├── SoftBreak scope=3:2..4:0 anchor=null attributes={} children=0
+    └── Text scope=4:1..4:2 anchor=null attributes={} literal="-|" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+:\|[]
+|-
+.
+Document scope=1:1..2:2 anchor=null attributes={} children=1
+└── Table scope=1:1..2:2 anchor=null attributes={} columns=[none] children=1
+    ├── TableHead children=1
+    │   └── TableRow scope=1:1..1:5 anchor=null attributes={} children=1
+    │       └── TableCell scope=1:1..1:5 anchor=null attributes={} children=1
+    │           └── Directive scope=1:1..1:5 anchor=null attributes={} name="|" children=0
+    │               └── DirectiveLabel scope=1:4..1:5 anchor=null attributes={} children=0
+    └── TableBody children=0
+````````````````````````````````
+
+```````````````````````````````` example
+http://a\|
+-|
+.
+Document scope=1:1..2:2 anchor=null attributes={} children=1
+└── Table scope=1:1..2:2 anchor=null attributes={} columns=[none] children=1
+    ├── TableHead children=1
+    │   └── TableRow scope=1:1..1:10 anchor=null attributes={} children=1
+    │       └── TableCell scope=1:1..1:10 anchor=null attributes={} children=1
+    │           └── Link scope=1:1..1:10 anchor=null attributes={} dest=url("http://a|") title=null children=1
+    │               └── Text scope=1:1..1:10 anchor=null attributes={} literal="http://a|" children=0
+    └── TableBody children=0
 ````````````````````````````````

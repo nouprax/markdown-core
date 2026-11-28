@@ -25,21 +25,6 @@ allocated; every other failure, including a result too large to encode, is an
 error message. The message borrows nothing: the document is freed before the
 call returns.
 
-```c
-uint8_t *markdown_core_wire_session_new(const uint8_t *source, size_t length, markdown_core_text_unit unit,
-                                        markdown_core_session **session);
-uint8_t *markdown_core_wire_session_append(markdown_core_session *session, const uint8_t *text, size_t size);
-uint8_t *markdown_core_wire_session_flush(markdown_core_session *session);
-uint8_t *markdown_core_wire_session_edit(markdown_core_session *session, markdown_core_position start,
-                                         markdown_core_position end, const uint8_t *text, size_t size);
-```
-
-A session's steps answer the same way: each returns one caller-owned message
-of the document the step published, or of the step's failure. The binding
-holds the C session itself and releases it with `markdown_core_session_close`.
-Every message is a whole document: the binding builds its value tree from it
-as it does after a parse.
-
 ## Primitives
 
 All integers are little-endian and unaligned.
@@ -63,12 +48,9 @@ a reader that received only a pointer knows where the message ends.
 
 - Status 1 is a failure. The body is one `u32`, the facade's
   `markdown_core_status` (`ALLOCATION_FAILED` 1, `OUT_OF_BOUNDS` 2,
-  `KIND_MISMATCH` 3, `SESSION_FLUSHED` 4, `SESSION_STREAMING` 5), and the
-  message ends. A parse fails only with `ALLOCATION_FAILED`, which also
-  reports a document too large for the message length; a session's append
-  or flush after its flush fails with `SESSION_FLUSHED`, and its edit before
-  its flush with `SESSION_STREAMING`. An edit whose cursor stands nowhere in
-  the text, or whose end is before its start, fails with `OUT_OF_BOUNDS`.
+  `KIND_MISMATCH` 3), and the message ends. A parse fails only with
+  `ALLOCATION_FAILED`, which also reports a document too large for the
+  message length.
 - Status 0 is a document. The body is a sequence of node records in
   **post-order**, ending with the `Document`'s record, followed by the
   document's definition tables.
@@ -128,17 +110,17 @@ pass, and the encoder never needs to know a subtree's size before writing it.
 ## Definition tables
 
 After the `Document` record, the message writes the document's footnote
-table, its specimen table and its Reference table. Each is a `u32` count and
-that many `u64` ids: every `Footnote`, inline notes included, every
-`Specimen` and every `Reference` of the document, in source order. A reader
+table and its Reference table. Each is a `u32` count and that many `u64`
+ids: every `Footnote`, inline notes included, and every `Reference` of the
+document, in source order. A reader
 resolves each id to the node it built with that id; an id that names no node
 of that kind is invalid.
 
 The reference label table follows: a `u32` count and that many entries, each
 a label `String` and a `u64` id, one per normalized label a `reference`
 destination resolves, in byte order of the label. The id names the
-`Reference` or `Heading` the label resolves to, as `Destination` defines it;
-an id that names no node of one of those kinds is invalid. A reader answers
+`Reference` the label resolves to, as `Destination` defines it; an id that
+names no `Reference` is invalid. A reader answers
 a document's reference lookup from this table.
 
 Scopes are not on the wire. A binding computes them from the node's runs and
@@ -152,45 +134,3 @@ and branch ranges, definition table ids, reference label ids, and integers that
 its own model cannot represent. The semantic invariants of the AST (heading levels, table
 widths, list facts) are the parser's to keep and the C suites' to test; a reader does
 not re-derive them.
-
-## Queries
-
-```c
-uint8_t *markdown_core_wire_dialect(void);
-uint8_t *markdown_core_wire_locate(markdown_core_session *session, markdown_core_position position);
-uint8_t *markdown_core_wire_spell(const markdown_core_session *session, size_t slot, const uint8_t *value,
-                                  size_t size);
-uint8_t *markdown_core_wire_field(const markdown_core_session *session, uint64_t id, markdown_core_position position,
-                                  markdown_core_slot_kind slot);
-uint8_t *markdown_core_wire_markers(const markdown_core_session *session, uint64_t id,
-                                    markdown_core_position position);
-```
-
-A session's queries (docs/plans/2026-10-23-lsp-completion-engine.md, step 3)
-answer the same way, one caller-owned message each: status 1 with the
-failure's status, or status 0 with the query's answer as its body. Each asks
-the session's current document and text, so none takes the source.
-
-- **Dialect**: `fields: [String]`, the metadata field names, then `cues:
-  String`, the slot cues; it asks no session.
-- **Locate**: moves the session's cursor (`markdown_core_session_locate`) and
-  answers the context it leaves as the session's state: `blocks: [Opener]`,
-  `inlines: [Opener]`, `slots: [Slot]`. An `Opener` is a `u8` node kind
-  ordinal, 0 for an inline opener whose kind is still open, and a `Scope`. A
-  `Slot` is a `u8` slot kind ordinal, a `u8` owner kind ordinal, its `before`
-  and `after` scopes, `closed: Bool` and `prefix: [String]`. `OUT_OF_BOUNDS` keeps
-  the state; after `ALLOCATION_FAILED`, which the answer itself may meet, a
-  binding drops the slots it read before. The context lives and goes with the session, so the
-  binding holds nothing to release.
-- **Spell**: spells in slot `slot` of the session's context as it stands: an
-  `Insertion?`, which is `text: String` and a `u32` cursor, the bytes of the
-  text before the caret; absent when the slot holds the value in no
-  spelling. An append or the flush clears the context, and a slot it no
-  longer has is `OUT_OF_BOUNDS`.
-- **Field** and **Markers**: `[Scope]`. The binding names the node by its
-  identifier and the position of a byte the node holds, and the encoder finds
-  the node with that identifier on the path at that byte; `OUT_OF_BOUNDS`
-  when it is not there.
-
-A `Scope` is four `i32`: the start's line and column, then the end's, as the
-facade's `markdown_core_scope` holds them, with columns in the session's unit.

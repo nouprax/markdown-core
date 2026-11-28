@@ -6,7 +6,7 @@ Reference resolution is order-independent and output-bounded.
 
 Each definition is a `Reference` node where it was written, holding its
 destination, title and attributes once. Every occurrence that resolves is the
-`Link` or `Embedded` it names, holding the normalized label in a `reference`
+`Link` or `Embed` it names, holding the normalized label in a `reference`
 destination and only its own attributes; the document resolves the label to
 its `Reference` or `Heading`. The model therefore needs neither a resolution
 budget that changes semantics nor output growth proportional to destination

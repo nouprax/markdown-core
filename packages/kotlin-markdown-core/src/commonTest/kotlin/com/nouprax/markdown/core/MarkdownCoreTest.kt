@@ -75,15 +75,14 @@ class ApiTest {
     fun ownedScopedElementsAreMarkupWithFiniteWalks() {
         val document =
             Document.parse(
-                "---\ntitle: Example\n---\n[^Label]\n\n[^label]: self [^LABEL]\n\n(@sample) Body\n",
+                "---\ntitle: Example\n---\n[^Label]\n\n[^label]: self [^LABEL]\n",
             )
         val citation = assertIs<Cite>(assertIs<Paragraph>(document.content.first()).content.first()).citations.single()
         val nodes: kotlin.collections.List<Markup> =
-            listOf(document.metadata!!, citation, document.footnotes.single(), document.specimens.single())
+            listOf(document.metadata!!, citation, document.footnotes.single())
         // Definitions stay where they were written: the document lists them, it does not own them.
         assertSame(document.content[1], document.footnotes.single())
-        assertSame(document.content[2], document.specimens.single())
-        val names = listOf("Metadata", "Citation", "Footnote", "Specimen")
+        val names = listOf("Metadata", "Citation", "Footnote")
         for ((index, node) in nodes.withIndex()) {
             assertEquals(null, node.anchor)
             assertTrue(node.attributes.classes.isEmpty() && node.attributes.records.isEmpty())
@@ -98,14 +97,12 @@ class ApiTest {
         assertEquals("label", assertIs<FootnoteTarget.Label>(target).value)
         assertEquals("label", document.footnotes.single().label)
         assertSame(document.footnotes.single(), document.footnote("label"))
-        assertEquals("sample", document.specimens.single().label)
-        assertSame(document.specimens.single(), document.specimen("sample"))
     }
 
     @Test
-    fun embeddedCrossLinksShareDimensionsAndKeepRawPrefixes() {
+    fun embedCrossLinksShareDimensionsAndKeepRawPrefixes() {
         val document = Document.parse("![[v.mp4|*raw*|2147483647x2]] ![[n|3]] [[n|100]] ![[n|bad|01]] ![[n]]\n")
-        val links = assertIs<Paragraph>(document.content.single()).content.filterIsInstance<CrossEmbedded>()
+        val links = assertIs<Paragraph>(document.content.single()).content.filterIsInstance<CrossEmbed>()
         assertEquals(listOf(Dimensions(2147483647, 2), Dimensions(3), null, null), links.map { it.dimensions })
         assertEquals(
             "100",
@@ -122,7 +119,7 @@ class ApiTest {
     fun imageDimensionsBelongToOccurrencesWithSharedDestinations() {
         val source = "![*alt*|2147483647x2][r] ![3][r] ![bad|01][r]\n\n[r]: /shared \"title\"\n"
         val document = Document.parse(source)
-        val images = assertIs<Paragraph>(document.content.first()).content.filterIsInstance<Embedded>()
+        val images = assertIs<Paragraph>(document.content.first()).content.filterIsInstance<Embed>()
         assertEquals(listOf(Dimensions(2147483647, 2), Dimensions(3), null), images.map { it.dimensions })
         assertEquals(1, setOf(Dimensions(640, 480), Dimensions(640, 480)).size)
         assertTrue(images.all { it.dest == Destination.Reference("r") && it.title == null })
@@ -144,12 +141,12 @@ class ApiTest {
         images[0].walk(visitor)
         assertEquals(
             listOf(
-                "enter:Embedded",
+                "enter:Embed",
                 "enter:Emphasis",
                 "enter:Text",
                 "exit:Text",
                 "exit:Emphasis",
-                "exit:Embedded",
+                "exit:Embed",
             ),
             visitor.events,
         )
@@ -206,17 +203,23 @@ class ApiTest {
     }
 
     @Test
-    fun taskMarkersPreserveScalarsAndDeriveCompletion() {
-        for (marker in listOf(" ", "x", "X", "?", "é", "✓", "🚀", "́", "]")) {
+    fun taskChecksGiveTheirStatusesAndOtherScalarsStayText() {
+        val statuses =
+            listOf(
+                " " to TaskStatus.OPEN,
+                "x" to TaskStatus.DONE,
+                "X" to TaskStatus.DONE,
+                "?" to TaskStatus.QUESTION,
+                "-" to TaskStatus.CANCELLED,
+            )
+        for ((marker, status) in statuses) {
             val item = assertIs<List>(Document.parse("- [$marker] body\n").content.single()).items.single()
-            assertEquals(marker, item.marker)
-            assertEquals(true, item.tasked)
-            assertEquals(marker != " ", item.completed)
+            assertEquals(status, item.status)
         }
-        val item = assertIs<List>(Document.parse("- [é] body\n").content.single()).items.single()
-        assertEquals(null, item.marker)
-        assertEquals(false, item.tasked)
-        assertEquals(false, item.completed)
+        for (marker in listOf("é", "✓", "🚀", "!", "]")) {
+            val item = assertIs<List>(Document.parse("- [$marker] body\n").content.single()).items.single()
+            assertEquals(null, item.status)
+        }
     }
 
     @Test
@@ -234,7 +237,7 @@ class ApiTest {
             listOf(
                 "~~x~~\n" to "Strikethrough scope=",
                 "www.example.com\n" to "Link scope=",
-                "- [x] task\n" to "marker=\"x\"",
+                "- [x] task\n" to "status=done",
                 "ref[^a]\n\n[^a]: note\n" to "Cite scope=",
                 "\$x\$\n" to "Formula scope=",
                 ":badge[label]\n" to "Directive scope=",
@@ -250,13 +253,13 @@ class ApiTest {
         val document = Document.parse("# Heading\n\nBody ![alt](image.png)\n")
         val visitor = KindVisitor()
         val paragraph = assertIs<Paragraph>(document.content.last())
-        val embedded = paragraph.content.filterIsInstance<Embedded>().single()
-        val node: Markup = embedded
+        val embed = paragraph.content.filterIsInstance<Embed>().single()
+        val node: Markup = embed
         document.walk(visitor)
-        assertEquals(listOf("Document", "heading:1", "Text", "Paragraph", "Text", "Embedded", "Text"), visitor.kinds)
+        assertEquals(listOf("Document", "heading:1", "Text", "Paragraph", "Text", "Embed", "Text"), visitor.kinds)
         visitor.kinds.clear()
         node.walk(visitor)
-        assertEquals(listOf("Embedded", "Text"), visitor.kinds)
+        assertEquals(listOf("Embed", "Text"), visitor.kinds)
     }
 
     @Test
@@ -522,7 +525,7 @@ class BindingMappingTest {
         val document = Document.parse(source)
 
         // The definition is a Reference where it was written, and every
-        // reference form is a Link or Embedded naming its label.
+        // reference form is a Link or Embed naming its label.
         val reference = assertIs<Reference>(document.content[0])
         assertEquals("foo", reference.label)
         assertEquals(Destination.Url("/url"), reference.dest)
@@ -548,7 +551,7 @@ class BindingMappingTest {
             assertEquals("foo", assertIs<Destination.Reference>(link.dest).label)
             assertNull(link.title)
         }
-        val image = inlines.filterIsInstance<Embedded>().single()
+        val image = inlines.filterIsInstance<Embed>().single()
         assertEquals(Destination.Reference("foo"), image.dest)
         assertNull(image.title)
         assertEquals(Placement.STANDALONE, inlines.filterIsInstance<Formula>().single().mode)
@@ -572,7 +575,7 @@ class BindingMappingTest {
         // The owning node keeps its label field separate from block content;
         // the per-node dumper deliberately emits both relations.
         val dump = document.dump(source)
-        for (fragment in listOf("Reference scope=", "dest=reference(\"foo\")", "Embedded scope=", "DirectiveLabel")) {
+        for (fragment in listOf("Reference scope=", "dest=reference(\"foo\")", "Embed scope=", "DirectiveLabel")) {
             assertTrue(dump.contains(fragment), "dump is missing $fragment")
         }
         assertEquals(listOf("Paragraph"), block.content.map { it::class.simpleName })
@@ -667,16 +670,6 @@ class BindingMappingTest {
     }
 
     @Test
-    fun specimenCallsNameTheFirstDefinitionOfTheirLabel() {
-        val source = "(@a) one\n\n(@) anonymous\n\n(@a) two\n\nSee [@a].\n"
-        val document = Document.parse(source)
-        assertEquals(listOf("a", null, "a"), document.specimens.map { it.label })
-        assertEquals(document.content.take(3), document.specimens)
-        assertSame(document.specimens.first(), document.specimen("a"))
-        assertNull(document.specimen("b"))
-    }
-
-    @Test
     fun aDirectiveBlockWithNoLabelTakesTheOtherArm() {
         val source = ":::note\nBody\n:::\n"
         val document = Document.parse(source)
@@ -734,24 +727,20 @@ class BindingMappingTest {
 
         val rich = assertIs<Paragraph>(withEverything.content[1]).content
         assertEquals("t", rich.filterIsInstance<Link>().single().title)
-        assertEquals("u", rich.filterIsInstance<Embedded>().single().title)
+        assertEquals("u", rich.filterIsInstance<Embed>().single().title)
         val plain = assertIs<Paragraph>(withNothing.content[1]).content
         assertEquals(null, plain.filterIsInstance<Link>().single().title)
-        assertEquals(null, plain.filterIsInstance<Embedded>().single().title)
+        assertEquals(null, plain.filterIsInstance<Embed>().single().title)
 
         assertEquals(listOf(Record("k", "v")), assertIs<DirectiveBlock>(withEverything.content[2]).attributes.records)
         assertEquals(emptyList(), assertIs<DirectiveBlock>(withNothing.content[2]).attributes.records)
 
         val checked = assertIs<com.nouprax.markdown.core.List>(withEverything.content[3])
-        assertEquals("x", checked.items.single().marker)
-        assertEquals(true, checked.items.single().tasked)
-        assertEquals(true, checked.items.single().completed)
+        assertEquals(TaskStatus.DONE, checked.items.single().status)
         val unchecked = assertIs<com.nouprax.markdown.core.List>(withNothing.content[3])
-        assertEquals(null, unchecked.items.single().marker)
-        assertEquals(false, unchecked.items.single().tasked)
-        assertEquals(false, unchecked.items.single().completed)
+        assertEquals(null, unchecked.items.single().status)
         val parenthesized = assertIs<com.nouprax.markdown.core.List>(Document.parse("1) item\n").content.single())
-        assertEquals(false, assertIs<OrderedListDelimiter.Parenthesis>(parenthesized.delimiter).closed)
+        assertEquals(OrderedListDelimiter.PARENTHESIS, parenthesized.delimiter)
     }
 
     @Test
@@ -821,15 +810,15 @@ class RobustnessTest {
     }
 
     @Test
-    fun forwardReferencesResolveToTheLaterSectionTitleAfterNativeRelease() {
+    fun forwardReferencesResolveToTheLaterDefinitionAfterNativeRelease() {
         val anchor = "a".repeat(1024)
         val count = 5_000
-        val document = Document.parse("[Target]\n\n".repeat(count) + "# Target {#$anchor .heading k=1}\n")
+        val document = Document.parse("[Target]\n\n".repeat(count) + "[Target]: /t {#$anchor .ref k=1}\n")
         val links = document.content.take(count).map { assertIs<Link>(assertIs<Paragraph>(it).content.single()) }
-        val declared = assertIs<Heading>(document.content[count])
+        val declared = assertIs<Reference>(document.content[count])
         assertEquals(anchor, declared.anchor)
-        assertTrue(document.references.isEmpty())
-        assertSame<Markup?>(declared, document.reference("target"))
+        assertEquals(listOf(declared), document.references)
+        assertSame(declared, document.reference("target"))
         for (link in links) {
             assertEquals(Destination.Reference("target"), link.dest)
             assertEquals(null, link.anchor)
@@ -892,7 +881,7 @@ class RobustnessTest {
         val paragraph = assertIs<Paragraph>(document.content[1])
         val code = assertIs<Code>(paragraph.content[0])
         val link = assertIs<Link>(paragraph.content[2])
-        val image = assertIs<Embedded>(paragraph.content[4])
+        val image = assertIs<Embed>(paragraph.content[4])
         assertEquals(listOf("code"), code.attributes.classes)
         assertEquals(
             10,

@@ -1,6 +1,6 @@
 {
     "schemaVersion": 1,
-    "purpose": "The machine-readable, normative canonical AST contract. Each kind's ordinal is its wire number in every binding; scripts/tooling/generate-node-kinds.mjs generates every table that enumerates kinds or slot kinds from this file. A slot is the source of a field that holds a name, a key or a path an editor can complete; `slots` numbers the slot kinds, and a field's `slots` names those its source writes, in source order. C, Swift, Kotlin, and TypeScript declare projections of this shape, and scripts/audit/check-ast-projections.mjs checks the hand-written projections plus the prose and debug-dump tables against this file. Formula is the only kind whose placement mode varies; placement for Code, CodeBlock, Directive, DirectiveBlock, and FormulaBlock is implied by the kind.",
+    "purpose": "The machine-readable, normative canonical AST contract. Each kind's ordinal is its wire number in every binding; scripts/tools/generate-node-kinds.mjs generates every table that enumerates kinds from this file. C, Swift, Kotlin, and TypeScript declare projections of this shape, and scripts/audit/check-ast-projections.mjs checks the hand-written projections plus the prose and debug-dump tables against this file. Formula is the only kind whose placement mode varies; placement for Code, CodeBlock, Directive, DirectiveBlock, and FormulaBlock is implied by the kind.",
     "prose": "docs/specs/canonical-ast.md",
     "dumpGrammar": "docs/specs/canonical-ast-dump.md",
     "walk": {
@@ -12,80 +12,10 @@
         "Placement": ["embedded", "standalone"],
         "BibMode": ["normal", "authorInText", "suppressAuthor"],
         "ListFlavor": ["bullet", "ordered"],
+        "TaskStatus": ["open", "done", "question", "cancelled"],
+        "OrderedListDelimiter": ["period", "parenthesis"],
         "Flow": ["none", "left", "center", "right"]
     },
-    "slots": [
-        {
-            "name": "dest",
-            "ordinal": 1,
-            "purpose": "A destination: a URL or file path, or the note path of a cross link or embed."
-        },
-        {
-            "name": "anchor",
-            "ordinal": 2,
-            "purpose": "An anchor a destination names: the fragment of a URL or the anchor of a cross destination."
-        },
-        {
-            "name": "label",
-            "ordinal": 3,
-            "purpose": "A reference label, at a reference link or embed or at the reference definition that states it."
-        },
-        {
-            "name": "footnote",
-            "ordinal": 4,
-            "purpose": "A footnote label, at a footnote call or at the definition that states it."
-        },
-        {
-            "name": "bib",
-            "ordinal": 5,
-            "purpose": "A bibliography key."
-        },
-        {
-            "name": "specimen",
-            "ordinal": 6,
-            "purpose": "A specimen label, at a specimen reference or at the definition that states it."
-        },
-        {
-            "name": "name",
-            "ordinal": 7,
-            "purpose": "The name of a directive or a topic."
-        },
-        {
-            "name": "id",
-            "ordinal": 8,
-            "purpose": "An anchor a node declares: an attribute identifier or a block identifier."
-        },
-        {
-            "name": "class",
-            "ordinal": 9,
-            "purpose": "An attribute class."
-        },
-        {
-            "name": "record",
-            "ordinal": 10,
-            "purpose": "The name of an attribute record."
-        },
-        {
-            "name": "variant",
-            "ordinal": 11,
-            "purpose": "The authored type of a callout."
-        },
-        {
-            "name": "info",
-            "ordinal": 12,
-            "purpose": "The info string of a fenced code block."
-        },
-        {
-            "name": "field",
-            "ordinal": 13,
-            "purpose": "The name of a properties member."
-        },
-        {
-            "name": "value",
-            "ordinal": 14,
-            "purpose": "The value of an attribute record or of a properties member."
-        }
-    ],
     "kinds": [
         {
             "name": "Document",
@@ -111,8 +41,7 @@
                 {
                     "name": "variant",
                     "type": "String",
-                    "optional": true,
-                    "slots": ["variant"]
+                    "optional": true
                 },
                 {
                     "name": "collapsed",
@@ -182,11 +111,6 @@
                     "optional": true
                 },
                 {
-                    "name": "variant",
-                    "type": "OrderedListVariant",
-                    "optional": true
-                },
-                {
                     "name": "delimiter",
                     "type": "OrderedListDelimiter",
                     "optional": true
@@ -209,8 +133,8 @@
             "ordinal": 7,
             "fields": [
                 {
-                    "name": "marker",
-                    "type": "String",
+                    "name": "status",
+                    "type": "TaskStatus",
                     "optional": true
                 },
                 {
@@ -219,7 +143,7 @@
                     "optional": false
                 }
             ],
-            "invariants": "`marker == null` means not a task item; block content"
+            "invariants": "`status == null` means not a task item; `[ ]` is open, `[x]` and `[X]` done, `[?]` question and `[-]` cancelled; block content"
         },
         {
             "name": "CodeBlock",
@@ -228,8 +152,7 @@
                 {
                     "name": "info",
                     "type": "String",
-                    "optional": true,
-                    "slots": ["info"]
+                    "optional": true
                 },
                 {
                     "name": "language",
@@ -331,8 +254,7 @@
                 {
                     "name": "name",
                     "type": "String",
-                    "optional": true,
-                    "slots": ["name"]
+                    "optional": false
                 },
                 {
                     "name": "label",
@@ -345,7 +267,7 @@
                     "optional": false
                 }
             ],
-            "invariants": "block content; name is null for a nameless container and required for a named leaf/container; nameless containers have no label; all container forms share the closer and nesting rules"
+            "invariants": "block content; name is required; all container forms share the closer and nesting rules"
         },
         {
             "name": "DirectiveLabel",
@@ -425,7 +347,7 @@
             "invariants": "inline leaf; dest is cross(path, anchor); the complete raw label is null only when no separator was authored"
         },
         {
-            "name": "CrossEmbedded",
+            "name": "CrossEmbed",
             "ordinal": 32,
             "fields": [
                 {
@@ -594,7 +516,7 @@
             "invariants": "`dest` is the tagged `Destination` value and is never absent: `[a]()` and `[a](<>)` wrote one and wrote nothing in it, so it is `url(\"\")`; a direct link owns the `url` branch; a reference occurrence owns the `reference` branch with the normalized label it names, and an unresolved reference is the inherited literal text; absent and empty title remain distinct; inline content"
         },
         {
-            "name": "Embedded",
+            "name": "Embed",
             "ordinal": 23,
             "fields": [
                 {
@@ -627,8 +549,7 @@
                 {
                     "name": "name",
                     "type": "String",
-                    "optional": false,
-                    "slots": ["name"]
+                    "optional": false
                 },
                 {
                     "name": "label",
@@ -652,13 +573,12 @@
         },
         {
             "name": "Topic",
-            "ordinal": 44,
+            "ordinal": 43,
             "fields": [
                 {
                     "name": "name",
                     "type": "String",
-                    "optional": false,
-                    "slots": ["name"]
+                    "optional": false
                 }
             ],
             "invariants": "inline leaf; the name as written, without the `#`; null anchor and empty attributes"
@@ -726,8 +646,7 @@
                 {
                     "name": "label",
                     "type": "String",
-                    "optional": true,
-                    "slots": ["footnote"]
+                    "optional": true
                 },
                 {
                     "name": "content",
@@ -738,104 +657,70 @@
             "invariants": "A Markup definition where it was written. A referenced definition `[^x]: body` is a block in the content that holds it, with its normalized label and block content; an inline note `^[body]` is owned by its Citation's footnote(note) referent, with a null label and direct inline content. Duplicates and unused definitions remain."
         },
         {
-            "name": "Specimen",
-            "ordinal": 41,
-            "fields": [
-                {
-                    "name": "label",
-                    "type": "String",
-                    "optional": true,
-                    "slots": ["specimen"]
-                },
-                {
-                    "name": "start",
-                    "type": "Int",
-                    "optional": true
-                },
-                {
-                    "name": "content",
-                    "type": "[Markup]",
-                    "optional": false
-                }
-            ],
-            "invariants": "A Markup definition where it was written, including duplicates and anonymous definitions. label is the authored label or null; start is an explicit effective counter reset or null. Display numbers are derived."
-        },
-        {
             "name": "Metadata",
-            "ordinal": 42,
+            "ordinal": 41,
             "fields": [
                 {
                     "name": "name",
                     "type": "MetadataValue",
-                    "optional": true,
-                    "slots": ["field", "value"]
+                    "optional": true
                 },
                 {
                     "name": "title",
                     "type": "MetadataValue",
-                    "optional": true,
-                    "slots": ["field", "value"]
+                    "optional": true
                 },
                 {
                     "name": "subtitle",
                     "type": "MetadataValue",
-                    "optional": true,
-                    "slots": ["field", "value"]
+                    "optional": true
                 },
                 {
                     "name": "time",
                     "type": "MetadataValue",
-                    "optional": true,
-                    "slots": ["field", "value"]
+                    "optional": true
                 },
                 {
                     "name": "date",
                     "type": "MetadataValue",
-                    "optional": true,
-                    "slots": ["field", "value"]
+                    "optional": true
                 },
                 {
                     "name": "authors",
                     "type": "MetadataValue",
-                    "optional": true,
-                    "slots": ["field", "value"]
+                    "optional": true
                 },
                 {
                     "name": "keywords",
                     "type": "MetadataValue",
-                    "optional": true,
-                    "slots": ["field", "value"]
+                    "optional": true
                 },
                 {
                     "name": "abstract",
                     "type": "MetadataValue",
-                    "optional": true,
-                    "slots": ["field", "value"]
+                    "optional": true
                 },
                 {
                     "name": "state",
                     "type": "MetadataValue",
-                    "optional": true,
-                    "slots": ["field", "value"]
+                    "optional": true
                 },
                 {
                     "name": "comment",
                     "type": "MetadataValue",
-                    "optional": true,
-                    "slots": ["field", "value"]
+                    "optional": true
                 }
             ],
             "invariants": "A leaf Markup node owned by Document.metadata. Field absence differs from explicit null. Its scope covers the authored properties block; unsupported attribute syntax yields null anchor and empty attributes."
         },
         {
             "name": "Reference",
-            "ordinal": 43,
+            "ordinal": 42,
             "fields": [
                 {
                     "name": "label",
                     "type": "String",
-                    "optional": false,
-                    "slots": ["label"]
+                    "optional": false
                 },
                 {
                     "name": "dest",
@@ -853,55 +738,45 @@
     ],
     "values": {
         "Destination": {
-            "purpose": "A tagged value, not a node: it has no id, extent, children, anchor, or attributes, and a branch's fields exist only in that branch. A direct Link or Embedded and every Reference own the url branch; a reference Link or Embedded owns the reference branch, the normalized label it names: the first Reference in document source order whose label is equal, or, when none is, the first Heading in document source order whose text declares it; the cross branch is the workspace address CrossLink and CrossEmbedded produce.",
+            "purpose": "A tagged value, not a node: it has no id, extent, children, anchor, or attributes, and a branch's fields exist only in that branch. A direct Link or Embed and every Reference own the url branch; a reference Link or Embed owns the reference branch, the normalized label it names: the first Reference in document source order whose label is equal; the cross branch is the workspace address CrossLink and CrossEmbed produce.",
             "branches": {
                 "url": [
                     {
                         "name": "value",
                         "type": "String",
-                        "optional": false,
-                        "slots": ["dest", "anchor"]
+                        "optional": false
                     }
                 ],
                 "cross": [
                     {
                         "name": "path",
                         "type": "String",
-                        "optional": false,
-                        "slots": ["dest"]
+                        "optional": false
                     },
                     {
                         "name": "anchor",
                         "type": "String",
-                        "optional": true,
-                        "slots": ["anchor"]
+                        "optional": true
                     }
                 ],
                 "reference": [
                     {
                         "name": "label",
                         "type": "String",
-                        "optional": false,
-                        "slots": ["label"]
+                        "optional": false
                     }
                 ]
-            },
-            "holders": {
-                "url": ["Link", "Embedded", "Reference"],
-                "cross": ["CrossLink", "CrossEmbedded"],
-                "reference": ["Link", "Embedded"]
             },
             "dump": "url(\"...\"), cross(path=\"...\",anchor=null) or reference(\"...\")"
         },
         "CitationReferent": {
-            "purpose": "A tagged value, not a node: it has no id or extent, and a branch's fields exist only in that branch. The bib branch is produced by bibliography citations; every referenced or inline footnote call produces the footnote branch. Its label target names the first Footnote in document source order whose label is equal, and its note target owns an inline note's Footnote. The specimen branch names the first Specimen in document source order whose label is equal.",
+            "purpose": "A tagged value, not a node: it has no id or extent, and a branch's fields exist only in that branch. The bib branch is produced by bibliography citations; every referenced or inline footnote call produces the footnote branch. Its label target names the first Footnote in document source order whose label is equal, and its note target owns an inline note's Footnote.",
             "branches": {
                 "bib": [
                     {
                         "name": "key",
                         "type": "String",
-                        "optional": false,
-                        "slots": ["bib"]
+                        "optional": false
                     },
                     {
                         "name": "mode",
@@ -915,17 +790,9 @@
                         "type": "FootnoteTarget",
                         "optional": false
                     }
-                ],
-                "specimen": [
-                    {
-                        "name": "label",
-                        "type": "String",
-                        "optional": false,
-                        "slots": ["specimen"]
-                    }
                 ]
             },
-            "dump": "bib(key=\"...\",mode=normal) or footnote(label=\"...\") or footnote(note) or specimen(label=\"...\")"
+            "dump": "bib(key=\"...\",mode=normal) or footnote(label=\"...\") or footnote(note)"
         },
         "FootnoteTarget": {
             "purpose": "The footnote a footnote referent names: a label looked up in the document, or the inline note's Footnote, which the referent owns.",
@@ -934,8 +801,7 @@
                     {
                         "name": "value",
                         "type": "String",
-                        "optional": false,
-                        "slots": ["footnote"]
+                        "optional": false
                     }
                 ],
                 "note": [
@@ -947,66 +813,6 @@
                 ]
             },
             "dump": "label=\"...\" or note within the footnote referent; the note's Footnote nests under its Citation before the affix groups"
-        },
-        "OrderedListDelimiter": {
-            "purpose": "The authored punctuation of an ordered marker: a period, parenthesis punctuation recording whether an opening parenthesis was authored, or the default marker form.",
-            "scoped": false,
-            "branches": [
-                {
-                    "name": "period",
-                    "fields": []
-                },
-                {
-                    "name": "parenthesis",
-                    "fields": [
-                        {
-                            "name": "closed",
-                            "type": "Bool",
-                            "optional": false
-                        }
-                    ]
-                },
-                {
-                    "name": "default",
-                    "fields": []
-                }
-            ],
-            "dump": "period, parenthesis(closed=true|false), or default"
-        },
-        "OrderedListVariant": {
-            "purpose": "The authored numbering system of an ordered marker, with authored case carried by alphabetic and Roman variants.",
-            "scoped": false,
-            "branches": [
-                {
-                    "name": "decimal",
-                    "fields": []
-                },
-                {
-                    "name": "alpha",
-                    "fields": [
-                        {
-                            "name": "lowercased",
-                            "type": "Bool",
-                            "optional": false
-                        }
-                    ]
-                },
-                {
-                    "name": "roman",
-                    "fields": [
-                        {
-                            "name": "lowercased",
-                            "type": "Bool",
-                            "optional": false
-                        }
-                    ]
-                },
-                {
-                    "name": "default",
-                    "fields": []
-                }
-            ],
-            "dump": "decimal, alpha(lowercased=true|false), roman(lowercased=true|false), or default"
         },
         "TableColumn": {
             "purpose": "One logical table column, located by its table: its alignment.",
@@ -1026,14 +832,12 @@
                 {
                     "name": "name",
                     "type": "String",
-                    "optional": false,
-                    "slots": ["record"]
+                    "optional": false
                 },
                 {
                     "name": "value",
                     "type": "String",
-                    "optional": false,
-                    "slots": ["value"]
+                    "optional": false
                 }
             ],
             "dump": "name=\"value\" within attributes"
@@ -1044,8 +848,7 @@
                 {
                     "name": "classes",
                     "type": "[String]",
-                    "optional": false,
-                    "slots": ["class"]
+                    "optional": false
                 },
                 {
                     "name": "records",
@@ -1218,8 +1021,7 @@
         {
             "name": "anchor",
             "type": "String",
-            "optional": true,
-            "slots": ["id"]
+            "optional": true
         },
         {
             "name": "attributes",

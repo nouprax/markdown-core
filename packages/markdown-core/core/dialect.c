@@ -48,8 +48,7 @@ static bool S_finish_kind_indexable(markdown_core_node_type kind) {
 static bool S_owns_document_lifecycle(const markdown_core_element *element) {
     const markdown_core_document_ops *document = element->document;
     return document && document->init && document->read && document->publish && document->candidate &&
-           document->reopen && document->splice && MARKDOWN_CORE_NODE_TYPE_BLOCK_P(document->kind) &&
-           S_finish_kind_indexable(document->kind);
+           MARKDOWN_CORE_NODE_TYPE_BLOCK_P(document->kind) && S_finish_kind_indexable(document->kind);
 }
 
 /* The completion's hooks of an element that declares none (the Null Object
@@ -305,8 +304,6 @@ static bool S_inlines_implement(const markdown_core_inline_ops *inlines, markdow
         return inlines->dispose != NULL;
     case MARKDOWN_CORE_INLINE_HOOK_OPEN:
         return inlines->holds != NULL;
-    case MARKDOWN_CORE_INLINE_HOOK_REPORT:
-        return inlines->report != NULL;
     case MARKDOWN_CORE_INLINE_HOOK_OPENED:
         return inlines->opened != NULL;
     case MARKDOWN_CORE_INLINE_HOOK_SETTLED:
@@ -334,9 +331,6 @@ static void S_resolve_owners(markdown_core_dialect *dialect) {
         }
         if (S_opens_of(element)->text) {
             dialect->text_block_structure = instance;
-        }
-        if (element->spelling) {
-            dialect->spelling = element->spelling;
         }
         if (S_inlines_of(element)->rule != MARKDOWN_CORE_DELIM_RULE_NONE) {
             dialect->delimiter_owners[S_inlines_of(element)->rule] = instance;
@@ -375,7 +369,6 @@ static void S_project_kinds(markdown_core_dialect *dialect) {
             record.flags =
                 (uint16_t)((content->inlines ? MARKDOWN_CORE_KIND_INLINES : 0) |
                            (content->holds_inlines ? MARKDOWN_CORE_KIND_INLINES_ASK : 0) |
-                           (S_finish_of(structure)->deferred ? MARKDOWN_CORE_KIND_DEFERRED : 0) |
                            (block && content->mode == MARKDOWN_CORE_CONTENT_LITERAL ? MARKDOWN_CORE_KIND_LINES : 0) |
                            (content->holds_lines ? MARKDOWN_CORE_KIND_LINES_ASK : 0) |
                            (content->mode == MARKDOWN_CORE_CONTENT_PROSE ? MARKDOWN_CORE_KIND_PROSE : 0) |
@@ -402,18 +395,12 @@ static void S_project_kinds(markdown_core_dialect *dialect) {
                 if (follow->closed) {
                     record->flags |= MARKDOWN_CORE_KIND_TRAILED;
                 }
-                /* At a line, which the engine asks no one at, the record keeps
-                 * the follower of a closed leader: an edit asks it which lines
-                 * write one (`writes`). */
-                if (follow->at != MARKDOWN_CORE_FOLLOW_LINE || follow->closed) {
+                /* At a line, which the engine asks no one at, the record
+                 * keeps no follower. */
+                if (follow->at != MARKDOWN_CORE_FOLLOW_LINE) {
                     record->follower[follow->at] = &dialect->instances[i];
                     record->follow[follow->at] = follow;
                 }
-            }
-            if (follow->makes != MARKDOWN_CORE_NODE_NONE) {
-                markdown_core_kind_record *record = &dialect->kinds[markdown_core_finish_kind_index(follow->makes)];
-                record->maker = &dialect->instances[i];
-                record->made = follow;
             }
         }
     }
@@ -423,13 +410,6 @@ static void S_project_kinds(markdown_core_dialect *dialect) {
         const markdown_core_fold_ops *fold = dialect->instances[i].element->fold;
         for (const markdown_core_node_type *kind = fold ? fold->kinds : NULL; kind && *kind; kind++) {
             dialect->kinds[markdown_core_block_kind_index(*kind)].flags |= MARKDOWN_CORE_KIND_FOLDS;
-        }
-        const markdown_core_edit_ops *edit = dialect->instances[i].element->edit;
-        for (const markdown_core_node_type *kind = edit ? edit->awaits : NULL; kind && *kind; kind++) {
-            dialect->kinds[markdown_core_block_kind_index(*kind)].flags |= MARKDOWN_CORE_KIND_AWAITS;
-        }
-        for (const markdown_core_node_type *kind = edit ? edit->joins : NULL; kind && *kind; kind++) {
-            dialect->kinds[markdown_core_block_kind_index(*kind)].flags |= MARKDOWN_CORE_KIND_JOINS;
         }
     }
     /* The out-of-table index answers nothing; the storage is zeroed. */
@@ -679,17 +659,17 @@ static void S_resolve_peers(markdown_core_dialect *dialect, markdown_core_elemen
     }
 }
 
-/* THE SPACES: each space the instances name numbered once, after the
- * engine's ANCHOR, in descriptor order of first naming, and each
+/* THE SPACES: each space the instances name numbered once, from
+ * MARKDOWN_CORE_ROSTER_FIRST on, in descriptor order of first naming, and each
  * instance's namings resolved to the numbers, in its order. */
 static void S_number_spaces(markdown_core_dialect *dialect, markdown_core_element_instance *instances,
                             const markdown_core_space **spaces, unsigned *namings) {
-    size_t kinds = MARKDOWN_CORE_ROSTER_ANCHOR + 1;
-    spaces[0] = spaces[MARKDOWN_CORE_ROSTER_ANCHOR] = NULL;
+    size_t kinds = MARKDOWN_CORE_ROSTER_FIRST;
+    spaces[0] = NULL;
     for (size_t i = 0; i < dialect->element_count; i++) {
         instances[i].spaces = namings;
         for (const markdown_core_space *const *space = instances[i].element->spaces; space && *space; space++) {
-            size_t kind = MARKDOWN_CORE_ROSTER_ANCHOR + 1;
+            size_t kind = MARKDOWN_CORE_ROSTER_FIRST;
             while (kind < kinds && spaces[kind] != *space) {
                 kind++;
             }
@@ -778,7 +758,6 @@ size_t markdown_core_dialect_measure(const markdown_core_dialect_builder *builde
         sizes->steps += S_count_finish_keys(elements[i], sizes->finish_key_counts);
         sizes->state_bytes += markdown_core_state_align(elements[i]->state_size);
         sizes->run_state_bytes += markdown_core_state_align(elements[i]->run_state_size);
-        sizes->pointers += elements[i]->names != NULL;
         sizes->pointers += elements[i]->stages != NULL;
         for (const markdown_core_element *const *peer = elements[i]->peers; peer && *peer; peer++) {
             sizes->peers++;
@@ -789,7 +768,7 @@ size_t markdown_core_dialect_measure(const markdown_core_dialect_builder *builde
         sizes->closers += inlines->close_count;
     }
     sizes->pointers += S_count_inline_dispatch(elements, count, sizes->inline_dispatch_offsets);
-    sizes->pointers += 2; /* the name owners' and the staged instances' terminators */
+    sizes->pointers += 1; /* the staged instances' terminator */
     for (size_t key = 0; key < MARKDOWN_CORE_FINISH_KEY_COUNT; key++) {
         sizes->steps += sizes->finish_key_counts[key] != 0; /* the terminator */
     }
@@ -809,8 +788,8 @@ size_t markdown_core_dialect_measure(const markdown_core_dialect_builder *builde
            sizes->closers * sizeof(markdown_core_closer) +
            (sizes->pointers + ((size_t)1 << sizes->instance_bits) + sizes->peers) *
                sizeof(const markdown_core_element_instance *) +
-           (sizes->spaces + 2) * sizeof(const markdown_core_space *) + sizes->namings * sizeof(unsigned) +
-           sizes->gate_bytes;
+           (sizes->spaces + MARKDOWN_CORE_ROSTER_FIRST) * sizeof(const markdown_core_space *) +
+           sizes->namings * sizeof(unsigned) + sizes->gate_bytes;
 }
 
 /* THE RULES FOR CLOSING A BRACKET (element.h, markdown_core_close_rule):
@@ -881,7 +860,7 @@ void markdown_core_dialect_seal(const markdown_core_dialect_builder *builder, co
     const markdown_core_element_instance **table = entries + sizes->pointers;
     const markdown_core_element_instance **peers = table + ((size_t)1 << sizes->instance_bits);
     const markdown_core_space **spaces = (const markdown_core_space **)(peers + sizes->peers);
-    unsigned *namings = (unsigned *)(spaces + sizes->spaces + 2);
+    unsigned *namings = (unsigned *)(spaces + sizes->spaces + MARKDOWN_CORE_ROSTER_FIRST);
     uint8_t *tables = (uint8_t *)(namings + sizes->namings);
 
     dialect->element_count = count;
@@ -936,13 +915,6 @@ void markdown_core_dialect_seal(const markdown_core_dialect_builder *builder, co
             }
         }
     }
-    dialect->namers = entries + at;
-    for (size_t i = 0; i < count; i++) {
-        if (instances[i].element->names) {
-            entries[at++] = &instances[i];
-        }
-    }
-    entries[at++] = NULL;
     dialect->staged = entries + at;
     for (size_t i = 0; i < count; i++) {
         if (instances[i].element->stages) {

@@ -66,7 +66,7 @@ A paragraph with **emphasis**.
 ```
 
 The `DirectiveBlock` contains a paragraph and a list. Its label is separate
-from its block content. Named and nameless containers use the same body parser.
+from its block content.
 
 The closer is a line with at least as many colons as the opener and no other
 non-whitespace content. A shorter closer stays body content. Use a longer
@@ -80,34 +80,12 @@ Content.
 ::::
 ```
 
-An unclosed container runs through the end of its enclosing container or the
+A container always has a name: a space after the colons, as in `::: note` or
+`::: {.warning}`, opens no container, and the line is text. An unclosed
+container runs through the end of its enclosing container or the
 document. Opener lines permit up to three leading spaces, but no tab in the
 leading indentation. Labels and attribute containers must close on the opener
 line. Leaf and container openers can interrupt paragraphs.
-
-## Nameless containers
-
-Put an attribute container or one unbraced class word after a colon fence:
-
-```markdown
-::: {.warning}
-Check this before continuing.
-:::
-
-::: compact
-A compact section.
-:::
-```
-
-These produce `DirectiveBlock` with `name=null`, `label=null`, and a class of
-`warning` or `compact`. This is also known as a fenced div. Optional trailing
-colons are allowed on the opening line. The unbraced word is one raw class;
-`::: -` gives class `-`, whereas `::: {-}` gives `unnumbered`.
-
-A bare `:::` line opens no container. `::: {}` is a valid empty-attribute opener.
-Immediately following a fence with a name, as in `:::warning`, selects the
-named form. Nameless containers use the same minimum closer length as named
-containers, including when nested.
 
 ## Container boundaries
 

@@ -1,19 +1,19 @@
-[Chapter] [Chapter][] [go][Chapter]{.jump k=1}
+[go](#chapter){.jump k=1} [back](#intro)
+
+# Chapter {#chapter}
 
 # Chapter
 
-# Chapter
+:n{#intro}
 
-:n{#chapter-1}
+# *Styled* &amp; `Code` {#styled}
 
-# *Styled* &amp; `Code`
-
-[*Styled* &amp; `Code`]
+[*Styled* &amp; `Code`](#styled)
 
 [^note]: # Chapter
 
 # [Chapter] and :n[==Marked== ++Inserted++]
 
-# A\]B
+# A\]B {#a-b}
 
-[A\]B]
+[A\]B](#a-b)

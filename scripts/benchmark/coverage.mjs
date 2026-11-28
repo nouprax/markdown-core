@@ -12,7 +12,7 @@ import { sectionDispositions } from "./sections.mjs";
 const digest = (value) => createHash("sha256").update(value).digest("hex");
 // The specification owns grammar certificates, with explicit cross-feature reuse.
 export const featureOwners = {
-    anchors: { elements: ["ANCHOR"], certificates: [] },
+    anchors: { elements: [], certificates: [] },
     attributes: { elements: ["ATTRIBUTES"], certificates: ["record-span", "class-span"] },
     base: { elements: ["DOCUMENT", "ENTITIES", "ESCAPE", "PARAGRAPH", "TEXT"], certificates: [] },
     "block-identifiers": { elements: [], certificates: ["anchor"] },
@@ -39,13 +39,7 @@ export const featureOwners = {
     "definition-lists": { elements: ["DEFINITION_LIST"], certificates: ["loose-definition"] },
     directives: {
         elements: ["DIRECTIVE"],
-        certificates: [
-            "inline-directive",
-            "empty-directive",
-            "leaf-directive",
-            "anonymous-container",
-            "named-container"
-        ]
+        certificates: ["inline-directive", "empty-directive", "leaf-directive", "named-container"]
     },
     emphasis: { elements: ["EMPHASIS", "EMPHASIS_UNDERSCORE"], certificates: [] },
     footnotes: { elements: ["FOOTNOTE"], certificates: [] },
@@ -57,11 +51,10 @@ export const featureOwners = {
     html: { elements: ["HTML", "HTML_BLOCK"], certificates: [] },
     insertion: { elements: ["INSERTION"], certificates: ["insertion-strong", "run-insertion"] },
     "line-breaks": { elements: ["LINE_BREAK"], certificates: [] },
-    "links-and-images": { elements: ["AUTOLINK", "LINK", "EMBEDDED"], certificates: ["embed-dimensions"] },
+    "links-and-images": { elements: ["AUTOLINK", "LINK", "EMBED"], certificates: ["embed-dimensions"] },
     lists: { elements: ["LIST"], certificates: ["decimal-list"] },
     marks: { elements: ["MARK"], certificates: ["run-mark"] },
     properties: { elements: [], certificates: ["metadataempty", "metadata"] },
-    specimens: { elements: ["SPECIMEN"], certificates: ["specimen-reset"] },
     strikethrough: { elements: ["STRIKETHROUGH"], certificates: ["run-strike"] },
     "superscript-and-subscript": { elements: ["SUPERSCRIPT", "SUBSCRIPT"], certificates: ["run-super", "run-sub"] },
     tables: { elements: ["TABLE"], certificates: [] },

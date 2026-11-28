@@ -6,12 +6,12 @@ ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 cd "$ROOT_DIR"
 
 # Download and validate the pinned distribution before locating its Tooling API.
-scripts/tooling/run-gradle.sh --version >/dev/null
+scripts/tools/run-gradle.sh --version >/dev/null
 
 # Kotlin's IDE import must generate C declarations, but it must not build or
 # embed the native archives. Android Studio does not inherit an interactive
 # shell's PATH, and model loading is not a product-build lifecycle in any case.
-ide_import_plan=$(scripts/tooling/run-gradle.sh \
+ide_import_plan=$(scripts/tools/run-gradle.sh \
     :packages:kotlin-markdown-core:prepareKotlinIdeaImport \
     -Didea.sync.active=true \
     --dry-run \

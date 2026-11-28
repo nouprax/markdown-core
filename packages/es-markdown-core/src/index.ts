@@ -1,18 +1,16 @@
 export { Document } from "./document.js";
-export { MarkdownSession } from "./session.js";
 export type { CodeBlock } from "./markup/code-block.js";
 export type { Callout } from "./markup/callout.js";
 export type { Citation, Cite } from "./markup/cite.js";
 export type { Code } from "./markup/code.js";
 export type { Comment } from "./markup/comment.js";
 export type { CrossLink } from "./markup/cross-link.js";
-export type { CrossEmbedded } from "./markup/cross-embedded.js";
+export type { CrossEmbed } from "./markup/cross-embed.js";
 export type { DirectiveBlock } from "./markup/directive-block.js";
 export type { DirectiveLabel } from "./markup/directive-label.js";
 export type { Directive } from "./markup/directive.js";
 export type { Emphasis } from "./markup/emphasis.js";
 export type { DefinitionList, Definition } from "./markup/definition-list.js";
-export type { Specimen } from "./markup/specimen.js";
 export type { Footnote } from "./markup/footnote.js";
 export type { Reference } from "./markup/reference.js";
 export type { FormulaBlock } from "./markup/formula-block.js";
@@ -20,7 +18,7 @@ export type { Formula } from "./markup/formula.js";
 export type { Heading } from "./markup/heading.js";
 export type { HTMLBlock } from "./markup/html-block.js";
 export type { HTML } from "./markup/html.js";
-export type { Embedded } from "./markup/embedded.js";
+export type { Embed } from "./markup/embed.js";
 export type { LineBreak } from "./markup/line-break.js";
 export type { Link } from "./markup/link.js";
 export type { List, ListItem } from "./markup/list.js";
@@ -50,11 +48,11 @@ export type {
     FootnoteTarget,
     ListFlavor,
     OrderedListDelimiter,
-    OrderedListVariant,
     Placement,
     Position,
     Run,
     Scope,
+    TaskStatus,
     TextUnit
 } from "./markup/values.js";
 export type { Dimensions, Flow } from "./common/constraints.js";
@@ -64,8 +62,5 @@ export type { MarkupVisitor, MarkupVisitPhase } from "./visitor/markup-visitor.j
 
 export { Attributes } from "./markup/attributes.js";
 export type { Record } from "./markup/attributes.js";
-export { Metadata } from "./markup/metadata.js";
+export type { Metadata } from "./markup/metadata.js";
 export type { MetadataValue, MetadataScalar, MetadataListItem } from "./markup/metadata.js";
-export { Slot } from "./markup/context.js";
-export type { Context, Edit, Opener } from "./markup/context.js";
-export type { SlotKind } from "./wire/kinds.js";

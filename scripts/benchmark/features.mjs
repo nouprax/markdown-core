@@ -19,7 +19,6 @@ const asciiKey = f("key", "ascii-word"),
     asciiTarget = f("target", "ascii-word");
 const inline = (...parts) => ["probe ", ...parts, " end\n\n"];
 const entries = [];
-const ordinal = (encoding) => ({ name: "ordinal", grammar: "ordinal", encoding });
 const state = (encoding) => ({ name: "state", grammar: "state", encoding });
 // Pinned cmark/Core link labels admit at most 1000 source bytes. A GFM
 // footnote call includes its leading caret in that counter, leaving 999 for
@@ -30,7 +29,6 @@ const labelBounds = {
     "common-reference-collapsed": { key: 1000 },
     "common-reference-shortcut": { key: 1000 },
     "common-reference-duplicate": { key: 1000 },
-    "heading-reference": { key: 1000 },
     "heading-explicit-id": { key: 1000 },
     "block-id-paragraph": { key: 1000 },
     "block-id-list": { key: 1000, value: 1000 },
@@ -40,10 +38,7 @@ const labelBounds = {
     "gfm-footnote": { key: 999 },
     "gfm-footnote-cycle": { key: 999 },
     "gfm-footnote-blocks": { key: 999 },
-    "footnote-retention": { key: 999, target: 999 },
-    "specimen-graph": { key: 999 },
-    "specimen-reset": { key: 1000 },
-    "specimen-groups": { key: 1000 }
+    "footnote-retention": { key: 999, target: 999 }
 };
 // The constructs rejection certificates are built around, each with the pinned
 // references that implement it. A reference ratio compares two implementations
@@ -419,13 +414,6 @@ pair(
     ["> ", k, "\n>\n>> ", v, "\n>>\n>> ", b, "\n\n"]
 );
 pair(
-    "directive-unbraced",
-    "directives",
-    ["nameless-unbraced", "trailing-colons"],
-    ["::: ", k, " :::\n", b, "\n:::\n\n"],
-    ["> ", k, "\n>\n> ", b, "\n\n"]
-);
-pair(
     "block-id-paragraph",
     "block-identifiers",
     ["paragraph-suffix", "anchor-declaration"],
@@ -441,13 +429,6 @@ pair(
 );
 // Repeated labels in these products are equality constraints on source fields.
 pair(
-    "heading-reference",
-    "anchors",
-    ["implicit-references", "forward-resolution"],
-    ["[", k, "]\n\n# ", k, "\n\n"],
-    ["[", k, "]\n\n[", k, "]: #", k, "\n\n"]
-);
-pair(
     "citation-group",
     "citations",
     ["groups", "modes", "semicolons"],
@@ -455,41 +436,15 @@ pair(
     inline("[", k, "](/normal) [", target, "](/suppressed)")
 );
 pair(
-    "task-unicode",
+    "task-cancelled",
     "task-lists",
-    ["unicode-marker", "authored-marker"],
-    ["- [✓] ", b, "\n\n"],
+    ["cancelled-marker", "authored-marker"],
+    ["- [-] ", b, "\n\n"],
     ["- [x] ", b, "\n\n"],
     { gfm: true }
 );
 pair("task-heading", "task-lists", ["heading-body", "first-block"], ["- [!] # ", b, "\n\n"], ["- # ", b, "\n\n"]);
 
-// Replacements for incorrect historical counterparts. The first marker fixes
-// the variant's context; later i/I cannot accidentally start another variant.
-for (const [id, encoding, first, left, right] of [
-    ["alpha-list", "alpha", "a)", "", ")"],
-    ["upper-list", "upper-alpha", "(A)", "(", ")"],
-    ["roman-list", "roman", "i.", "", "."],
-    ["upper-roman-list", "upper-roman", "I)", "", ")"]
-])
-    pair(
-        id,
-        "lists",
-        ["extended-ordered-markers", "variant-context", "canonical-numerals"],
-        [first, " ", b, "\n", left, ordinal(encoding), right, " ", t, "\n\n"],
-        ["1. ", b, "\n", ordinal("decimal"), ". ", t, "\n\n"]
-    );
-for (const [id, marker, common] of [
-    ["default-list", "#.", "1."],
-    ["enclosed-default-list", "(#)", "1)"]
-])
-    pair(
-        id,
-        "lists",
-        ["automatic-markers", "fixed-start"],
-        [marker, " ", b, "\n", marker, " ", t, "\n\n"],
-        [common, " ", b, "\n", common, " ", t, "\n\n"]
-    );
 pair(
     "callout",
     "callouts",
@@ -527,15 +482,6 @@ pair(
         "](/empty)\n\n"
     ]
 );
-pair(
-    "specimen-graph",
-    "specimens",
-    ["labelled-definitions", "references", "binding"],
-    ["As (@", k, ") shows.\n\n(@", k, ") ", b, "\n\n"],
-    ["As [^", k, "] shows.\n\n[^", k, "]: ", b, "\n\n"],
-    { gfm: true }
-);
-
 pair(
     "attribute-code",
     "attributes",
@@ -576,6 +522,20 @@ pair(
     inline("<https://", target, "> [](/", k, ' "', v, '")')
 );
 pair(
+    "attribute-cross-link",
+    "attributes",
+    ["cross-link-site", "cross-embed-site"],
+    inline("[[", target, "]]{", k, "=", v, "} ![[", a, "]]{.", v, "}"),
+    inline("[](/", target, ' "', k, " ", v, '") ![](/', a, ' "', v, '")')
+);
+pair(
+    "attribute-callout",
+    "attributes",
+    ["callout-site", "title-cut"],
+    ["> [!note] ", b, " {", k, "=", v, "}\n\n"],
+    ["> [", b, "](/", k, ' "', v, '")\n\n']
+);
+pair(
     "attribute-reference",
     "attributes",
     ["definition-site", "inheritance", "occurrence-order", "anchor-override"],
@@ -602,12 +562,6 @@ pair(
     ["last-id", "empty-id-clears"],
     inline("[]{#", k, " id=", v, ' id=""}'),
     inline("[](/", k, ' "', v, '")')
-);
-shared(
-    "common-anchor-generation",
-    "anchors",
-    ["unicode-lowercase", "collisions", "empty-base"],
-    ["# É字", k, "\n\n# É字", k, "\n\n# !!!\n\n"]
 );
 pair(
     "block-id-list",
@@ -726,24 +680,9 @@ shared(
 pair(
     "attribute-bare",
     "attributes",
-    ["bare-names", "boolean-record", "unnumbered"],
+    ["bare-names", "boolean-record"],
     inline("[]{", k, " -}"),
     inline("[](/", k, ' "true unnumbered")')
-);
-
-pair(
-    "specimen-reset",
-    "specimens",
-    ["explicit-reset", "positive-nine-digit-start", "binding"],
-    ["As (@", k, ") shows.\n\n(", f("reset", "positive9"), "@", k, ") ", b, "\n\n"],
-    ["As [", k, "] shows.\n\n[", k, "]: /", k, "\n\n", f("reset", "positive9"), ". ", b, "\n\n"]
-);
-pair(
-    "specimen-groups",
-    "specimens",
-    ["anonymous-definitions", "duplicate-definitions", "group-reset-suppression"],
-    ["(5@) ", b, "\n\n(7@", k, ") ", t, "\n\n(@", k, ") ", b, "\n\nAs (@", k, ") shows.\n\n"],
-    ["5. ", b, "\n\n7. ", t, "\n\n1. ", b, "\n\nAs [", k, "] shows.\n\n[", k, "]: /", k, "\n\n"]
 );
 
 // Source forms identified by the section-level coverage review. These reuse
@@ -812,44 +751,6 @@ export function featureValues(parameters) {
     };
 }
 
-// Finite lexical substitutions are explicit bijections, not numeric-value
-// quotients of noncanonical Roman spellings. The domain is 1..26 in both
-// grammars. Outside it the historical numeral boundary remains unproved.
-const roman = [
-    "i",
-    "ii",
-    "iii",
-    "iv",
-    "v",
-    "vi",
-    "vii",
-    "viii",
-    "ix",
-    "x",
-    "xi",
-    "xii",
-    "xiii",
-    "xiv",
-    "xv",
-    "xvi",
-    "xvii",
-    "xviii",
-    "xix",
-    "xx",
-    "xxi",
-    "xxii",
-    "xxiii",
-    "xxiv",
-    "xxv",
-    "xxvi"
-];
 export const finiteLexicons = {
-    ordinal: {
-        decimal: roman.map((_, i) => String(i + 1)),
-        alpha: roman.map((_, i) => String.fromCharCode(97 + i)),
-        "upper-alpha": roman.map((_, i) => String.fromCharCode(65 + i)),
-        roman,
-        "upper-roman": roman.map((s) => s.toUpperCase())
-    },
     state: { callout: ["", "-", "+"], title: ["plain", "closed", "open"] }
 };

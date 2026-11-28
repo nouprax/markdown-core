@@ -1,5 +1,4 @@
 #include "paragraph.h"
-#include "parts.h"
 #include "block_internal.h"
 
 #include "block_identifier.h"
@@ -55,22 +54,13 @@ static const markdown_core_content_ops PARAGRAPH_CONTENT = {
     .paragraph = true,
 };
 
-static const markdown_core_node_type PARAGRAPH_JOINS[] = {MARKDOWN_CORE_NODE_REFERENCE, MARKDOWN_CORE_NODE_NONE};
-
-static const markdown_core_edit_ops PARAGRAPH_EDIT = {
-    .joins = PARAGRAPH_JOINS,
-};
-
 /* A BLOCK IDENTIFIER LINE FOLLOWS A CLOSED BLOCK (element.h,
  * markdown_core_follow): the line names the block before it
  * (block_identifier.c) of the kinds here. */
 static const markdown_core_node_type PARAGRAPH_LEADERS[] = {MARKDOWN_CORE_NODE_LIST, MARKDOWN_CORE_NODE_CALLOUT,
                                                             MARKDOWN_CORE_NODE_TABLE, MARKDOWN_CORE_NODE_NONE};
 static const markdown_core_follow PARAGRAPH_FOLLOWS[] = {
-    {.at = MARKDOWN_CORE_FOLLOW_LINE,
-     .kinds = PARAGRAPH_LEADERS,
-     .closed = true,
-     .writes = markdown_core_block_identifier_writes},
+    {.at = MARKDOWN_CORE_FOLLOW_LINE, .kinds = PARAGRAPH_LEADERS, .closed = true},
     {0},
 };
 
@@ -91,18 +81,9 @@ static const markdown_core_line_ops PARAGRAPH_LINES = {
     .cuts = true,
 };
 
-const markdown_core_facet MARKDOWN_CORE_PARAGRAPH_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_PARAGRAPH, .parts = markdown_core_block_identifier_parts},
-    {.kind = MARKDOWN_CORE_KIND_LIST, .parts = markdown_core_block_identifier_parts},
-    {.kind = MARKDOWN_CORE_KIND_TABLE, .parts = markdown_core_block_identifier_parts},
-    {.kind = MARKDOWN_CORE_KIND_NONE},
-};
-
 const markdown_core_element MARKDOWN_CORE_ELEMENT_PARAGRAPH = {
-    .facets = MARKDOWN_CORE_PARAGRAPH_FACETS,
     .state_size = sizeof(markdown_core_block_identifier_work),
     .name = "paragraph",
-    .edit = &PARAGRAPH_EDIT,
     .follows = PARAGRAPH_FOLLOWS,
     .content = &PARAGRAPH_CONTENT,
     .candidate = &PARAGRAPH_CANDIDATE,

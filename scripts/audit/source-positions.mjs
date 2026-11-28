@@ -48,11 +48,11 @@ export const INLINE_KINDS = new Set([
     "Strong",
     "Strikethrough",
     "Link",
-    "Embedded",
+    "Embed",
     "Directive",
     "Cite",
     "CrossLink",
-    "CrossEmbedded",
+    "CrossEmbed",
     "Citation"
 ]);
 

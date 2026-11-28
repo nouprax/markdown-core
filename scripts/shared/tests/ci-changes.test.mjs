@@ -412,6 +412,7 @@ const gates = [
             "health-check-es",
             "health-check-kotlin",
             "health-check-swift",
+            "health-check-rust",
             "benchmark"
         ]
     ],
@@ -509,19 +510,10 @@ test("Benchmark is a required reusable workflow with a single shared preflight",
     const benchmark = workflow("benchmark");
     assert.equal(benchmark.name, "Benchmark");
     assert.deepEqual(Object.keys(benchmark.on).sort(), ["workflow_call", "workflow_dispatch"]);
-    assert.deepEqual(Object.keys(benchmark.jobs).sort(), [
-        "attributes",
-        "completion",
-        "stages",
-        "stream-shards",
-        "streams"
-    ]);
+    assert.deepEqual(Object.keys(benchmark.jobs).sort(), ["attributes", "stages"]);
     for (const [id, script] of [
         ["stages", "run.mjs"],
-        ["attributes", "measure-attributes.mjs"],
-        ["stream-shards", "streams.mjs --set corpus"],
-        ["streams", "streams.mjs --merge"],
-        ["completion", "completion.mjs"]
+        ["attributes", "measure-attributes.mjs"]
     ]) {
         assert.equal(benchmark.jobs[id].if, undefined);
         assert.ok(benchmark.jobs[id].steps.some((step) => step.run?.includes(script)));

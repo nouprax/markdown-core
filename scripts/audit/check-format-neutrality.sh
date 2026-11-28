@@ -14,7 +14,7 @@
 #
 # This is a MEASUREMENT TOOL, not a standing gate: it needs a REV to compare
 # against, and it refuses to report success when there is nothing to compare,
-# so it cannot pass vacuously. `scripts/tooling/format-c.sh --check` is the gate.
+# so it cannot pass vacuously. `scripts/tools/format-c.sh --check` is the gate.
 #
 # Usage: scripts/audit/check-format-neutrality.sh <rev> [build-type]
 set -eu

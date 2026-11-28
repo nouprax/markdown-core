@@ -7,14 +7,16 @@ const grammar = (...certificates) => ({ kind: "grammar", certificates });
 const context = (reason) => ({ kind: "context", reason });
 export const sectionDispositions = {
     anchors: {
-        Anchors: grammar("heading-explicit-id", "anchor-last-empty", "common-anchor-generation"),
+        Anchors: grammar("heading-explicit-id", "anchor-last-empty"),
         "Explicit anchors": grammar("heading-explicit-id", "anchor-last-empty"),
-        "Automatic anchors": context(
-            "Automatic IDs are derived output, with no additional authored grammar. The heading source workload is common-anchor-generation; correctness of normalization/collision allocation belongs to regression and parity."
+        "Headings without one": context(
+            "A heading that declares no anchor is plain heading grammar, which the headings certificates cover; the parser derives no anchor from it."
         ),
-        "Implicit heading references": grammar("heading-reference"),
+        "Linking to a heading": context(
+            "A link to a heading is an ordinary inline link whose destination is the anchor; links-and-images certificates cover that form."
+        ),
         "Anchor ownership": context(
-            "Anchor ownership and application matching are output/resolution contracts. Authored forms are covered by explicit/implicit anchor sections and attribute-reference."
+            "Anchor ownership and application matching are output/resolution contracts. Authored forms are covered by the explicit anchor sections and attribute-reference."
         )
     },
     attributes: {
@@ -35,10 +37,13 @@ export const sectionDispositions = {
             "attribute-link",
             "attribute-image",
             "attribute-autolink",
-            "attribute-reference"
+            "attribute-reference",
+            "attribute-cross-link",
+            "attribute-callout"
         ),
         "Inline code": grammar("attribute-code"),
         Headings: grammar("attribute-heading"),
+        Callouts: grammar("attribute-callout"),
         "Fenced code": grammar("attribute-fence"),
         "Links, images, and reference definitions": grammar(
             "attribute-link",
@@ -72,6 +77,7 @@ export const sectionDispositions = {
     callouts: {
         "Quotes and callouts": grammar("common-quote", "callout"),
         "Add a type and title": grammar("callout"),
+        Attributes: grammar("attribute-callout"),
         "Fold state": grammar("callout"),
         "Metadata boundaries": grammar("callout")
     },
@@ -109,7 +115,7 @@ export const sectionDispositions = {
             "attribute-bare",
             "named-container",
             "formula-parenthesis",
-            "task-unicode",
+            "task-cancelled",
             "common-html-comment",
             "common-inline-html",
             "decimal-list",
@@ -140,6 +146,7 @@ export const sectionDispositions = {
         "Cross links and embeds": grammar("cross-link", "cross-link-absent", "cross-link-empty", "cross-raw-label"),
         "Headings and blocks": grammar("cross-anchor", "cross-local", "cross-block-anchor"),
         Embeds: grammar("cross-embed", "cross-embed-absent", "cross-embed-empty"),
+        Attributes: grammar("attribute-cross-link"),
         Dimensions: grammar("embed-dimensions"),
         "Pipes and tables": grammar("cross-link-table", "cross-embed-table"),
         "Incomplete targets": grammar("fallback-cross-link")
@@ -151,7 +158,7 @@ export const sectionDispositions = {
         "Recognition boundaries": grammar("loose-definition", "mixed-definitions")
     },
     directives: {
-        Directives: grammar("inline-directive", "leaf-directive", "named-container", "anonymous-container"),
+        Directives: grammar("inline-directive", "leaf-directive", "named-container"),
         "Inline directives": grammar(
             "inline-directive",
             "empty-directive",
@@ -161,7 +168,6 @@ export const sectionDispositions = {
         ),
         "Leaf directives": grammar("leaf-directive", "directive-leaf-bare"),
         "Container directives": grammar("named-container", "directive-nested"),
-        "Nameless containers": grammar("anonymous-container", "directive-unbraced"),
         "Container boundaries": grammar("directive-nested", "fallback-directive")
     },
     emphasis: {
@@ -243,8 +249,6 @@ export const sectionDispositions = {
     lists: {
         Lists: grammar("common-bullet-dash", "common-bullet-plus", "common-bullet-star"),
         "Numbered lists": grammar("decimal-list", "common-list-parenthesis", "fallback-list-limit"),
-        "Alphabetic and Roman markers": grammar("alpha-list", "upper-list", "roman-list", "upper-roman-list"),
-        "Automatic markers": grammar("default-list", "enclosed-default-list"),
         "Blank lines and starts": grammar("common-list-loose", "decimal-list")
     },
     marks: {
@@ -258,12 +262,6 @@ export const sectionDispositions = {
         Values: grammar("metadata-types"),
         "Literal prose": grammar("metadata-literal"),
         "Envelope and recovery": grammar("metadataempty", "metadata-types", "fallback-noninitial-metadata")
-    },
-    specimens: {
-        "Specimens (numbered examples)": grammar("specimen-graph"),
-        "Anonymous definitions and resets": grammar("specimen-reset", "specimen-groups"),
-        "Bodies and labels": grammar("specimen-graph", "specimen-groups"),
-        "Reference forms": grammar("specimen-graph")
     },
     strikethrough: {
         Strikethrough: grammar("gfm-strike", "run-strike"),
@@ -284,7 +282,7 @@ export const sectionDispositions = {
     },
     "task-lists": {
         "Task lists": grammar("gfm-task-open", "gfm-task-lower", "gfm-task-upper"),
-        "Custom markers and nesting": grammar("task-value", "task-unicode", "task-nested"),
+        Nesting: grammar("task-value", "task-cancelled", "task-nested"),
         "Required separator": grammar("fallback-task-separator", "task-heading")
     },
     "thematic-breaks": {

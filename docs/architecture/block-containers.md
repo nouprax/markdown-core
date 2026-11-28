@@ -30,10 +30,9 @@ that run ends. This bounds repeated queries for nested bodies and long blank
 runs by source work, without another parsing path. Adversarial tests count the
 lookahead and definition work across long runs and 1024 nested bodies.
 
-Directive attributes and the body stack are shared by named and nameless
-containers. An empty stored name means an absent block name; inline directives
-still require a valid nonempty name. Their opener grammars select that value,
-then hand the body to the same container operation.
+Every directive, block or inline, has a valid nonempty name. A container's
+opener grammar reads the name, label and attributes, then hands the body to
+the shared container operation.
 
 A directive closer is provisional while matching the open spine. A deeper
 carried directive replaces the candidate, even when its own wider fence makes
@@ -50,7 +49,7 @@ is. An empty body ends at its marker; a populated body ends at its last block.
 Terms and bodies preserve source order without duplicating source or ownership.
 Allocation failure leaves every partially built root on this ownership graph,
 so parser failure uses ordinary destruction. Strict OOM sweeps cover term roots,
-body roots, nameless attributes, reference probes and nested continuation.
+body roots, container attributes, reference probes and nested continuation.
 
 A directive block's recognized suffix owns one attribute-parser memo for one
 immutable input extent. The opener carries that result into value decoding;
