@@ -435,8 +435,8 @@ fn flanks(flank: Flank, before: &CharacterKind, after: &CharacterKind) -> (bool,
     }
 }
 
-/// Whether the bytes in an event are not text: a resource or reference, or a
-/// token that owns a literal body.
+/// Whether the bytes in an event are not text: a resource or reference,
+/// attributes, or a token that owns a literal body.
 fn hides(name: Name) -> bool {
     matches!(
         name,
@@ -447,6 +447,7 @@ fn hides(name: Name) -> bool {
             | Name::HtmlText
             | Name::Comment
             | Name::CrossLink
+            | Name::Attributes
     )
 }
 

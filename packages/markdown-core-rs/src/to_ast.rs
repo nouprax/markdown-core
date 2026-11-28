@@ -1296,9 +1296,11 @@ impl<'a> Compiler<'a> {
         for index in self.children(from, to) {
             let name = self.name(index);
             let at_line_start = line_start;
-            // The prefixes of the containers around a line go before it.
-            line_start =
-                at_line_start && matches!(name, Name::ContainerIndent | Name::BlockQuotePrefix);
+            // The prefixes of the containers around a line, and the
+            // whitespace around them, go before it.
+            line_start = at_line_start
+                && (matches!(name, Name::ContainerIndent | Name::BlockQuotePrefix)
+                    || name.role() == Role::Space(Space::Whitespace));
             let after_data = data_end.take();
             match name.role() {
                 Role::Space(Space::Whitespace) if at_line_start => {}
@@ -1466,11 +1468,7 @@ impl<'a> Compiler<'a> {
                 let literal = self.merged_literal(index, Name::CommentText);
                 Kind::Comment {
                     // In a table cell, an escaped pipe is the cell's.
-                    literal: if self.cell {
-                        literal.replace("\\|", "|")
-                    } else {
-                        literal
-                    },
+                    literal: self.unpiped(&literal),
                 }
             }
             Inline::Autolink => {
@@ -1800,10 +1798,7 @@ impl<'a> Compiler<'a> {
         for child in self.inside(index) {
             match self.name(child) {
                 Name::FormulaSequence if opener.is_empty() => opener.push_str(self.text(child)),
-                Name::FormulaText if self.cell => {
-                    body.push_str(&self.text(child).replace("\\|", "|"));
-                }
-                Name::FormulaText => body.push_str(self.text(child)),
+                Name::FormulaText => body.push_str(&self.unpiped(self.text(child))),
                 Name::LineEnding => body.push('\n'),
                 _ => {}
             }
@@ -1852,11 +1847,7 @@ impl<'a> Compiler<'a> {
                 if start {
                     text = text.trim_start_matches([' ', '\t']);
                 }
-                if self.cell {
-                    literal.push_str(&text.replace("\\|", "|"));
-                } else {
-                    literal.push_str(text);
-                }
+                literal.push_str(&self.unpiped(text));
             } else if name == Name::LineEnding {
                 literal.push(' ');
             }
@@ -1874,11 +1865,21 @@ impl<'a> Compiler<'a> {
         literal
     }
 
+    /// The value of literal `text`: in a table cell, an escaped pipe is the
+    /// cell's, so it is a pipe.
+    fn unpiped(&self, text: &str) -> String {
+        if self.cell {
+            text.replace("\\|", "|")
+        } else {
+            text.into()
+        }
+    }
+
     /// A directive in text: its name, and its label from bracket to bracket.
     fn directive(&mut self, index: usize) -> Kind {
         let name = self
             .child(index, Name::DirectiveNameText)
-            .map(|name| self.text(name).to_string())
+            .map(|name| self.unpiped(self.text(name)))
             .unwrap_or_default();
         let label = self.directive_label(index);
         Kind::Directive { name, label }
@@ -1889,7 +1890,7 @@ impl<'a> Compiler<'a> {
     fn directive_head(&mut self, index: usize) -> (String, Option<Box<Node>>) {
         let name = self
             .child(index, Name::DirectiveNameText)
-            .map(|name| self.text(name).to_string())
+            .map(|name| self.unpiped(self.text(name)))
             .unwrap_or_default();
         (name, self.directive_label(index))
     }
@@ -1921,10 +1922,10 @@ impl<'a> Compiler<'a> {
                     let text = self.text(child);
                     let found = label.get_or_insert_with(String::new);
                     // In a cell, an escaped pipe is a pipe of the label.
-                    if self.cell && !embed {
-                        found.push_str(&text.replace("\\|", "|"));
-                    } else {
+                    if embed {
                         found.push_str(text);
+                    } else {
+                        found.push_str(&self.unpiped(text));
                     }
                 }
                 _ => {}

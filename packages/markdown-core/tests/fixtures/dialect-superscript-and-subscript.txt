@@ -919,3 +919,13 @@ Document scope=1:1..1:27 anchor=null attributes={} children=1
     └── Superscript scope=1:25..1:27 anchor=null attributes={} children=1
         └── Text scope=1:26..1:26 anchor=null attributes={} literal="x" children=0
 ````````````````````````````````
+
+```````````````````````````````` example
+^:n{
+}^
+.
+Document scope=1:1..2:2 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..2:2 anchor=null attributes={} children=1
+    └── Superscript scope=1:1..2:2 anchor=null attributes={} children=1
+        └── Directive scope=1:2..2:1 anchor=null attributes={} name="n" children=0
+````````````````````````````````

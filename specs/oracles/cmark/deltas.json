@@ -241,6 +241,11 @@
             "note": "cmark decodes `&#10;` before trimming, so its info string is empty; the text trims first and keeps the line feed."
         },
         {
+            "id": "spec-text-whitespace",
+            "input": ">  `\n*foo\\\n      with two lines.\n",
+            "note": "Spaces at the beginning of the line after a hard line break are ignored (CommonMark 6.7); cmark keeps them on a lazy continuation line of a block quote, and the text drops them."
+        },
+        {
             "id": "topics",
             "input": "#5 bolt\n\n#hashtag\n",
             "note": "`#hashtag` without a following space is a topic; `#5` has numbers alone and stays text."
