@@ -41,7 +41,7 @@ fn load(text: &str) -> Vec<Example> {
                 examples.push(Example {
                     number,
                     line: start,
-                    markdown: markdown.replace('\u{2192}', "\t"),
+                    markdown: markdown.replace('\u{2192}', "\t").replace('\u{2400}', "\0"),
                     expected: expected.replace('\u{2192}', "\t"),
                 });
             }

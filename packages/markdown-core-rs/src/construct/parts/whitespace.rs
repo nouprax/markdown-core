@@ -72,7 +72,12 @@ pub fn resolve_whitespace(tokenizer: &mut Tokenizer, hard_break: bool, trim_whol
     while index < tokenizer.events.len() {
         let event = &tokenizer.events[index];
 
-        if event.kind == Kind::Exit && event.name == Name::Data {
+        // Data linked into a chunk of nested content, such as a title, is
+        // that content's, whitespace and all.
+        if event.kind == Kind::Exit
+            && event.name == Name::Data
+            && tokenizer.events[index - 1].link.is_none()
+        {
             let trim_start = (trim_whole && index == 1)
                 || (index > 1 && tokenizer.events[index - 2].name == Name::LineEnding);
             let trim_end = (trim_whole && index == tokenizer.events.len() - 1)

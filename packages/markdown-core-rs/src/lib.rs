@@ -16,6 +16,9 @@ mod ahead;
 pub mod ast;
 mod choice;
 mod construct;
+#[cfg(feature = "cover")]
+#[doc(hidden)]
+pub mod cover;
 pub mod dump;
 mod event;
 mod parser;

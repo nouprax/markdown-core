@@ -1230,13 +1230,22 @@ impl<'a> Compiler<'a> {
 
     // Strings.
 
-    /// The decoded value of the string content in events `from..to`.
+    /// The decoded value of the string content in events `from..to`. The
+    /// whitespace that starts a line is the block's, not the string's.
     fn string(&self, from: usize, to: usize) -> String {
         let mut value = String::new();
         let mut index = from;
+        let mut line_start = false;
         while index < to {
             if self.events[index].kind == EventKind::Enter {
-                match self.name(index) {
+                let name = self.name(index);
+                let at_line_start = line_start;
+                line_start = name == Name::LineEnding
+                    || (at_line_start && (prefix(name) || name == Name::SpaceOrTab));
+                match name {
+                    _ if at_line_start && (prefix(name) || name == Name::SpaceOrTab) => {
+                        index = self.exits[index];
+                    }
                     Name::Data | Name::SpaceOrTab | Name::LineEnding => {
                         value.push_str(self.text(index));
                         index = self.exits[index];

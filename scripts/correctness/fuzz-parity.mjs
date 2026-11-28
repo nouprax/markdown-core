@@ -163,12 +163,16 @@ const ORACLES = {
         // where the dialect keeps text, is judged on remark's own parse by
         // `outsideSharedFuzzScope`, since telling a part from a broken one
         // needs bracket balance a substring cannot express.
+        // A quote line holding only an empty list item follows a paragraph
+        // wherever recombination puts it, and remark then keeps the marker as
+        // text (quote-empty-item-after-paragraph); the shape is excluded.
         excludeFragments: [
             "]{",
             "$",
             "[^",
             "://",
             /^[\s>]*(?:[-*+]|\d+[.)])\s+\[[ xX]\][ \t]*$/,
+            /^\s*>[\s>]*(?:[-*+]|\d+[.)])\s*$/,
             /(^|[^:]):[^A-Za-z0-9\s[{:]/u
         ]
     }

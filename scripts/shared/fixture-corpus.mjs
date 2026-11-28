@@ -34,14 +34,15 @@ export function readExamples(root, relativePath, { includeExampleNumber = false 
         let end = cursor + 1;
         for (; end < lines.length && !lines[end].startsWith(FENCE); end++);
         if (attributes !== "disabled") {
-            // The fixtures write tabs as U+2192 so they survive editing.
+            // The fixtures write tabs as U+2192 and NUL as U+2400 so they
+            // survive editing.
             cases.push({
                 ...(includeExampleNumber ? { example } : {}),
                 source: `${relativePath}:${String(i + 1)}`,
                 attributes,
                 tags: attributes === "" ? [] : attributes.split(/\s+/),
                 gfmExtension: headings.some((title) => /\(extension\)$/.test(title)),
-                input: `${body.join("\n").replace(/→/g, "\t")}\n`
+                input: `${body.join("\n").replace(/→/g, "\t").replace(/␀/g, "\0")}\n`
             });
         }
         i = end;

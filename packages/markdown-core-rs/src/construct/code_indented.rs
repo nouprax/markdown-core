@@ -152,8 +152,13 @@ fn after(tokenizer: &mut Tokenizer) -> State {
 fn further_start(tokenizer: &mut Tokenizer) -> State {
     // Laziness and piercing are of the line the code would go on to, not
     // of the one it ends: a container that opened on the code's first line
-    // does not stop it.
-    if tokenizer.current == Some(b'\n') {
+    // does not stop it. A line that a new container opened and that is
+    // blank after it is a line the code would go on to: it ends the code.
+    let line_start = tokenizer
+        .events
+        .last()
+        .map_or(false, |event| event.name == Name::LineEnding);
+    if tokenizer.current == Some(b'\n') && !(line_start && tokenizer.pierce) {
         tokenizer.enter(Name::LineEnding);
         tokenizer.consume();
         tokenizer.exit(Name::LineEnding);

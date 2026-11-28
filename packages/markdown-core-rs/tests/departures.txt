@@ -534,3 +534,75 @@ Document scope=1:1..1:13 anchor=null attributes={} children=1
         │   └── Text scope=1:3..1:5 anchor=null attributes={} literal="O@Z" children=0
         └── Text scope=1:7..1:10 anchor=null attributes={} literal="a@.c" children=0
 ````````````````````````````````
+
+```````````````````````````````` departure dialect-attributes.txt 50
+A NUL byte is an ordinary character of the input, which the AST keeps as
+written; only an HTML renderer writes U+FFFD for it (owner ruling 2026-11-24).
+C replaces it with U+FFFD while parsing, as cmark does (CommonMark 2.3).
+.
+Document scope=1:1..3:3 anchor=null attributes={} children=1
+└── CodeBlock scope=1:1..3:3 anchor=null attributes={} info="\u0000 python {.x} y" language="\u0000" literal="z\n" fenced=true closed=true children=0
+````````````````````````````````
+
+```````````````````````````````` departure dialect-attributes.txt 51
+A NUL byte is an ordinary character of the input, which the AST keeps as
+written; only an HTML renderer writes U+FFFD for it (owner ruling 2026-11-24).
+C replaces it with U+FFFD while parsing, as cmark does (CommonMark 2.3).
+.
+Document scope=1:1..15:3 anchor=null attributes={} children=4
+├── CodeBlock scope=1:1..3:3 anchor="code" attributes={.c} info=null language=null literal="x\n" fenced=true closed=true children=0
+├── CodeBlock scope=5:1..7:3 anchor=null attributes={.numberLines startFrom="10"} info="C++" language="C++" literal="x\n" fenced=true closed=true children=0
+├── CodeBlock scope=9:1..11:3 anchor=null attributes={} info="\u0000 Python {.}" language="\u0000" literal="y\n" fenced=true closed=true children=0
+└── CodeBlock scope=13:1..15:3 anchor=null attributes={} info="lang {#unclosed" language="lang" literal="y\n" fenced=true closed=true children=0
+````````````````````````````````
+
+```````````````````````````````` departure dialect-attributes.txt 52
+A NUL byte is an ordinary character of the input, which the AST keeps as
+written; only an HTML renderer writes U+FFFD for it (owner ruling 2026-11-24).
+C replaces it with U+FFFD while parsing, as cmark does (CommonMark 2.3).
+.
+Document scope=1:1..13:4 anchor=null attributes={} children=4
+├── Paragraph scope=1:1..5:13 anchor=null attributes={} children=9
+│   ├── Text scope=1:1..1:10 anchor=null attributes={} literal="\u0000<![CDATA[" children=0
+│   ├── SoftBreak scope=1:11..2:0 anchor=null attributes={} children=0
+│   ├── Text scope=2:1..2:21 anchor=null attributes={} literal="function matchwo(a,b)" children=0
+│   ├── SoftBreak scope=2:22..3:0 anchor=null attributes={} children=0
+│   ├── Text scope=3:1..3:1 anchor=null attributes={} literal="{" children=0
+│   ├── SoftBreak scope=3:2..4:0 anchor=null attributes={} children=0
+│   ├── Text scope=4:3..4:28 anchor=null attributes={} literal="if (a < b && a < 0) then {" children=0
+│   ├── SoftBreak scope=4:29..5:0 anchor=null attributes={} children=0
+│   └── Text scope=5:5..5:13 anchor=null attributes={} literal="return 1;" children=0
+├── Paragraph scope=7:3..7:10 anchor=null attributes={} children=1
+│   └── Text scope=7:3..7:10 anchor=null attributes={} literal="} else {" children=0
+├── CodeBlock scope=9:5..9:13 anchor=null attributes={} info=null language=null literal="return 0;\n" fenced=false closed=true children=0
+└── Paragraph scope=10:3..13:4 anchor=null attributes={} children=7
+    ├── Text scope=10:3..10:3 anchor=null attributes={} literal="}" children=0
+    ├── SoftBreak scope=10:4..11:0 anchor=null attributes={} children=0
+    ├── Text scope=11:1..11:1 anchor=null attributes={} literal="}" children=0
+    ├── SoftBreak scope=11:2..12:0 anchor=null attributes={} children=0
+    ├── Text scope=12:1..12:3 anchor=null attributes={} literal="]]>" children=0
+    ├── SoftBreak scope=12:4..13:0 anchor=null attributes={} children=0
+    └── Text scope=13:1..13:4 anchor=null attributes={} literal="okay" children=0
+````````````````````````````````
+
+```````````````````````````````` departure regression.txt 130
+A CDATA section is `<![CDATA[`, text that does not hold `]]>`, and `]]>`
+(CommonMark 6.6), so `<![CDATA[>&<]]]>` is one, with the text `>&<]`. cmark
+reads `]]]` as no part of the text, finds no `]]>` after it, and keeps the
+whole as text; C follows cmark.
+.
+Document scope=1:1..1:20 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:20 anchor=null attributes={} children=2
+    ├── Text scope=1:1..1:4 anchor=null attributes={} literal="foo " children=0
+    └── HTML scope=1:5..1:20 anchor=null attributes={} literal="<![CDATA[>&<]]]>" children=0
+````````````````````````````````
+
+```````````````````````````````` departure regression.txt 131
+A NUL byte is an ordinary character of the input, which the AST keeps as
+written; only an HTML renderer writes U+FFFD for it (owner ruling 2026-11-24).
+C replaces it with U+FFFD while parsing, as cmark does (CommonMark 2.3).
+.
+Document scope=1:1..1:20 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:20 anchor=null attributes={} children=1
+    └── Text scope=1:1..1:20 anchor=null attributes={} literal="foo <![CDATA[>&<]]\u0000>" children=0
+````````````````````````````````

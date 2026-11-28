@@ -11,3 +11,8 @@ name = "markdown-core"
 repository = "https://github.com/nouprax/markdown-core"
 rust-version = "1.56"
 version = "1.0.0"
+
+[features]
+# Record which state machine steps run on which scalars, for the coverage
+# tools in scripts/correctness.
+cover = []

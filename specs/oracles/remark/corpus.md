@@ -443,3 +443,15 @@ Document scope=1:1..5:8 anchor=null attributes={} children=2
                     ├── SoftBreak scope=4:14..5:0 anchor=null attributes={} children=0
                     └── Text scope=5:1..5:8 anchor=null attributes={} literal="| expr |" children=0
 ````````````````````````````````
+
+```````````````````````````````` example
+a
+> -
+.
+Document scope=1:1..2:3 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:1 anchor=null attributes={} children=1
+│   └── Text scope=1:1..1:1 anchor=null attributes={} literal="a" children=0
+└── Callout scope=2:1..2:3 anchor=null attributes={} variant=null collapsed=null children=1
+    └── List scope=2:3..2:3 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=1
+        └── ListItem scope=2:3..2:3 anchor=null attributes={} status=null children=0
+````````````````````````````````

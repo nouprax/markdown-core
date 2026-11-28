@@ -81,6 +81,8 @@ pub enum Name {
 #[allow(clippy::too_many_lines)]
 /// Call the corresponding state for a state name.
 pub fn call(tokenizer: &mut Tokenizer, name: Name) -> State {
+    #[cfg(feature = "cover")]
+    crate::cover::hit(&name);
     match name {
         Name::Ahead(step) => crate::ahead::step(tokenizer, step),
         Name::Attention(step) => construct::attention::step(tokenizer, step),

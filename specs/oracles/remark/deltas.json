@@ -830,6 +830,12 @@
             "note": "packages/markdown-core/tests/fixtures/dialect-attributes.txt:696: the dialect attaches normalized attributes at code, heading and link sites and inherits reference-definition values; remark has no such attachment sites. Fenced-code info remains the authored text outside the container. Its competing base/extension parse is preserved as exact evidence."
         },
         {
+            "id": "p2-attribute-sites-82",
+            "input": "~~~ {.c #code}\nx\n~~~\n\n``` C++ {.numberLines startFrom=10}\nx\n```\n\n~~~\u0000 Python {.}\ny\n~~~\n\n~~~ lang {#unclosed\ny\n~~~\n",
+            "authority": "docs/specs/dialect/attributes.md; P2a–P2d",
+            "note": "packages/markdown-core/tests/fixtures/dialect-attributes.txt:753: the dialect attaches normalized attributes at code, heading and link sites and inherits reference-definition values; remark has no such attachment sites. Fenced-code info remains the authored text outside the container. Its competing base/extension parse is preserved as exact evidence."
+        },
+        {
             "id": "span-after-failed-directive",
             "input": ":n{.a=b}::note[Label]{.c}\n",
             "authority": "docs/specs/dialect/bracketed-spans.md (P5)",
@@ -842,6 +848,13 @@
             "authority": "docs/specs/dialect/directives.md; inherited paragraph continuation",
             "summary": "A paragraph within a directive retains ordinary lazy continuation through its enclosing quote or list item. Remark ends the directive when the outer prefix disappears.",
             "why": "Reduced from the P8 corpus recombination. A build of pre-P8 commit 9cbb83e5 produces the identical product tree; this records an existing boundary rather than changing the parser to satisfy recombination."
+        },
+        {
+            "id": "quote-empty-item-after-paragraph",
+            "input": "a\n> -\n",
+            "authority": "CommonMark 0.31.2 §5.2 (an empty list item cannot interrupt a paragraph) with §5.1 (a block quote opens a new container)",
+            "summary": "An empty list item that starts a block quote's first line opens a list: the quote holds no paragraph for it to interrupt. cmark 0.31.2 agrees.",
+            "why": "Remark applies the interrupt rule from the paragraph outside the quote and leaves `-` as paragraph text. Reduced from seeded remark fuzz (seed 1) after the corpus gained new fragments."
         },
         {
             "id": "topic-after-unclosed-attributes",

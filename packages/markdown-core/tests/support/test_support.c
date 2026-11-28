@@ -65,7 +65,8 @@ static int ts_buffer_append(ts_buffer *buffer, const char *text, size_t length) 
     return 0;
 }
 
-/* Replaces the U+2192 arrow used by spec fixtures with a real tab. */
+/* Replaces the U+2192 arrow used by spec fixtures with a real tab, and the
+ * U+2400 symbol for null with a NUL byte. */
 static char *ts_replace_arrows(const char *text, size_t length, size_t *out_length) {
     ts_buffer buffer = {NULL, 0, 0};
     size_t i = 0;
@@ -73,6 +74,12 @@ static char *ts_replace_arrows(const char *text, size_t length, size_t *out_leng
         if (i + 2 < length && (unsigned char)text[i] == 0xE2 && (unsigned char)text[i + 1] == 0x86 &&
             (unsigned char)text[i + 2] == 0x92) {
             if (ts_buffer_append(&buffer, "\t", 1) != 0) {
+                goto fail;
+            }
+            i += 3;
+        } else if (i + 2 < length && (unsigned char)text[i] == 0xE2 && (unsigned char)text[i + 1] == 0x90 &&
+                   (unsigned char)text[i + 2] == 0x80) {
+            if (ts_buffer_append(&buffer, "", 1) != 0) {
                 goto fail;
             }
             i += 3;
