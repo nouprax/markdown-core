@@ -100,6 +100,7 @@ pub fn subtokenize(
             {
                 // Subtokenizer.
                 let mut tokenizer = Tokenizer::new(event.point.clone(), parse_state);
+                tokenizer.cell = link.content == Content::Cell;
                 debug_assert!(
                     !matches!(link.content, Content::Flow),
                     "cannot use flow as subcontent yet"

@@ -4353,6 +4353,9 @@ pub enum Content {
     String,
     /// Represents [text content][crate::construct::text].
     Text,
+    /// Represents [text content][crate::construct::text] of a table cell,
+    /// where each `\\|` is a `|` before the text is read (GFM 4.10).
+    Cell,
 }
 
 /// Link to another event.

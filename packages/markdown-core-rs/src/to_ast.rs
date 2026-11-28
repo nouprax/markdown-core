@@ -316,7 +316,8 @@ impl<'a> Compiler<'a> {
                 // And a last line in a block quote that holds only its
                 // prefix: the block goes on to the prefix's end.
                 Name::BlockQuotePrefix
-                    if line_end(self.bytes, self.end(index)) == self.bytes.len() =>
+                    if line_end(self.bytes, self.end(index)) == self.bytes.len()
+                        || self.quote_last(index) =>
                 {
                     found = Some(self.end(index));
                     index = self.exits[index] + 1;
@@ -326,6 +327,26 @@ impl<'a> Compiler<'a> {
             }
         }
         found
+    }
+
+    /// Whether the block quote prefix at `index` holds its line alone and
+    /// the quote ends after it.
+    fn quote_last(&self, index: usize) -> bool {
+        let mut at = self.exits[index] + 1;
+        while at < self.events.len() {
+            let event = &self.events[at];
+            if event.kind == EventKind::Exit {
+                if event.name == Name::BlockQuote {
+                    return true;
+                }
+                at += 1;
+            } else if event.name == Name::SpaceOrTab {
+                at = self.exits[at] + 1;
+            } else {
+                return false;
+            }
+        }
+        false
     }
 
     // Blocks.
@@ -1801,8 +1822,9 @@ impl<'a> Compiler<'a> {
     /// The literal of a code span.
     fn code(&self, index: usize, data: Name) -> String {
         let mut literal = String::new();
-        // The spaces and tabs that start a line are the paragraph's, which
-        // strips them (CommonMark 4.8), not the code's.
+        // The spaces and tabs that start a line, after its container
+        // prefixes, are the paragraph's, which strips them (CommonMark 4.8),
+        // not the code's.
         let mut start = false;
         for child in self.inside(index) {
             let name = self.name(child);
@@ -1819,7 +1841,8 @@ impl<'a> Compiler<'a> {
             } else if name == Name::LineEnding {
                 literal.push(' ');
             }
-            start = name == Name::LineEnding;
+            start = name == Name::LineEnding
+                || (start && matches!(name, Name::BlockQuotePrefix | Name::ContainerIndent));
         }
         let bytes = literal.as_bytes();
         if bytes.len() > 2

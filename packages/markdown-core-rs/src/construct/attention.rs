@@ -454,7 +454,7 @@ fn spaces(parse_state: &ParseState, events: &[Event], index: usize) -> usize {
         Name::LineEnding => 1,
         _ if event.link.is_some() => {
             let link = event.link.as_ref().expect("expected link");
-            if link.previous.is_some() || link.content != Content::Text {
+            if link.previous.is_some() || !matches!(link.content, Content::Text | Content::Cell) {
                 return 0;
             }
             let mut field = Tokenizer::new(event.point.clone(), parse_state);

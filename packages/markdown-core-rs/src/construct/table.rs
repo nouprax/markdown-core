@@ -972,7 +972,7 @@ fn flush_cell(
             tokenizer.events[span.2].link = Some(Link {
                 previous: None,
                 next: None,
-                content: Content::Text,
+                content: Content::Cell,
             });
 
             // To do: positional info of the remaining `data` nodes likely have

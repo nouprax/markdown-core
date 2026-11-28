@@ -373,6 +373,9 @@ pub struct Tokenizer<'a> {
     /// An index a construct's check leaves for the attempt after it: where
     /// the check found its construct ends.
     pub mark: usize,
+    /// Whether this is the text of a table cell, where each `\\|` is a `|`
+    /// before the text is read.
+    pub cell: bool,
 }
 
 impl<'a> Tokenizer<'a> {
@@ -403,6 +406,7 @@ impl<'a> Tokenizer<'a> {
             closing: false,
             term: None,
             mark: 0,
+            cell: false,
             resolvers: vec![],
         }
     }

@@ -743,3 +743,22 @@ Document scope=1:1..1:12 anchor=null attributes={} children=1
     ├── Text scope=1:6..1:6 anchor=null attributes={} literal=" " children=0
     └── CrossLink scope=1:7..1:12 anchor=null attributes={} dest=cross(path="a\\",anchor=null) label=null children=0
 ````````````````````````````````
+
+```````````````````````````````` example
+|x|
+|-|
+|[[a\\|b]] [[\\|]] [[c\\\|d]]|
+.
+Document scope=1:1..3:30 anchor=null attributes={} children=1
+└── Table scope=1:1..3:30 anchor=null attributes={} columns=[none] children=2
+    ├── TableHead children=1
+    │   └── TableRow scope=1:1..1:3 anchor=null attributes={} children=1
+    │       └── TableCell scope=1:2..1:2 anchor=null attributes={} children=1
+    │           └── Text scope=1:2..1:2 anchor=null attributes={} literal="x" children=0
+    └── TableBody children=1
+        └── TableRow scope=3:1..3:30 anchor=null attributes={} children=1
+            └── TableCell scope=3:2..3:29 anchor=null attributes={} children=3
+                ├── CrossLink scope=3:2..3:10 anchor=null attributes={} dest=cross(path="a",anchor=null) label="b" children=0
+                ├── Text scope=3:11..3:19 anchor=null attributes={} literal=" [[|]] " children=0
+                └── CrossLink scope=3:20..3:29 anchor=null attributes={} dest=cross(path="c\\",anchor=null) label="d" children=0
+````````````````````````````````

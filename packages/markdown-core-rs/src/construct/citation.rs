@@ -569,6 +569,15 @@ pub fn insert(tokenizer: &mut Tokenizer, label: &Label, author: Option<usize>, p
             Some(byte) => advance(bytes, &events[cursor.event].point, byte),
             // Before an event, or after the last one.
             None => match events.get(cursor.event) {
+                // A bracketed span from an image start, whose `!` turns to
+                // text before it: before the `!`.
+                Some(event)
+                    if event.name == Name::LabelLink
+                        && events.get(cursor.event + 1).map(|next| next.name)
+                            == Some(Name::LabelImageMarker) =>
+                {
+                    events[cursor.event + 1].point.clone()
+                }
                 Some(event) => event.point.clone(),
                 None => events[events.len() - 1].point.clone(),
             },

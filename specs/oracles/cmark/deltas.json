@@ -236,6 +236,11 @@
             "note": "cmark decodes `&#32;` before trimming, so its info string is `js`; the text trims first and keeps ` js`."
         },
         {
+            "id": "spec-text-whitespace",
+            "input": "```&#10;\n",
+            "note": "cmark decodes `&#10;` before trimming, so its info string is empty; the text trims first and keeps the line feed."
+        },
+        {
             "id": "topics",
             "input": "#5 bolt\n\n#hashtag\n",
             "note": "`#hashtag` without a following space is a topic; `#5` has numbers alone and stays text."

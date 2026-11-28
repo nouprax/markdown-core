@@ -187,7 +187,7 @@ use crate::state::{Name as StateName, State};
 use crate::subtokenize::Subresult;
 use crate::tokenizer::{Fallback, Label, LabelKind, LabelStart, Tokenizer};
 use crate::util::{
-    constant::RESOURCE_DESTINATION_BALANCE_MAX,
+    constant::{LINK_REFERENCE_SIZE_MAX, RESOURCE_DESTINATION_BALANCE_MAX},
     normalize_identifier::normalize_identifier,
     skip,
     slice::{Position, Slice},
@@ -371,14 +371,16 @@ fn reference(tokenizer: &mut Tokenizer, end: usize) -> State {
 
     match tokenizer.current {
         // Resource (`[asd](fgh)`)?
+        // When it is none, the label is what it would be without the `(`,
+        // but no citation tail.
         Some(b'(') => {
             tokenizer.attempt(
                 State::Next(StateName::LabelEnd(Step::Ok { end })),
-                State::Next(if defined {
-                    StateName::LabelEnd(Step::Ok { end })
-                } else {
-                    StateName::LabelEnd(Step::Nok)
-                }),
+                State::Next(StateName::LabelEnd(Step::Cite {
+                    end,
+                    tail: false,
+                    defined,
+                })),
             );
             State::Redo(StateName::LabelEnd(Step::ResourceStart))
         }
@@ -525,11 +527,42 @@ fn call(tokenizer: &mut Tokenizer, end: usize) -> State {
 ///        ^
 /// ```
 fn reference_not_full(tokenizer: &mut Tokenizer, end: usize) -> State {
+    // A shortcut reference is not followed by `[]` or a link label
+    // (CommonMark 6.3): a `[` that opens no label leaves it one.
+    let bytes = tokenizer.parse_state.bytes;
+    let after = if label_follows(bytes, tokenizer.point.index) {
+        StateName::LabelEnd(Step::Nok)
+    } else {
+        StateName::LabelEnd(Step::Ok { end })
+    };
     tokenizer.attempt(
         State::Next(StateName::LabelEnd(Step::Ok { end })),
-        State::Next(StateName::LabelEnd(Step::Nok)),
+        State::Next(after),
     );
     State::Redo(StateName::LabelEnd(Step::ReferenceCollapsed))
+}
+
+/// Whether a link label (`[`, at most 999 bytes with no unescaped bracket
+/// and not all whitespace, and `]`) starts at `at`.
+fn label_follows(bytes: &[u8], at: usize) -> bool {
+    let mut index = at + 1;
+    let mut filled = false;
+    while index < bytes.len() && index - at <= LINK_REFERENCE_SIZE_MAX + 1 {
+        match bytes[index] {
+            b'\\' => {
+                filled = true;
+                index += 2;
+            }
+            b'[' => return false,
+            b']' => return filled,
+            b'\t' | b'\n' | b'\r' | b' ' => index += 1,
+            _ => {
+                filled = true;
+                index += 1;
+            }
+        }
+    }
+    false
 }
 
 /// Done, we found something.

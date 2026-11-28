@@ -363,6 +363,13 @@
             "why": "A directive name is one or more bytes other than a space, a tab, a line ending, `[`, `{` or `:`, as directives.md states; micromark-extension-directive's name character classes are that implementation's own rule."
         },
         {
+            "id": "attributes-matched-quote-retry",
+            "input": ":n{k=\"}\"\n",
+            "authority": "docs/specs/dialect/attributes.md",
+            "summary": "A C defect, not a deliberate difference: C retries a matched opening quote as an unquoted value, so `:n{k=\"}\"` is a directive with `k=\"\\\"\"`; remark and the Rust parser keep the line as text.",
+            "why": "Only an unmatched opening quote is part of an unquoted value, as attributes.md states; this quote is matched, so the container never closes. The Rust parser's output is recorded as a departure in packages/markdown-core-rs/tests/departures.txt; when C is removed and its output is written back, this entry stops reproducing and is deleted."
+        },
+        {
             "id": "shared-attributes-normalization-order",
             "input": ":n{#a#b}\n\n:n{-k=v}\n\n:n{.one.two #1}\n\n:n{k=\"a\\\"b&amp;c\" m=a&amp;b n= id=}\n\n:n{class=\"a b\" .a k=1 k=2}\n",
             "authority": "docs/specs/dialect/attributes.md",

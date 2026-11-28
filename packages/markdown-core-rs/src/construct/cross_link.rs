@@ -136,10 +136,8 @@ fn dest(tokenizer: &mut Tokenizer, part: Part, open: bool) -> State {
             State::Next(StateName::CrossLink(Step::LabelStart))
         }
         // `\|` is the separator; any other backslash is a byte of the
-        // destination.
-        Some(b'\\')
-            if tokenizer.parse_state.bytes.get(tokenizer.point.index + 1) == Some(&b'|') =>
-        {
+        // destination. In a cell, where `\\|` is `\|`, so is `\\\|`.
+        Some(b'\\') if separator(tokenizer) => {
             if part != Part::Filled {
                 return State::Nok;
             }
@@ -168,6 +166,18 @@ fn dest(tokenizer: &mut Tokenizer, part: Part, open: bool) -> State {
     }
 }
 
+/// Whether the backslash at the current byte starts a separator: `\\|`, or
+/// in a cell also `\\\\|`.
+fn separator(tokenizer: &Tokenizer) -> bool {
+    let bytes = tokenizer.parse_state.bytes;
+    let at = tokenizer.point.index;
+    match bytes.get(at + 1) {
+        Some(b'|') => true,
+        Some(b'\\') => tokenizer.cell && bytes.get(at + 2) == Some(&b'|'),
+        _ => false,
+    }
+}
+
 /// After a backslash in the destination, at the `|` that makes them a
 /// separator.
 ///
@@ -176,6 +186,11 @@ fn dest(tokenizer: &mut Tokenizer, part: Part, open: bool) -> State {
 ///           ^
 /// ```
 fn pipe(tokenizer: &mut Tokenizer) -> State {
+    // The second backslash of `\\\|` in a cell.
+    if tokenizer.current == Some(b'\\') {
+        tokenizer.consume();
+        return State::Next(StateName::CrossLink(Step::Pipe));
+    }
     tokenizer.consume();
     tokenizer.exit(Name::CrossLinkSeparator);
     State::Next(StateName::CrossLink(Step::LabelStart))
