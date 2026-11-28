@@ -394,17 +394,25 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
     None
 }
 
-/// Classify the character next to a run, past transparent bytes.
-fn near(bytes: &[u8], index: usize, after: bool) -> CharacterKind {
+/// Classify the character next to a run, past transparent bytes; the
+/// edges of the text, `bounds`, are whitespace, as for a directive label
+/// or a table cell, whose text is its own.
+fn near(bytes: &[u8], bounds: (usize, usize), index: usize, after: bool) -> CharacterKind {
     let mut index = index;
     if after {
         while index < bytes.len() && bytes[index] == TRANSPARENT {
             index += 1;
         }
+        if index >= bounds.1 {
+            return CharacterKind::Whitespace;
+        }
         class_opt(char_after_index(bytes, index))
     } else {
         while index > 0 && bytes[index - 1] == TRANSPARENT {
             index -= 1;
+        }
+        if index <= bounds.0 {
+            return CharacterKind::Whitespace;
         }
         class_opt(char_before_index(bytes, index))
     }
@@ -501,6 +509,10 @@ fn text_spaces(parse_state: &ParseState, events: &[Event]) -> usize {
 /// Get sequences.
 fn read_sequences(tokenizer: &mut Tokenizer) -> Vec<Sequence> {
     let bytes = tokenizer.parse_state.bytes;
+    let bounds = match (tokenizer.events.first(), tokenizer.events.last()) {
+        (Some(first), Some(last)) => (first.point.index, last.point.index),
+        _ => (0, bytes.len()),
+    };
     let mut index = 0;
     let mut stack = vec![];
     let mut sequences = vec![];
@@ -524,8 +536,8 @@ fn read_sequences(tokenizer: &mut Tokenizer) -> Vec<Sequence> {
                 } else if size < spec.min || (spec.exact && size != spec.min) {
                     (false, false)
                 } else {
-                    let before = near(bytes, enter.point.index, false);
-                    let after = near(bytes, exit.point.index, true);
+                    let before = near(bytes, bounds, enter.point.index, false);
+                    let after = near(bytes, bounds, exit.point.index, true);
                     flanks(spec.flank, &before, &after)
                 };
 

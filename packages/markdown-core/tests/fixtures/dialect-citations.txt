@@ -1471,3 +1471,12 @@ Document scope=1:1..1:7 anchor=null attributes={} children=1
     │       └── CitationSuffix children=0
     └── Text scope=1:7..1:7 anchor=null attributes={} literal="]" children=0
 ````````````````````````````````
+
+```````````````````````````````` example
+$a`$@{a}`
+.
+Document scope=1:1..1:9 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:9 anchor=null attributes={} children=2
+    ├── Formula scope=1:1..1:4 anchor=null attributes={} mode=embedded literal="a`" children=0
+    └── Text scope=1:5..1:9 anchor=null attributes={} literal="@{a}`" children=0
+````````````````````````````````

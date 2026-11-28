@@ -392,3 +392,54 @@ Document scope=1:1..1:7 anchor=null attributes={} children=1
             │   └── Text scope=1:2..1:4 anchor=null attributes={} literal="^[]" children=0
             └── CitationSuffix children=0
 ````````````````````````````````
+
+```````````````````````````````` departure regression.txt 118
+A code span begins with a backtick string and ends with the next backtick
+string of equal length (CommonMark 6.1), so after the code span `x` the
+backticks around `;` make another; cmark remembers that it found no closer of
+length one while it looked for one for the escaped fence's two backticks, and
+C follows cmark.
+.
+Document scope=1:1..2:7 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..2:7 anchor=null attributes={} children=5
+    ├── Text scope=1:1..1:4 anchor=null attributes={} literal="```" children=0
+    ├── SoftBreak scope=1:5..2:0 anchor=null attributes={} children=0
+    ├── Code scope=2:1..2:3 anchor=null attributes={} literal="x" children=0
+    ├── Text scope=2:4..2:4 anchor=null attributes={} literal="e" children=0
+    └── Code scope=2:5..2:7 anchor=null attributes={} literal=";" children=0
+````````````````````````````````
+
+```````````````````````````````` departure dialect-citations.txt 61
+The formula `a` ends at the second `$`, and the braced key `@{a}` after it is
+an author-in-text citation (citations.md); the last backtick has no closer and
+is text. C pairs that backtick with the formula's as a code span and keeps the
+key as text.
+.
+Document scope=1:1..1:9 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:9 anchor=null attributes={} children=3
+    ├── Formula scope=1:1..1:4 anchor=null attributes={} mode=embedded literal="a`" children=0
+    ├── Cite scope=1:5..1:8 anchor=null attributes={} children=1
+    │   └── Citation scope=1:5..1:8 anchor=null attributes={} referent=bib(key="a",mode=authorInText) children=0
+    │       ├── CitationPrefix children=0
+    │       └── CitationSuffix children=0
+    └── Text scope=1:9..1:9 anchor=null attributes={} literal="`" children=0
+````````````````````````````````
+
+```````````````````````````````` departure dialect-tables.txt 36
+A table is a header row, a delimiter row, and body rows (GFM 4.10); `-|-` is a
+row of two cells, so over the delimiter row `-|-` it is a table's header,
+which ends the paragraph `a`. cmark-gfm, having refused the first `-|-` as a
+delimiter row for `a`, keeps the lines as text, and C follows cmark-gfm.
+.
+Document scope=1:1..3:3 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:1 anchor=null attributes={} children=1
+│   └── Text scope=1:1..1:1 anchor=null attributes={} literal="a" children=0
+└── Table scope=2:1..3:3 anchor=null attributes={} columns=[none,none] children=1
+    ├── TableHead children=1
+    │   └── TableRow scope=2:1..2:3 anchor=null attributes={} children=2
+    │       ├── TableCell scope=2:1..2:1 anchor=null attributes={} children=1
+    │       │   └── Text scope=2:1..2:1 anchor=null attributes={} literal="-" children=0
+    │       └── TableCell scope=2:3..2:3 anchor=null attributes={} children=1
+    │           └── Text scope=2:3..2:3 anchor=null attributes={} literal="-" children=0
+    └── TableBody children=0
+````````````````````````````````

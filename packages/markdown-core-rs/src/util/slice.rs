@@ -87,7 +87,10 @@ impl<'a> Slice<'a> {
         // If we have virtual spaces before, it means we are past the actual
         // character at that index, and those virtual spaces.
         if before > 0 {
-            before = TAB_SIZE - before;
+            // The columns of the tab left, to its stop: a tab after the
+            // start of a stop is narrower than one.
+            let column = position.start.column - 1;
+            before = (column / TAB_SIZE + 1) * TAB_SIZE - column;
             start += 1;
         }
 

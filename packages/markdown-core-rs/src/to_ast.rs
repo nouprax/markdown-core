@@ -156,8 +156,18 @@ impl<'a> Compiler<'a> {
                     return self.events[at - 1].point.index;
                 }
                 if self.events[at].point.index == end {
-                    if let Some(hole) = self.holes.iter().find(|hole| hole.start == end) {
-                        return hole.end;
+                    // Past each prefix of the line, which touch or overlap
+                    // (a hole takes the whitespace before it).
+                    let mut past = end;
+                    while let Some(hole) = self
+                        .holes
+                        .iter()
+                        .find(|hole| hole.start <= past && hole.end > past)
+                    {
+                        past = hole.end;
+                    }
+                    if past > end {
+                        return past;
                     }
                 }
                 break;
@@ -307,19 +317,22 @@ impl<'a> Compiler<'a> {
                     found = Some(event.point.index);
                     index = self.exits[index] + 1;
                 }
-                // So does the whitespace of a last line at the end of the
-                // input, with no line ending after it.
-                Name::SpaceOrTab | Name::ContainerIndent if self.end(index) == self.bytes.len() => {
-                    found = Some(self.bytes.len());
+                // So does the whitespace of a line that holds nothing else:
+                // at the end of the input, with no line ending after it, or
+                // after the prefixes of the containers that go on.
+                Name::SpaceOrTab | Name::ContainerIndent
+                    if line_stop(self.bytes, self.end(index)) == self.end(index) =>
+                {
+                    found = Some(self.end(index));
                     index = self.exits[index] + 1;
                 }
                 // And a last line in a block quote that holds only its
-                // prefix: the block goes on to the prefix's end.
+                // prefix and whitespace: the block goes on to the line's end.
                 Name::BlockQuotePrefix
                     if line_end(self.bytes, self.end(index)) == self.bytes.len()
                         || self.quote_last(index) =>
                 {
-                    found = Some(self.end(index));
+                    found = Some(line_stop(self.bytes, self.end(index)));
                     index = self.exits[index] + 1;
                 }
                 name if between(name) => index = self.exits[index] + 1,
@@ -1017,7 +1030,11 @@ impl<'a> Compiler<'a> {
         let marker = self
             .child(index, Name::ListItemPrefix)
             .and_then(|prefix| self.child(prefix, Name::ListItemMarker))?;
-        let column = self.events[self.exits[marker]].point.column + 1;
+        // The indent of the item's content past the prefixes of the
+        // containers around it, which a line's own prefixes may make wider
+        // or narrower than on the item's line.
+        let size =
+            self.events[self.exits[marker]].point.column + 1 - self.events[index].point.column;
         let mut at = self.exits[index] + 1;
         let mut found = None;
         let mut ended = false;
@@ -1040,7 +1057,7 @@ impl<'a> Compiler<'a> {
                     found = Some(event.point.index);
                 }
                 Name::SpaceOrTab if ended => {
-                    if self.events[self.exits[at]].point.column < column {
+                    if self.events[self.exits[at]].point.column - event.point.column < size {
                         break;
                     }
                     found = Some(self.end(at));
