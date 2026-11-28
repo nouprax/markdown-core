@@ -88,7 +88,8 @@ fn line_end(bytes: &[u8], index: usize) -> usize {
 /// Whether a body marker is near the line at `index`: on the line after it,
 /// or on the one after a blank line, so that the line may be a term.
 pub fn near(bytes: &[u8], index: usize) -> bool {
-    let next = line_end(bytes, index) + 1;
+    let eol = line_end(bytes, index);
+    let next = eol + if bytes[eol..].starts_with(b"\r\n") { 2 } else { 1 };
     next < bytes.len()
         && (marks(bytes, next) || blank_at(bytes, next).is_some_and(|after| marks(bytes, after)))
 }

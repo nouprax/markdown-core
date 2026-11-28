@@ -697,7 +697,7 @@ impl<'a> Compiler<'a> {
     fn blank_before(&self, at: usize) -> bool {
         let mut index = at;
         let mut quotes = 0;
-        while index > 0 && self.bytes[index - 1] != b'\n' {
+        while index > 0 && !matches!(self.bytes[index - 1], b'\n' | b'\r') {
             index -= 1;
             quotes += usize::from(self.bytes[index] == b'>');
         }
@@ -705,7 +705,10 @@ impl<'a> Compiler<'a> {
             return false;
         }
         index -= 1;
-        while index > 0 && self.bytes[index - 1] != b'\n' {
+        if index > 0 && self.bytes[index] == b'\n' && self.bytes[index - 1] == b'\r' {
+            index -= 1;
+        }
+        while index > 0 && !matches!(self.bytes[index - 1], b'\n' | b'\r') {
             index -= 1;
             match self.bytes[index] {
                 b' ' | b'\t' | b'\r' => {}
@@ -1671,7 +1674,7 @@ impl<'a> Compiler<'a> {
                         {
                             at -= 1;
                         }
-                        if at < end && at > self.start(text) && self.bytes[at - 1] == b'\n' {
+                        if at < end && at > self.start(text) && matches!(self.bytes[at - 1], b'\n' | b'\r') {
                             end = at;
                         }
                         (self.label_content(text), self.runs(self.start(text), end))

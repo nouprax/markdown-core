@@ -167,3 +167,44 @@ fn fixtures() {
     println!("{}{}/{} examples dump as expected", report, passed, total);
     assert_eq!(passed, total, "every fixture example must dump as expected");
 }
+
+/// A line ending is a line feed, a carriage return or both (spec 2.1): each
+/// fixture example with its line feeds written as carriage returns, or as
+/// both, dumps as it does with line feeds, but for the endings in
+/// literals.
+#[test]
+fn returns() {
+    let directory = Path::new(env!("CARGO_MANIFEST_DIR")).join("../markdown-core/tests/fixtures");
+    let mut names: Vec<String> = fs::read_dir(&directory)
+        .expect("expected the C fixtures")
+        .filter_map(|entry| {
+            let name = entry.ok()?.file_name().into_string().ok()?;
+            name.ends_with(".txt").then_some(name)
+        })
+        .collect();
+    names.sort();
+    let mut total = 0;
+    let mut failed = vec![];
+    for name in &names {
+        let text = fs::read_to_string(directory.join(name)).expect("expected a fixture");
+        for case in load(&text) {
+            if case.markdown.contains(['\r', '\\']) {
+                continue;
+            }
+            let document = markdown_core::parse(&case.markdown);
+            let expected = markdown_core::dump::dump(&document, &case.markdown);
+            for eol in ["\r", "\r\n"] {
+                total += 1;
+                let source = case.markdown.replace('\n', eol);
+                let document = markdown_core::parse(&source);
+                let actual = markdown_core::dump::dump(&document, &source)
+                    .replace(&eol.replace('\r', "\\r").replace('\n', "\\n"), "\\n");
+                if actual != expected {
+                    failed.push(format!("{name} {} {eol:?}", case.number));
+                }
+            }
+        }
+    }
+    println!("{} of {total} differ:\n{}", failed.len(), failed.join("\n"));
+    assert!(failed.is_empty(), "every ending must parse as a line feed");
+}

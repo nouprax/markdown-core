@@ -477,7 +477,7 @@ impl<'a> Tokenizer<'a> {
             }
         };
         if end < fed {
-            Some(bytes[end] == b'\n')
+            Some(matches!(bytes[end], b'\n' | b'\r'))
         } else if last {
             Some(true)
         } else {

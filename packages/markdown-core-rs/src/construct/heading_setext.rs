@@ -352,7 +352,10 @@ fn tail(tokenizer: &mut Tokenizer, exit: usize) {
     let start = &tokenizer.events[data - 1].point;
     let end = tokenizer.events[data].point.index;
     // Only a chunk of the last line alone.
-    if tokenizer.parse_state.bytes[start.index..end].contains(&b'\n') {
+    if tokenizer.parse_state.bytes[start.index..end]
+        .iter()
+        .any(|byte| matches!(byte, b'\n' | b'\r'))
+    {
         return;
     }
     if let Some((cut, events)) = parts::attributes::line_tail(tokenizer, start, end) {
