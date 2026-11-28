@@ -114,6 +114,21 @@
             ]
         },
         {
+            "source": "packages/markdown-core/tests/fixtures/dialect-citations.txt:1429",
+            "input": "[^[[]]@b]\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.1.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:2..1:6",
+                    "parentKind": "Citation",
+                    "parentScope": "1:4..1:5",
+                    "closedBy": "unassigned"
+                }
+            ]
+        },
+        {
             "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:244",
             "input": "text^[an inline note]\n",
             "findings": [

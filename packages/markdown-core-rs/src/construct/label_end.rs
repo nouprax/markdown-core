@@ -272,11 +272,13 @@ fn after(tokenizer: &mut Tokenizer, end: usize) -> State {
             line: false,
         }));
     }
+    // A start inside a link is no link, and a tail only where nothing
+    // could follow it but a shortcut reference.
     State::Redo(StateName::LabelEnd(
         if tokenizer.labels.starts[start_index].inactive {
             Step::Cite {
                 end,
-                tail: true,
+                tail: !matches!(tokenizer.current, Some(b'(' | b'[')),
                 defined: false,
             }
         } else {
@@ -298,7 +300,7 @@ fn unspan(tokenizer: &mut Tokenizer, end: usize, kind: LabelKind) -> State {
         if tokenizer.labels.starts[index].inactive {
             Step::Cite {
                 end,
-                tail: true,
+                tail: !matches!(tokenizer.current, Some(b'(' | b'[')),
                 defined: false,
             }
         } else {
@@ -1084,17 +1086,17 @@ fn insert_labels(tokenizer: &mut Tokenizer, labels: &[Label]) {
         // Empty events not allowed.
         // Though: if this was what looked like a footnote, but didn’t match,
         // it’s a link instead, and we need to inject the `^`.
+        // The caret is the text's first, before its exit even when nothing
+        // else is in it.
         if label.start.1 != label.end.0 || !caret.is_empty() {
-            tokenizer.map.add_before(
-                label.start.1 + 1,
-                0,
-                vec![Event {
-                    kind: Kind::Enter,
-                    name: Name::LabelText,
-                    point: tokenizer.events[label.start.1].point.clone(),
-                    link: None,
-                }],
-            );
+            let mut enter = vec![Event {
+                kind: Kind::Enter,
+                name: Name::LabelText,
+                point: tokenizer.events[label.start.1].point.clone(),
+                link: None,
+            }];
+            enter.append(&mut caret);
+            tokenizer.map.add_before(label.start.1 + 1, 0, enter);
             tokenizer.map.add(
                 label.end.0,
                 0,
@@ -1105,10 +1107,6 @@ fn insert_labels(tokenizer: &mut Tokenizer, labels: &[Label]) {
                     link: None,
                 }],
             );
-        }
-
-        if !caret.is_empty() {
-            tokenizer.map.add(label.start.1 + 1, 0, caret);
         }
 
         // Insert a label exit.
