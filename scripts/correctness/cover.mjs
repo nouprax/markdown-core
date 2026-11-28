@@ -66,7 +66,7 @@ function batch(inputs) {
 /// numbers, so that many fit in memory.
 export const transitions = [];
 const numbers = new Map();
-function number(edge) {
+export function number(edge) {
     let found = numbers.get(edge);
     if (found === undefined) {
         found = transitions.length;

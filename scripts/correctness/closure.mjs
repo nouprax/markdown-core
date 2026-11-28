@@ -10,13 +10,17 @@
 // that no single edit of a pool
 // input improves on.
 //
-// `node scripts/correctness/closure.mjs [--rounds N] [--seeds N] [--out FILE]`
-// writes the pool, each input with the transitions only it reached when taken.
-import { mkdirSync, writeFileSync } from "node:fs";
+// `node scripts/correctness/closure.mjs [--rounds N] [--seeds N] [--out FILE] [--resume]`
+// writes the pool, each input with the transitions only it reached when taken,
+// and, while the closure runs, where it is: `--resume` goes on from there,
+// with the same binary (a parser change moves the transitions, so a closure
+// of another build starts over).
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { availableParallelism } from "node:os";
 import { dirname } from "node:path";
 import { representatives, words } from "./alphabet.mjs";
-import { build, fixtures, start, transitions } from "./cover.mjs";
+import { createHash } from "node:crypto";
+import { build, fixtures, number, start, transitions } from "./cover.mjs";
 
 const flag = (name, fallback) => {
     const at = process.argv.indexOf(name);
@@ -46,6 +50,7 @@ function edits(input) {
 }
 
 const binary = build();
+const made = createHash("sha256").update(readFileSync(binary)).digest("hex");
 const workers = availableParallelism();
 const chunk = 4000;
 
@@ -85,19 +90,37 @@ function offer({ input, edges, crash }, parent) {
     pool.push({ input, parent, fresh: fresh.map((edge) => transitions[edge]) });
 }
 
-function save(closed) {
+function save(closed, place) {
     mkdirSync(dirname(out), { recursive: true });
-    writeFileSync(out, JSON.stringify({ closed, transitions: reached.size, crashes, pool }, null, 1));
+    writeFileSync(out, JSON.stringify({ closed, transitions: reached.size, place, crashes, pool }, null, 1));
 }
 
-const seeds = fixtures().slice(0, Number(flag("--seeds", "Infinity")));
-await each(seeds, (done) => done.forEach((result) => offer(result, undefined)));
-console.log(`seeds: ${pool.length} inputs, ${reached.size} transitions`);
+let frontier;
+let first = 1;
+let from = 0;
+if (process.argv.includes("--resume") && existsSync(out)) {
+    const saved = JSON.parse(readFileSync(out, "utf8"));
+    if (!saved.place) throw new Error(`${out} holds no closure to resume`);
+    if (saved.place.made !== made) throw new Error(`${out} is the closure of another build: start over`);
+    for (const entry of saved.pool) {
+        for (const name of entry.fresh) reached.add(number(name));
+        known.add(entry.input);
+        pool.push(entry);
+    }
+    crashes.push(...saved.crashes);
+    ({ round: first, frontier, from } = saved.place);
+    console.log(`resumed round ${first} at ${from}/${frontier.length}: ${pool.length} inputs, ${reached.size} transitions`);
+} else {
+    const seeds = fixtures().slice(0, Number(flag("--seeds", "Infinity")));
+    await each(seeds, (done) => done.forEach((result) => offer(result, undefined)));
+    console.log(`seeds: ${pool.length} inputs, ${reached.size} transitions`);
+    frontier = pool.map((_, index) => index);
+}
 
-let frontier = pool.map((_, index) => index);
 let ran = 0;
-for (let round = 1; round <= rounds && frontier.length; round += 1) {
-    const before = pool.length;
+for (let round = first; round <= rounds && frontier.length; round += 1) {
+    // A resumed round's new inputs start after the frontier it had.
+    const before = round === first && from > 0 ? Math.max(...frontier) + 1 : pool.length;
     // Run the edits of many inputs at once, then take them in order.
     let inputs = [];
     let parents = [];
@@ -110,7 +133,8 @@ for (let round = 1; round <= rounds && frontier.length; round += 1) {
         parents = [];
     };
     const queued = new Set();
-    for (const index of frontier) {
+    for (let at = round === first ? from : 0; at < frontier.length; at += 1) {
+        const index = frontier[at];
         for (const input of edits(pool[index].input)) {
             if (known.has(input) || queued.has(input)) continue;
             queued.add(input);
@@ -120,12 +144,13 @@ for (let round = 1; round <= rounds && frontier.length; round += 1) {
         if (inputs.length >= workers * chunk) {
             await flush();
             queued.clear();
+            save(false, { made, round, frontier, from: at + 1 });
         }
     }
     await flush();
     frontier = pool.slice(before).map((_, at) => before + at);
+    save(false, { made, round: round + 1, frontier, from: 0 });
     console.log(`round ${round}: took ${frontier.length}, ${pool.length} inputs, ${reached.size} transitions`);
-    save(false);
 }
 
 save(frontier.length === 0);
