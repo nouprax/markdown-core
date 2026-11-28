@@ -43,7 +43,7 @@ pub fn events(source: &str) -> String {
     let mut depth = 0usize;
     for event in &events {
         if event.kind == event::Kind::Exit {
-            depth -= 1;
+            depth = depth.saturating_sub(1);
         }
         let _ = writeln!(
             out,

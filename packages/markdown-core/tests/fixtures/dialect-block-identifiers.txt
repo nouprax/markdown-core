@@ -1274,3 +1274,74 @@ Document scope=1:1..4:3 anchor=null attributes={} children=2
     └── Link scope=4:1..4:3 anchor=null attributes={} dest=reference("r") title=null children=1
         └── Text scope=4:2..4:2 anchor=null attributes={} literal="r" children=0
 ````````````````````````````````
+
+An identifier on a list item's line of its own is paragraph text when a
+lazy line continues it.
+
+```````````````````````````````` example
+- #m#
+a
+.
+Document scope=1:1..2:1 anchor=null attributes={} children=1
+└── List scope=1:1..2:1 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=1
+    └── ListItem scope=1:1..2:1 anchor=null attributes={} status=null children=1
+        └── Paragraph scope=1:3..2:1 anchor=null attributes={} children=3
+            ├── Text scope=1:3..1:5 anchor=null attributes={} literal="#m#" children=0
+            ├── SoftBreak scope=1:6..2:0 anchor=null attributes={} children=0
+            └── Text scope=2:1..2:1 anchor=null attributes={} literal="a" children=0
+````````````````````````````````
+
+An identifier line that content follows is a paragraph's line, which a
+setext underline makes a heading.
+
+```````````````````````````````` example
+#b#
+-
+.
+Document scope=1:1..2:1 anchor=null attributes={} children=1
+└── Heading scope=1:1..2:1 anchor=null attributes={} level=2 children=1
+    └── Text scope=1:1..1:3 anchor=null attributes={} literal="#b#" children=0
+````````````````````````````````
+
+On a final line of its own, an identifier ends the content before it with
+no whitespace at its end.
+
+```````````````````````````````` example
+b 
+#e#
+.
+Document scope=1:1..2:3 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..2:3 anchor="e" attributes={} children=1
+    └── Text scope=1:1..1:1 anchor=null attributes={} literal="b" children=0
+````````````````````````````````
+
+An identifier on an item's first line names that item, not an item it
+holds.
+
+```````````````````````````````` example
+- t #m#
+  - o
+.
+Document scope=1:1..2:5 anchor=null attributes={} children=1
+└── List scope=1:1..2:5 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=1
+    └── ListItem scope=1:1..2:5 anchor="m" attributes={} status=null children=2
+        ├── Paragraph scope=1:3..1:7 anchor=null attributes={} children=1
+        │   └── Text scope=1:3..1:3 anchor=null attributes={} literal="t" children=0
+        └── List scope=2:3..2:5 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=1
+            └── ListItem scope=2:3..2:5 anchor=null attributes={} status=null children=1
+                └── Paragraph scope=2:5..2:5 anchor=null attributes={} children=1
+                    └── Text scope=2:5..2:5 anchor=null attributes={} literal="o" children=0
+````````````````````````````````
+
+A quote marker on the line before is not a blank line for an identifier
+after the quote ends: the identifier line is a paragraph.
+
+```````````````````````````````` example
+>
+#d#
+.
+Document scope=1:1..2:3 anchor=null attributes={} children=2
+├── Callout scope=1:1..1:1 anchor=null attributes={} variant=null collapsed=null children=0
+└── Paragraph scope=2:1..2:3 anchor=null attributes={} children=1
+    └── Text scope=2:1..2:3 anchor=null attributes={} literal="#d#" children=0
+````````````````````````````````

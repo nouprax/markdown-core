@@ -859,11 +859,14 @@ static bool publish_place_runs(publish_walk *walk, markdown_core_node *node, mar
         markdown_core_source_place item;
         memcpy(&item, read + offsetof(markdown_core_places, items) + i * sizeof(item), sizeof(item));
         if (!item.length) {
-            /* Clipped to the node's place: one that only touches it is not
-             * the node's, and an empty one within it is an empty run. */
+            /* Clipped to the node's place: one that only touches its start
+             * is not the node's, and an empty one within it is an empty run,
+             * as is a line's own source the node ends where it starts: the
+             * node took the line's prefix, and so the empty line. */
             const uint32_t clipped_start = item.start > place.start ? item.start : place.start;
             const uint32_t clipped_end = item.end < place.end ? item.end : place.end;
-            if (clipped_start > clipped_end || (clipped_start == clipped_end && item.start < item.end)) {
+            if (clipped_start > clipped_end ||
+                (clipped_start == clipped_end && item.start < item.end && item.start < place.end)) {
                 continue;
             }
             item.start = clipped_start;

@@ -1199,3 +1199,327 @@ Document scope=1:1..2:3 anchor=null attributes={} children=1
     │           └── Text scope=1:9..1:9 anchor=null attributes={} literal="b" children=0
     └── TableBody children=0
 ````````````````````````````````
+
+A block quote or list item that starts after a paragraph closes the
+paragraph before it: its first line may be indented code.
+
+```````````````````````````````` example
+c
+>     o
+.
+Document scope=1:1..2:7 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:1 anchor=null attributes={} children=1
+│   └── Text scope=1:1..1:1 anchor=null attributes={} literal="c" children=0
+└── Callout scope=2:1..2:7 anchor=null attributes={} variant=null collapsed=null children=1
+    └── CodeBlock scope=2:7..2:7 anchor=null attributes={} info=null language=null literal="o\n" fenced=false closed=true children=0
+````````````````````````````````
+
+```````````````````````````````` example
+)
+1.     e
+.
+Document scope=1:1..2:8 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:1 anchor=null attributes={} children=1
+│   └── Text scope=1:1..1:1 anchor=null attributes={} literal=")" children=0
+└── List scope=2:1..2:8 anchor=null attributes={} flavor=ordered start=1 delimiter=period tight=true children=1
+    └── ListItem scope=2:1..2:8 anchor=null attributes={} status=null children=1
+        └── CodeBlock scope=2:8..2:8 anchor=null attributes={} info=null language=null literal="e\n" fenced=false closed=true children=0
+````````````````````````````````
+
+A new container after a paragraph may hold an empty list item.
+
+```````````````````````````````` example
+a
+> +
+.
+Document scope=1:1..2:3 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:1 anchor=null attributes={} children=1
+│   └── Text scope=1:1..1:1 anchor=null attributes={} literal="a" children=0
+└── Callout scope=2:1..2:3 anchor=null attributes={} variant=null collapsed=null children=1
+    └── List scope=2:3..2:3 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=1
+        └── ListItem scope=2:3..2:3 anchor=null attributes={} status=null children=0
+````````````````````````````````
+
+A lazy line continues the paragraph of a list item, even one that could
+start HTML.
+
+```````````````````````````````` example
++ t
+<
+.
+Document scope=1:1..2:1 anchor=null attributes={} children=1
+└── List scope=1:1..2:1 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=1
+    └── ListItem scope=1:1..2:1 anchor=null attributes={} status=null children=1
+        └── Paragraph scope=1:3..2:1 anchor=null attributes={} children=3
+            ├── Text scope=1:3..1:3 anchor=null attributes={} literal="t" children=0
+            ├── SoftBreak scope=1:4..2:0 anchor=null attributes={} children=0
+            └── Text scope=2:1..2:1 anchor=null attributes={} literal="<" children=0
+````````````````````````````````
+
+A setext heading in a block quote is closed: the line after it is no lazy
+continuation.
+
+```````````````````````````````` example
+>r
+>=
+a
+.
+Document scope=1:1..3:1 anchor=null attributes={} children=2
+├── Callout scope=1:1..2:2 anchor=null attributes={} variant=null collapsed=null children=1
+│   └── Heading scope=1:2..2:0,2:2..2:2 anchor=null attributes={} level=1 children=1
+│       └── Text scope=1:2..1:2 anchor=null attributes={} literal="r" children=0
+└── Paragraph scope=3:1..3:1 anchor=null attributes={} children=1
+    └── Text scope=3:1..3:1 anchor=null attributes={} literal="a" children=0
+````````````````````````````````
+
+An unclosed fence holds the lines its containers go on to, an empty last
+one included.
+
+```````````````````````````````` example
+```
+
+.
+Document scope=1:1..2:0 anchor=null attributes={} children=1
+└── CodeBlock scope=1:1..2:0 anchor=null attributes={} info=null language=null literal="\n" fenced=true closed=false children=0
+````````````````````````````````
+
+```````````````````````````````` example
+- a
+- ```
+  b
+
+
+- c
+.
+Document scope=1:1..6:3 anchor=null attributes={} children=1
+└── List scope=1:1..6:3 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=3
+    ├── ListItem scope=1:1..1:3 anchor=null attributes={} status=null children=1
+    │   └── Paragraph scope=1:3..1:3 anchor=null attributes={} children=1
+    │       └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
+    ├── ListItem scope=2:1..5:0 anchor=null attributes={} status=null children=1
+    │   └── CodeBlock scope=2:3..3:0,3:3..5:0 anchor=null attributes={} info=null language=null literal="b\n\n\n" fenced=true closed=false children=0
+    └── ListItem scope=6:1..6:3 anchor=null attributes={} status=null children=1
+        └── Paragraph scope=6:3..6:3 anchor=null attributes={} children=1
+            └── Text scope=6:3..6:3 anchor=null attributes={} literal="c" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+> ```
+>
+x
+.
+Document scope=1:1..3:1 anchor=null attributes={} children=2
+├── Callout scope=1:1..2:1 anchor=null attributes={} variant=null collapsed=null children=1
+│   └── CodeBlock scope=1:3..2:0,2:2..2:1 anchor=null attributes={} info=null language=null literal="\n" fenced=true closed=false children=0
+└── Paragraph scope=3:1..3:1 anchor=null attributes={} children=1
+    └── Text scope=3:1..3:1 anchor=null attributes={} literal="x" children=0
+````````````````````````````````
+
+An email address in a Text whose trailing spaces are trimmed before a line
+ending is placed on its own bytes.
+
+```````````````````````````````` example autolink
+x a@b.c 
+b
+.
+Document scope=1:1..2:1 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..2:1 anchor=null attributes={} children=4
+    ├── Text scope=1:1..1:2 anchor=null attributes={} literal="x " children=0
+    ├── Link scope=1:3..1:7 anchor=null attributes={} dest=url("mailto:a@b.c") title=null children=1
+    │   └── Text scope=1:3..1:7 anchor=null attributes={} literal="a@b.c" children=0
+    ├── SoftBreak scope=1:9..2:0 anchor=null attributes={} children=0
+    └── Text scope=2:1..2:1 anchor=null attributes={} literal="b" children=0
+````````````````````````````````
+
+At a second `@` the address is read anew from the first: the text between
+the two is its local part.
+
+```````````````````````````````` example autolink
+r@b.c@d.e
+
+d@.b@a
+.
+Document scope=1:1..3:6 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:9 anchor=null attributes={} children=2
+│   ├── Text scope=1:1..1:2 anchor=null attributes={} literal="r@" children=0
+│   └── Link scope=1:3..1:9 anchor=null attributes={} dest=url("mailto:b.c@d.e") title=null children=1
+│       └── Text scope=1:3..1:9 anchor=null attributes={} literal="b.c@d.e" children=0
+└── Paragraph scope=3:1..3:6 anchor=null attributes={} children=2
+    ├── Text scope=3:1..3:2 anchor=null attributes={} literal="d@" children=0
+    └── Link scope=3:3..3:6 anchor=null attributes={} dest=url("mailto:.b@a") title=null children=1
+        └── Text scope=3:3..3:6 anchor=null attributes={} literal=".b@a" children=0
+````````````````````````````````
+
+An extended autolink ends at whitespace, a space, a tab or a line ending,
+not at other Unicode whitespace.
+
+```````````````````````````````` example autolink
+www.a.b/x y
+.
+Document scope=1:1..1:13 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:13 anchor=null attributes={} children=1
+    └── Link scope=1:1..1:13 anchor=null attributes={} dest=url("http://www.a.b/x y") title=null children=1
+        └── Text scope=1:1..1:13 anchor=null attributes={} literal="www.a.b/x y" children=0
+````````````````````````````````
+
+An escape or a character reference is text an address is read in.
+
+```````````````````````````````` example autolink
+x \_@b.c a&#64;b.c
+.
+Document scope=1:1..1:18 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:18 anchor=null attributes={} children=4
+    ├── Text scope=1:1..1:2 anchor=null attributes={} literal="x " children=0
+    ├── Link scope=1:3..1:8 anchor=null attributes={} dest=url("mailto:_@b.c") title=null children=1
+    │   └── Text scope=1:3..1:8 anchor=null attributes={} literal="_@b.c" children=0
+    ├── Text scope=1:9..1:9 anchor=null attributes={} literal=" " children=0
+    └── Link scope=1:10..1:18 anchor=null attributes={} dest=url("mailto:a@b.c") title=null children=1
+        └── Text scope=1:10..1:18 anchor=null attributes={} literal="a@b.c" children=0
+````````````````````````````````
+
+An `xmpp:` address has a local part.
+
+```````````````````````````````` example autolink
+xmpp:@.o
+.
+Document scope=1:1..1:8 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:8 anchor=null attributes={} children=1
+    └── Link scope=1:1..1:8 anchor=null attributes={} dest=url("xmpp:@.o") title=null children=1
+        └── Text scope=1:1..1:8 anchor=null attributes={} literal="xmpp:@.o" children=0
+````````````````````````````````
+
+A code span opens at each backtick string a later one of its length closes,
+after a longer string that none closes.
+
+```````````````````````````````` example
+``u`c`d`r`
+.
+Document scope=1:1..1:10 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:10 anchor=null attributes={} children=3
+    ├── Text scope=1:1..1:3 anchor=null attributes={} literal="``u" children=0
+    ├── Code scope=1:4..1:6 anchor=null attributes={} literal="c" children=0
+    └── Text scope=1:7..1:10 anchor=null attributes={} literal="d`r`" children=0
+````````````````````````````````
+
+After a block quote closes, a paragraph it did not hold takes no ordered
+list item that starts at another number than 1.
+
+```````````````````````````````` example
+>
+a
+0)
+.
+Document scope=1:1..3:2 anchor=null attributes={} children=2
+├── Callout scope=1:1..1:1 anchor=null attributes={} variant=null collapsed=null children=0
+└── Paragraph scope=2:1..3:2 anchor=null attributes={} children=3
+    ├── Text scope=2:1..2:1 anchor=null attributes={} literal="a" children=0
+    ├── SoftBreak scope=2:2..3:0 anchor=null attributes={} children=0
+    └── Text scope=3:1..3:2 anchor=null attributes={} literal="0)" children=0
+````````````````````````````````
+
+A footnote definition's label may hold an opening bracket.
+
+```````````````````````````````` example footnotes
+[^[]: x
+.
+Document scope=1:1..1:7 anchor=null attributes={} children=1
+└── Footnote scope=1:1..1:7 anchor=null attributes={} label="[" children=1
+    └── Paragraph scope=1:7..1:7 anchor=null attributes={} children=1
+        └── Text scope=1:7..1:7 anchor=null attributes={} literal="x" children=0
+````````````````````````````````
+
+A first cell no divider opens starts after the whitespace before it.
+
+```````````````````````````````` example table
+ a|b
+-|-
+ c
+.
+Document scope=1:1..3:2 anchor=null attributes={} children=1
+└── Table scope=1:2..3:2 anchor=null attributes={} columns=[none,none] children=2
+    ├── TableHead children=1
+    │   └── TableRow scope=1:2..1:4 anchor=null attributes={} children=2
+    │       ├── TableCell scope=1:2..1:2 anchor=null attributes={} children=1
+    │       │   └── Text scope=1:2..1:2 anchor=null attributes={} literal="a" children=0
+    │       └── TableCell scope=1:4..1:4 anchor=null attributes={} children=1
+    │           └── Text scope=1:4..1:4 anchor=null attributes={} literal="b" children=0
+    └── TableBody children=1
+        └── TableRow scope=3:2..3:2 anchor=null attributes={} children=2
+            ├── TableCell scope=3:2..3:2 anchor=null attributes={} children=1
+            │   └── Text scope=3:2..3:2 anchor=null attributes={} literal="c" children=0
+            └── TableCell scope=3:2..3:2 anchor=null attributes={} children=0
+````````````````````````````````
+
+A Text after an address keeps the whitespace before its line ending in its
+scope.
+
+```````````````````````````````` example autolink
+z@b.e]	
+a
+.
+Document scope=1:1..2:1 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..2:1 anchor=null attributes={} children=4
+    ├── Link scope=1:1..1:5 anchor=null attributes={} dest=url("mailto:z@b.e") title=null children=1
+    │   └── Text scope=1:1..1:5 anchor=null attributes={} literal="z@b.e" children=0
+    ├── Text scope=1:6..1:7 anchor=null attributes={} literal="]" children=0
+    ├── SoftBreak scope=1:8..2:0 anchor=null attributes={} children=0
+    └── Text scope=2:1..2:1 anchor=null attributes={} literal="a" children=0
+````````````````````````````````
+
+A second `@` ends the domain of an address a colon claims.
+
+```````````````````````````````` example autolink directive
+:_@.c@[]
+.
+Document scope=1:1..1:8 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:8 anchor=null attributes={} children=1
+    └── Text scope=1:1..1:8 anchor=null attributes={} literal=":_@.c@[]" children=0
+````````````````````````````````
+
+A last line of only a container prefix is blank: it ends the containers it
+does not continue, and continues no paragraph.
+
+```````````````````````````````` example
+>>t
+>
+.
+Document scope=1:1..2:1 anchor=null attributes={} children=1
+└── Callout scope=1:1..2:1 anchor=null attributes={} variant=null collapsed=null children=1
+    └── Callout scope=1:2..1:3 anchor=null attributes={} variant=null collapsed=null children=1
+        └── Paragraph scope=1:3..1:3 anchor=null attributes={} children=1
+            └── Text scope=1:3..1:3 anchor=null attributes={} literal="t" children=0
+````````````````````````````````
+
+An email autolink's local part may hold `!`.
+
+```````````````````````````````` example
+<!@c>
+.
+Document scope=1:1..1:5 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:5 anchor=null attributes={} children=1
+    └── Link scope=1:1..1:5 anchor=null attributes={} dest=url("mailto:!@c") title=null children=1
+        └── Text scope=1:2..1:4 anchor=null attributes={} literal="!@c" children=0
+````````````````````````````````
+
+A link holds no link: the link inside closes the bracket around it to links.
+
+```````````````````````````````` example
+[[]()[]]()
+.
+Document scope=1:1..1:10 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:10 anchor=null attributes={} children=1
+    └── Link scope=1:1..1:10 anchor=null attributes={} dest=url("") title=null children=2
+        ├── Link scope=1:2..1:5 anchor=null attributes={} dest=url("") title=null children=0
+        └── Text scope=1:6..1:7 anchor=null attributes={} literal="[]" children=0
+````````````````````````````````
+
+A link destination holds a parenthesis only when escaped or in a balanced
+pair (CommonMark 6.3), so `((` makes none and nothing links.
+
+```````````````````````````````` example
+[](( "")
+.
+Document scope=1:1..1:8 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:8 anchor=null attributes={} children=1
+    └── Text scope=1:1..1:8 anchor=null attributes={} literal="[](( \"\")" children=0
+````````````````````````````````

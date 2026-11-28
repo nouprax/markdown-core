@@ -920,3 +920,23 @@ Document scope=1:1..3:3 anchor=null attributes={} children=1
     ├── SoftBreak scope=1:2..2:0 anchor=null attributes={} children=0
     └── Text scope=2:1..2:9 anchor=null attributes={} literal="|---|---|" children=0
 ````````````````````````````````
+
+A head row that goes on a paragraph is a line of it, at any indent.
+
+```````````````````````````````` example
+x
+    o|p
+-|-
+.
+Document scope=1:1..3:3 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:1 anchor=null attributes={} children=1
+│   └── Text scope=1:1..1:1 anchor=null attributes={} literal="x" children=0
+└── Table scope=2:5..3:3 anchor=null attributes={} columns=[none,none] children=1
+    ├── TableHead children=1
+    │   └── TableRow scope=2:5..2:7 anchor=null attributes={} children=2
+    │       ├── TableCell scope=2:5..2:5 anchor=null attributes={} children=1
+    │       │   └── Text scope=2:5..2:5 anchor=null attributes={} literal="o" children=0
+    │       └── TableCell scope=2:7..2:7 anchor=null attributes={} children=1
+    │           └── Text scope=2:7..2:7 anchor=null attributes={} literal="p" children=0
+    └── TableBody children=0
+````````````````````````````````

@@ -210,6 +210,14 @@ static inline void markdown_core_inline_seat_cursor(markdown_core_inline_state *
     inline_state->mark_width = mark->source_width;
 }
 
+/* The offset just past the bytes of the last delimiter, or 0 with none:
+ * what pushed it owns the bytes before it, a citation key's included, so a
+ * scanner that takes bytes back from the text before it stops there. */
+static inline bufsize_t markdown_core_inline_state_settled(markdown_core_inline_state *inline_state) {
+    const delimiter *last = delimiter_last(&inline_state->delims);
+    return last ? last->position : 0;
+}
+
 /* A Text's map, once its extent is placed on the runs [first, last]. A Text
  * whose bytes ARE the source bytes of its scope takes a view of the source
  * map; a decoded token, or a literal shorter than its scope, maps each of
@@ -219,12 +227,28 @@ static inline void markdown_core_inline_seat_cursor(markdown_core_inline_state *
  * for byte. The writes stay inside the gate: a node that is not a verbatim
  * copy of its source must keep `content_map.count` at zero, because that
  * count is read elsewhere as "is there a mapping at all". */
+/* Whether the literal of Text `node` is the content bytes [from, to] as
+ * written, or those bytes but the spaces and tabs trimmed from their end
+ * before a line ending: it reads them where they are. */
+static inline bool markdown_core_inline_literal_copied(const markdown_core_inline_state *inline_state,
+                                                       const markdown_core_node *node, int from, int to) {
+    const markdown_core_chunk *literal = node->as.literal;
+    const unsigned char *bytes = inline_state->input.data + from;
+    if (literal->len > to - from + 1 ||
+        (literal->data != bytes && memcmp(literal->data, bytes, (size_t)literal->len) != 0)) {
+        return false;
+    }
+    for (bufsize_t at = literal->len; at < to - from + 1; at++) {
+        if (bytes[at] != ' ' && bytes[at] != '\t') {
+            return false;
+        }
+    }
+    return true;
+}
+
 static inline void markdown_core_inline_map_text(markdown_core_inline_state *inline_state, markdown_core_node *node,
                                                  int from, int to, int first, int last) {
-    const markdown_core_chunk *literal = node->as.literal;
-    if (literal->len == to - from + 1 &&
-        (literal->data == inline_state->input.data + from ||
-         memcmp(literal->data, inline_state->input.data + from, (size_t)literal->len) == 0)) {
+    if (markdown_core_inline_literal_copied(inline_state, node, from, to)) {
         node->content_map.first = first;
         node->content_map.count = last - first + 1;
         node->content_map.offset = from + inline_state->owner->content_map.offset;

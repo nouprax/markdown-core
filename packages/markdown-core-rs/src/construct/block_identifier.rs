@@ -92,6 +92,10 @@ fn scan(text: &[u8]) -> Option<Found> {
         if cut > 0 && text[cut - 1] == b'\r' {
             cut -= 1;
         }
+        // The line before ends the content, with no whitespace at its end.
+        while cut > 0 && matches!(text[cut - 1], b'\t' | b' ') {
+            cut -= 1;
+        }
     }
     Some(Found {
         start,
@@ -351,6 +355,10 @@ fn after(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         None if end(tokenizer) => State::Redo(StateName::BlockIdentifier(Step::Done)),
         Some(b'\n') => {
+            // Until the line after says, the line may be a paragraph's: what
+            // starts there is read as if it interrupts one (`#b#` over `-`
+            // is a heading).
+            tokenizer.interrupt = true;
             tokenizer.check(
                 State::Next(StateName::BlockIdentifier(Step::Done)),
                 State::Nok,

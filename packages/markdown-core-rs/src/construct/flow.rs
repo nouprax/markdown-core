@@ -104,6 +104,11 @@ pub const CHOICE: Choice = Choice::new(
 ///     ^
 /// ```
 fn start(tokenizer: &mut Tokenizer) -> State {
+    // A new container on this line ends the flow before it, as micromark
+    // closes it: what starts here interrupts nothing.
+    if tokenizer.pierce {
+        tokenizer.interrupt = false;
+    }
     tokenizer.attempt(
         State::Next(StateName::Flow(Step::BlankLineAfter)),
         State::Next(choice::start(List::Flow)),

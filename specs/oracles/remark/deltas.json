@@ -835,6 +835,20 @@
             "authority": "docs/specs/dialect/directives.md (P8)",
             "summary": "A closer needs at least as many colons as its opener, so a shorter run inside the innermost open container is its content.",
             "why": "remark-directive closes the inner container at the shorter run and keeps the rest as prose; the product fixture pins the minimum closer length."
+        },
+        {
+            "id": "unmatched-double-dollar-release",
+            "input": "$$x$ y\n\n$$$z$\n",
+            "authority": "docs/specs/dialect/formulas.md",
+            "summary": "An unmatched `$$` opener is text, both its dollars, and the single dollar after it may open a formula, so `$$$z$` holds `$z$`; remark-math needs a closer as long as the whole opening run and keeps the line as text.",
+            "why": "The dialect tries `$$` before `$`, and an unmatched formula opener releases its source for normal parsing; remark-math's run-length matching is that implementation's own rule."
+        },
+        {
+            "id": "email-colon-over-directive",
+            "input": ":s@a.t[]\n\nmailto:a@b.com[x]\n",
+            "authority": "docs/specs/dialect/conflicts.md",
+            "summary": "An email address recognized at a colon owns the colon, so neither colon starts a directive; remark makes `:s` and `:a` directives.",
+            "why": "conflicts.md (Inline recognition) gives an address at a colon precedence over a competing directive name."
         }
     ],
     "baselineBacklog": [],

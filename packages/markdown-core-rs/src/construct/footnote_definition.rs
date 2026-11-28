@@ -257,9 +257,9 @@ fn label_at_marker(tokenizer: &mut Tokenizer) -> State {
 fn label_inside(tokenizer: &mut Tokenizer, size: usize) -> State {
     // Too long.
     if size > LINK_REFERENCE_SIZE_MAX
-        // Space or tab is not supported by GFM for some reason (`\n` and
-        // `[` make sense).
-        || matches!(tokenizer.current, None | Some(b'\t' | b'\n' | b' ' | b'['))
+        // A label holds no whitespace, as cmark-gfm reads it; an opening
+        // bracket is in it (`[^[]: a`).
+        || matches!(tokenizer.current, None | Some(b'\t' | b'\n' | b' '))
         // Closing brace with nothing.
         || (matches!(tokenizer.current, Some(b']')) && size == 0)
     {

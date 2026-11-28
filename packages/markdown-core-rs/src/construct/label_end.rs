@@ -426,7 +426,8 @@ fn cite(tokenizer: &mut Tokenizer, end: usize, tail: bool, defined: bool) -> Sta
     } else {
         StateName::LabelEnd(Step::Nok)
     };
-    if start.kind != LabelKind::Link {
+    let image = start.kind == LabelKind::Image;
+    if start.kind != LabelKind::Link && !image {
         return State::Redo(link);
     }
     let bytes = tokenizer.parse_state.bytes;
@@ -438,6 +439,16 @@ fn cite(tokenizer: &mut Tokenizer, end: usize, tail: bool, defined: bool) -> Sta
         end,
     );
     let group = citation::group(&sections);
+    if image {
+        // An image that is none is its `!` and a bracket, which a group
+        // takes (`![@a]`).
+        if !group {
+            return State::Redo(link);
+        }
+        shriek(tokenizer, index);
+        tokenizer.labels.starts[index].kind = LabelKind::Group;
+        return State::Redo(StateName::LabelEnd(Step::Done { end }));
+    }
     let author = if tail && citation::tail(&sections) {
         citation::author(&tokenizer.events, bytes, start.start.0)
     } else {
@@ -463,6 +474,30 @@ fn cite(tokenizer: &mut Tokenizer, end: usize, tail: bool, defined: bool) -> Sta
         return State::Redo(link);
     }
     State::Redo(StateName::LabelEnd(Step::Done { end }))
+}
+
+/// Make the image start `index` its `!`, as data, and a link start.
+fn shriek(tokenizer: &mut Tokenizer, index: usize) {
+    let enter = tokenizer.labels.starts[index].start.0;
+    let events = &mut tokenizer.events;
+    debug_assert_eq!(
+        events[enter].name,
+        Name::LabelImage,
+        "expected an image start"
+    );
+    debug_assert_eq!(
+        events[enter + 1].name,
+        Name::LabelImageMarker,
+        "expected its `!`"
+    );
+    events[enter].name = Name::Data;
+    events[enter + 1].kind = Kind::Exit;
+    events[enter + 1].name = Name::Data;
+    events[enter + 1].point = events[enter + 2].point.clone();
+    events[enter + 2].kind = Kind::Enter;
+    events[enter + 2].name = Name::LabelLink;
+    events[enter + 5].name = Name::LabelLink;
+    tokenizer.labels.starts[index].start.0 = enter + 2;
 }
 
 /// After a defined footnote call that no resource follows.

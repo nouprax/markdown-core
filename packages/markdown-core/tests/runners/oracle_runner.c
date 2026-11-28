@@ -1869,6 +1869,12 @@ static bool unheld(const char *kind, const char *owner, const uint8_t *source, s
         strcmp(owner, "CrossEmbed") && next && !strchr(") \t\r\n", next)) {
         return true;
     }
+    /* A citation key that the text after the slot goes on: a key's inner
+     * punctuation before a key character (`@‸.o`). */
+    if (!strcmp(kind, "bib") && next && strchr(":.#$%&-+?<>~/", next) && to + 1 < length &&
+        (isalnum(source[to + 1]) || source[to + 1] == '_')) {
+        return true;
+    }
     /* A label that goes on to the next line, or a slot whose `|` keeps
      * its line from a table's row. */
     size_t end = to;

@@ -11355,15 +11355,16 @@ typedef struct {
     size_t depth;
 } S_opens;
 
-/* Opens the blocks the line starts in `*container`. On the line a session
- * holds, `hold`, it stops before the first start that would read past the
- * line's bytes and sets `*held`, as it does at an opener's call that asked
- * to be a candidate; `*opens` says where it stands. */
+/* Opens the blocks the line starts in `*container`, and sets `*made` when it
+ * opens one. On the line a session holds, `hold`, it stops before the first
+ * start that would read past the line's bytes and sets `*held`, as it does at
+ * an opener's call that asked to be a candidate; `*opens` says where it
+ * stands. */
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void open_new_blocks(markdown_core_parser *parser,
                                                                             markdown_core_node **container,
                                                                             markdown_core_reader *reader,
                                                                             bool all_matched, S_opens *opens,
-                                                                            const bool hold, bool *held) {
+                                                                            const bool hold, bool *held, bool *made) {
     /* Two facts keep a line from interrupting text: `paragraph`, the matched
      * container is a paragraph the line would continue, and `maybe_lazy`, the
      * current block would take the line lazily. Only the first turn has
@@ -11448,6 +11449,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void open_new_blocks(mark
             }
             if (opened) {
                 *container = opened;
+                *made = true;
                 return;
             }
             if (S_requested(parser)) {
@@ -11456,7 +11458,10 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void open_new_blocks(mark
         }
 
         if (start.open) {
+            /* A claimed start opens its block; false ends the line's
+             * opening, as when the open read the rest of the line. */
             const bool opened = start.open(start.owner, parser, container, reader, &start);
+            *made = true;
             /* An open reads only what its scan decided from. */
             assert(!hold || S_step_decided(reader));
             S_reader_close(parser);
@@ -11485,6 +11490,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void open_new_blocks(mark
 
                 if (new_container) {
                     *container = new_container;
+                    *made = true;
                     if (parser->claimed_cursor) {
                         return;
                     }
@@ -11511,6 +11517,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void open_new_blocks(mark
                         }
                         if (new_container) {
                             *container = new_container;
+                            *made = true;
                             return;
                         }
                         if (S_requested(parser)) {
@@ -11759,7 +11766,14 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_line_machine(markd
     }
 
     if (!from || from->step != MARKDOWN_CORE_LINE_AT_TEXT) {
-        open_new_blocks(parser, &container, reader, all_matched, &opens, hold, &held);
+        /* A block the line opened is not the last it matched, though a
+         * block that closed as it opened, a paragraph of definitions, may
+         * have left it its node. */
+        bool made = false;
+        open_new_blocks(parser, &container, reader, all_matched, &opens, hold, &held, &made);
+        if (made) {
+            last_matched_container = NULL;
+        }
         if (held) {
             S_hold(parser, MARKDOWN_CORE_LINE_AT_OPEN, container, all_matched, container != last_matched_container,
                    opens);

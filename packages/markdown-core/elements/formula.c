@@ -291,10 +291,11 @@ static markdown_core_node *match_formula_delimiter(const markdown_core_element_i
                                                    markdown_core_inline_state *inline_state,
                                                    markdown_core_delimiter_rule rule, bufsize_t len, int can_open,
                                                    int can_close) {
+    int close = -1;
     if (can_open) {
         int start = markdown_core_inline_state_get_offset(inline_state);
         int from = start + len;
-        int close = markdown_core_inline_state_find_opaque_close(inline_state, rule, from, scan_formula_closer);
+        close = markdown_core_inline_state_find_opaque_close(inline_state, rule, from, scan_formula_closer);
         markdown_core_chunk *input = markdown_core_inline_state_get_chunk(inline_state);
         /* An opener with no closer opens a formula once one follows. */
         if (close < 0) {
@@ -317,6 +318,13 @@ static markdown_core_node *match_formula_delimiter(const markdown_core_element_i
             }
             markdown_core_inline_state_set_opaque_body_end(inline_state, close);
         }
+    }
+    /* A backslash opener that opens nothing, gated or with no closer after
+     * it, releases its source to the base language, where its first
+     * backslash escapes the second: `\\(` alone is `\(`. */
+    if ((rule == FORMULA_DELIM_LATEX_BACKSLASH_INLINE || rule == FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY) &&
+        (!can_open || close < 0)) {
+        return NULL;
     }
     /* A rejected backtick-body candidate is ordinary inline grammar. Its
      * lexical closer can be hidden by a code span or bracket scope, so retain

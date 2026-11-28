@@ -293,7 +293,14 @@ fn head_row_before(tokenizer: &mut Tokenizer, head: Head) -> State {
             State::Next(StateName::Table(Step::HeadRowStart { head })),
             State::Nok,
         );
-        State::Redo(space_or_tab_min_max(0, TAB_SIZE - 1))
+        // A head that goes on a paragraph is a line of it, which any
+        // indent leaves a paragraph line.
+        let max = if tokenizer.interrupt {
+            usize::MAX
+        } else {
+            TAB_SIZE - 1
+        };
+        State::Redo(space_or_tab_min_max(0, max))
     } else {
         State::Redo(StateName::Table(Step::HeadRowStart { head }))
     }
@@ -310,7 +317,7 @@ fn head_row_before(tokenizer: &mut Tokenizer, head: Head) -> State {
 fn head_row_start(tokenizer: &mut Tokenizer, mut head: Head) -> State {
     match tokenizer.current {
         // 4+ spaces.
-        Some(b'\t' | b' ') => State::Nok,
+        Some(b'\t' | b' ') if !tokenizer.interrupt => State::Nok,
         Some(b'|') => State::Redo(StateName::Table(Step::HeadRowBreak { head })),
         _ => {
             head.seen = true;

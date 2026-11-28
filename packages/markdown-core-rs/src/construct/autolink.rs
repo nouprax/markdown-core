@@ -17,7 +17,7 @@
 //! ; Restriction: up to (including) 63 character are allowed in each domain.
 //! email_domain ::= ascii_alphanumeric *(ascii_alphanumeric | '-' ascii_alphanumeric)
 //!
-//! ascii_atext ::= ascii_alphanumeric | '!' | '"' | '#' | '$' | '%' | '&' | '\'' | '*' | '+' | '-' | '/' | '=' | '?' | '^' | '_' | '`' | '{' | '|' | '}' | '~'
+//! ascii_atext ::= ascii_alphanumeric | '!' | '#' | '$' | '%' | '&' | '\'' | '*' | '+' | '-' | '/' | '=' | '?' | '^' | '_' | '`' | '{' | '|' | '}' | '~'
 //! ```
 //!
 //! The maximum allowed size of a scheme is `31` (inclusive), which is defined
@@ -260,7 +260,8 @@ fn email_atext(tokenizer: &mut Tokenizer) -> State {
         // ASCII atext.
         //
         // atext is an ASCII alphanumeric (see [`is_ascii_alphanumeric`][]), or
-        // a byte in the inclusive ranges U+0023 NUMBER SIGN (`#`) to U+0027
+        // a byte in the inclusive ranges U+0021 EXCLAMATION MARK (`!`),
+        // U+0023 NUMBER SIGN (`#`) to U+0027
         // APOSTROPHE (`'`), U+002A ASTERISK (`*`), U+002B PLUS SIGN (`+`),
         // U+002D DASH (`-`), U+002F SLASH (`/`), U+003D EQUALS TO (`=`),
         // U+003F QUESTION MARK (`?`), U+005E CARET (`^`) to U+0060 GRAVE
@@ -275,7 +276,15 @@ fn email_atext(tokenizer: &mut Tokenizer) -> State {
         //
         // [`is_ascii_alphanumeric`]: char::is_ascii_alphanumeric
         Some(
-            b'#'..=b'\'' | b'*' | b'+' | b'-'..=b'9' | b'=' | b'?' | b'A'..=b'Z' | b'^'..=b'~',
+            b'!'
+            | b'#'..=b'\''
+            | b'*'
+            | b'+'
+            | b'-'..=b'9'
+            | b'='
+            | b'?'
+            | b'A'..=b'Z'
+            | b'^'..=b'~',
         ) => {
             tokenizer.consume();
             State::Next(StateName::Autolink(Step::EmailAtext))

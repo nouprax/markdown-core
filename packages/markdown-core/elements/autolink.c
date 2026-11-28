@@ -459,7 +459,10 @@ static markdown_core_node *url_match(const markdown_core_element_instance *self,
         return 0;
     }
 
-    while (rewind < max_rewind && markdown_core_isalpha(data[-rewind - 1])) {
+    /* The scheme is text no delimiter owns: a citation key's bytes are its
+     * own (`@http://e`). */
+    int room = max_rewind - (int)markdown_core_inline_state_settled(inline_state);
+    while (rewind < room && markdown_core_isalpha(data[-rewind - 1])) {
         rewind++;
     }
 
@@ -834,7 +837,14 @@ static markdown_core_finish_result postprocess_text(markdown_core_parser *parser
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return MARKDOWN_CORE_FINISH_FAILED;
     }
+    /* The tail keeps the end of the Text it was: whitespace trimmed from the
+     * literal before a line ending is still in its scope, as it is in a
+     * Text that holds no address. */
+    uint32_t end = text->place.end;
     set_sourcepos_from_range(parser, text, &source_map, start, remaining);
+    if (text->place.end < end) {
+        text->place.end = end;
+    }
     *text->as.literal = tail;
     markdown_core_chunk_free(&source);
     return MARKDOWN_CORE_FINISH_CONTINUE;

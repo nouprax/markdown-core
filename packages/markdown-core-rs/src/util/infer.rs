@@ -12,6 +12,8 @@ use alloc::{vec, vec::Vec};
 /// is “loose”.
 pub fn list_loose(events: &[Event], mut index: usize, include_items: bool) -> bool {
     let mut balance = 0;
+    // A blank line between items, which is one when an item follows it.
+    let mut blank = false;
     let name = &events[index].name;
     debug_assert!(
         matches!(name, Name::ListOrdered | Name::ListUnordered),
@@ -24,10 +26,9 @@ pub fn list_loose(events: &[Event], mut index: usize, include_items: bool) -> bo
         if event.kind == Kind::Enter {
             balance += 1;
 
-            if include_items
-                && balance == 2
+            if balance == 2
                 && event.name == Name::ListItem
-                && list_item_loose(events, index)
+                && (blank || (include_items && list_item_loose(events, index)))
             {
                 return true;
             }
@@ -75,7 +76,7 @@ pub fn list_loose(events: &[Event], mut index: usize, include_items: bool) -> bo
                 }
 
                 if !at_bare_list_item && !at_bare_block_quote {
-                    return true;
+                    blank = true;
                 }
             }
 
@@ -98,12 +99,18 @@ pub fn list_item_loose(events: &[Event], mut index: usize) -> bool {
         "expected list item"
     );
     let mut balance = 0;
+    // A blank line between blocks of the item, which is one when a block
+    // follows it: blank lines that end the item are not.
+    let mut blank = false;
 
     while index < events.len() {
         let event = &events[index];
 
         if event.kind == Kind::Enter {
             balance += 1;
+            if blank && balance == 2 && !between(event.name) {
+                return true;
+            }
         } else {
             balance -= 1;
 
@@ -132,7 +139,7 @@ pub fn list_item_loose(events: &[Event], mut index: usize) -> bool {
                 }
 
                 if !at_prefix {
-                    return true;
+                    blank = true;
                 }
             }
 
@@ -146,6 +153,18 @@ pub fn list_item_loose(events: &[Event], mut index: usize) -> bool {
     }
 
     false
+}
+
+/// Whether a token directly in a list item is none of its blocks.
+fn between(name: Name) -> bool {
+    matches!(
+        name,
+        Name::LineEnding
+            | Name::BlankLineEnding
+            | Name::SpaceOrTab
+            | Name::ContainerIndent
+            | Name::ListItemPrefix
+    )
 }
 
 /// Figure out the alignment of a GFM table.

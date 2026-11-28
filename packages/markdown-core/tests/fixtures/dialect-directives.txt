@@ -415,3 +415,22 @@ Document scope=1:1..3:4 anchor=null attributes={} children=1
             ├── SoftBreak scope=2:7..3:0 anchor=null attributes={} children=0
             └── Text scope=3:1..3:4 anchor=null attributes={} literal="lazy" children=0
 ````````````````````````````````
+
+An email address after a colon owns the colon: no directive starts there.
+
+```````````````````````````````` example
+:s@a.t[]
+
+mailto:a@b.com[x]
+.
+Document scope=1:1..3:17 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:8 anchor=null attributes={} children=3
+│   ├── Text scope=1:1..1:1 anchor=null attributes={} literal=":" children=0
+│   ├── Link scope=1:2..1:6 anchor=null attributes={} dest=url("mailto:s@a.t") title=null children=1
+│   │   └── Text scope=1:2..1:6 anchor=null attributes={} literal="s@a.t" children=0
+│   └── Text scope=1:7..1:8 anchor=null attributes={} literal="[]" children=0
+└── Paragraph scope=3:1..3:17 anchor=null attributes={} children=2
+    ├── Link scope=3:1..3:14 anchor=null attributes={} dest=url("mailto:a@b.com") title=null children=1
+    │   └── Text scope=3:1..3:14 anchor=null attributes={} literal="mailto:a@b.com" children=0
+    └── Text scope=3:15..3:17 anchor=null attributes={} literal="[x]" children=0
+````````````````````````````````

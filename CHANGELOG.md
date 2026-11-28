@@ -6,6 +6,17 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Parse fixes found by the random differential against the Rust parser: a
+  callout right after a reference definition has its title; a backslash
+  formula opener with no closer, `\\(` or `\\[`, is escaped as written (`\(`);
+  an address in a Text whose trailing spaces are trimmed before a line ending
+  is placed on its own bytes, and the Text after it keeps that whitespace in
+  its scope; a bare URL no longer takes a citation key's letters as its scheme
+  (`@http://e`); an unclosed block whose empty last line is in a block
+  quote ends after that line's prefix, in one run per line; and a link
+  destination with a parenthesis left open is no destination, as CommonMark
+  6.3 has it (`[](( "")` is text).
+
 - Ordered list markers are decimal only, `1.` or `1)`: Pandoc's letters,
   Roman numerals, `#.` and both-sided `(1)` markers are ordinary text, and a
   list nested in an item may start at any number, as in CommonMark. The

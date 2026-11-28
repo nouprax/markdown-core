@@ -185,8 +185,12 @@ fn container_old_after(tokenizer: &mut Tokenizer) -> State {
 /// ```
 fn container_new_before(tokenizer: &mut Tokenizer) -> State {
     // If we have completely continued, restore the flow’s past `interrupt`
-    // status.
-    if tokenizer.document.continued == tokenizer.document.stack.len() {
+    // status, unless a new container already pierced the flow on this line:
+    // the flow then ends before it, as micromark closes it, and the new
+    // container interrupts nothing.
+    if tokenizer.document.continued == tokenizer.document.stack.len()
+        && !tokenizer.document.child.as_ref().unwrap().pierce
+    {
         let child = tokenizer.document.child.as_ref().unwrap();
 
         tokenizer.interrupt = child.interrupt;
@@ -302,7 +306,8 @@ fn container_new_after(tokenizer: &mut Tokenizer) -> State {
     }
 
     // We are “piercing” into the flow with a new container.
-    tokenizer.document.child.as_mut().unwrap().pierce = true;
+    let child = tokenizer.document.child.as_mut().unwrap();
+    child.pierce = true;
 
     tokenizer.document.stack.push(container);
     tokenizer.document.continued += 1;
@@ -411,11 +416,19 @@ fn flow_end(tokenizer: &mut Tokenizer) -> State {
         .stack
         .extend_from_slice(&tokenizer.document.stack[..count]);
 
-    let state = child.push(
+    let mut state = child.push(
         (child.point.index, child.point.vs),
         (tokenizer.point.index, tokenizer.point.vs),
         state,
     );
+
+    // The last line: the flow ends with it, so what its constructs are is
+    // known before the line is taken as lazy or not.
+    if tokenizer.current.is_none() {
+        let mut result = child.flush(state, false);
+        child.definitions.append(&mut result.definitions);
+        state = State::Ok;
+    }
 
     tokenizer.document.state = Some(state);
 
@@ -450,24 +463,43 @@ fn flow_end(tokenizer: &mut Tokenizer) -> State {
     // ```
     let mut document_lazy_continuation_current = false;
     let mut stack_index = child.stack.len();
+    // A last line with prefixes and no flow after them is blank: it
+    // continues nothing. The end after a last line ending is no line.
+    let blank = tokenizer.current.is_none()
+        && tokenizer.point.column > 1
+        && tokenizer.document.data.map_or(true, |data| {
+            tokenizer.events[data].point.line < tokenizer.point.line
+        });
+    if blank {
+        stack_index = 0;
+    }
 
     // Use two algo’s: one for when we’re suspended or in multiline things
     // like definitions, another for when we fed the line ending and closed.
     while !document_lazy_continuation_current && stack_index > 0 {
         stack_index -= 1;
         let name = &child.stack[stack_index];
-        if name == &Name::Content || name == &Name::TableHead {
+        // An identifier line waits for the line after, which it is content
+        // with when that line is lazy.
+        if matches!(
+            name,
+            Name::Content | Name::TableHead | Name::BlockIdentifierLine
+        ) {
             document_lazy_continuation_current = true;
         }
     }
 
     // …another because we parse each “rest” line as a paragraph, and we passed
     // a EOL already.
-    if !document_lazy_continuation_current && !child.events.is_empty() {
+    if !blank && !document_lazy_continuation_current && !child.events.is_empty() {
         let before = skip::opt_back(&child.events, child.events.len() - 1, &[Name::LineEnding]);
         let name = &child.events[before].name;
-        // A callout header takes a lax line as the start of its body.
-        if name == &Name::Content || name == &Name::HeadingSetextUnderline || name == &Name::Callout
+        // A callout header takes a lax line as the start of its body. An
+        // underline is a paragraph’s line, which a lax line continues, unless
+        // it underlines the paragraph before it: that is a heading, closed.
+        if name == &Name::Content
+            || name == &Name::Callout
+            || (name == &Name::HeadingSetextUnderline && !underlines(&child.events, before))
         {
             document_lazy_continuation_current = true;
         }
@@ -501,6 +533,15 @@ fn flow_end(tokenizer: &mut Tokenizer) -> State {
     }
 }
 
+/// Whether the setext underline that exits at `exit` follows content, which
+/// it makes a heading of.
+fn underlines(events: &[Event], exit: usize) -> bool {
+    let enter = skip::to_back(events, exit - 1, &[Name::HeadingSetextUnderline]);
+    enter > 0
+        && events[skip::opt_back(events, enter - 1, &[Name::LineEnding, Name::SpaceOrTab])].name
+            == Name::Content
+}
+
 /// Close containers (and flow if needed).
 fn exit_containers(tokenizer: &mut Tokenizer, phase: &Phase) {
     let mut stack_close = tokenizer
@@ -510,10 +551,13 @@ fn exit_containers(tokenizer: &mut Tokenizer, phase: &Phase) {
 
     let child = tokenizer.document.child.as_mut().unwrap();
 
-    // Flush if needed: the line after is no part of the flow, as a lazy line
-    // is not.
+    // Flush if needed. Before a new container, the line after is no part of
+    // the flow, as a lazy line is not; at the end, the last line is what it
+    // was.
     if *phase != Phase::After {
-        child.lazy = true;
+        if *phase == Phase::Prefix {
+            child.lazy = true;
+        }
         let state = tokenizer
             .document
             .state
@@ -560,7 +604,11 @@ fn exit_containers(tokenizer: &mut Tokenizer, phase: &Phase) {
         tokenizer.document.exits[index] = Some(exits);
     }
 
-    child.interrupt = false;
+    // After the flow of a line, the line's flow says whether it takes an
+    // interrupt: `>\na\n0)` keeps the paragraph `a` open to the `0)`.
+    if *phase != Phase::After {
+        child.interrupt = false;
+    }
 }
 
 // Inject everything together.

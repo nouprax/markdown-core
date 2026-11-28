@@ -181,7 +181,9 @@ static bufsize_t manual_scan_link_url_2(markdown_core_chunk *input, bufsize_t of
         }
     }
 
-    if (i >= input->len) {
+    /* A parenthesis left open makes no destination (CommonMark 6.3: only
+     * escaped or balanced pairs belong to one). */
+    if (i >= input->len || nb_p != 0) {
         return -1;
     }
 
@@ -698,6 +700,26 @@ static void S_report_unread(markdown_core_parser *parser, markdown_core_node *b,
     }
     if (rest == stop) {
         S_report_destination_field(parser, b, input, before, stop, stop, false);
+        return;
+    }
+    /* A bare destination whose parenthesis the content's end leaves open,
+     * `[label]: a(b`, is no destination until it closes. */
+    if (data[rest] != '<' && data[rest] != '\n' && data[rest] != '\r') {
+        bufsize_t end = rest;
+        size_t open = 0;
+        while (end < stop && !destination_excludes(data[end])) {
+            if (data[end] == '\\' && end + 1 < stop && markdown_core_ispunct(data[end + 1])) {
+                end++;
+            } else if (data[end] == '(') {
+                open++;
+            } else if (data[end] == ')' && open) {
+                open--;
+            }
+            end++;
+        }
+        if (end == stop && open) {
+            S_report_destination_field(parser, b, input, before, rest, stop, false);
+        }
         return;
     }
     at = markdown_core_skip_spaces_and_line_end(data, at + 2, len);

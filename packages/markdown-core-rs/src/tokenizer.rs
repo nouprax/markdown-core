@@ -233,6 +233,8 @@ struct Spot {
     current: Option<u8>,
     /// Current place in the file.
     point: Point,
+    /// Where the current line starts, past its line ending.
+    line_start: Point,
 }
 
 /// Container state of the document tokenizer.
@@ -442,17 +444,30 @@ impl<'a> Tokenizer<'a> {
     pub fn define_skip(&mut self, mut point: Point) {
         move_point_back(self, &mut point);
 
-        let info = (point.index, point.vs);
-
         let at = point.line - self.first_line;
+        self.line_set(at, (point.index, point.vs));
 
-        if at >= self.column_start.len() {
-            self.column_start.push(info);
+        // A tokenizer first fed at a later line moves to it.
+        if self.point.line < point.line {
+            self.move_to((point.index, point.vs));
         } else {
-            self.column_start[at] = info;
+            self.account_for_potential_skip();
         }
+    }
 
-        self.account_for_potential_skip();
+    /// Set where the line `at` lines after the first starts.
+    ///
+    /// A line is at its offset from the first, also when the lines before
+    /// it were never started (as a tokenizer fed from a later line, or one
+    /// no skip is defined in, which reverts across lines): those hold a
+    /// start no move goes back to.
+    fn line_set(&mut self, at: usize, info: (usize, usize)) {
+        if at < self.column_start.len() {
+            self.column_start[at] = info;
+        } else {
+            self.column_start.resize(at, (0, 0));
+            self.column_start.push(info);
+        }
     }
 
     /// Increment the current positional info if we’re right after a line
@@ -507,8 +522,9 @@ impl<'a> Tokenizer<'a> {
                     self.point.line += 1;
                     self.point.column = 1;
 
-                    if self.point.line - self.first_line + 1 > self.column_start.len() {
-                        self.column_start.push((self.point.index, self.point.vs));
+                    let at = self.point.line - self.first_line;
+                    if at >= self.column_start.len() {
+                        self.line_set(at, (self.point.index, self.point.vs));
                     }
 
                     self.line_start = self.point.clone();
@@ -585,6 +601,7 @@ impl<'a> Tokenizer<'a> {
             previous: self.previous,
             current: self.current,
             point: self.point.clone(),
+            line_start: self.line_start.clone(),
             events_len: self.events.len(),
             stack_len: self.stack.len(),
         }
@@ -595,6 +612,7 @@ impl<'a> Tokenizer<'a> {
         self.previous = previous.previous;
         self.current = previous.current;
         self.point = previous.point;
+        self.line_start = previous.line_start;
         debug_assert!(
             self.events.len() >= previous.events_len,
             "expected to restore less events than before"

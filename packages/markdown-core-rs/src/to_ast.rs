@@ -140,6 +140,40 @@ impl<'a> Compiler<'a> {
         self.events[self.exits[index]].point.index
     }
 
+    /// Where the token at `index` stops: its end, before the line ending
+    /// it takes with it at the end of the input, as an unclosed fence does,
+    /// since no line follows that line ending.
+    ///
+    /// A token that ends where an empty line it holds starts ends past that
+    /// line's container prefix, which is on the line.
+    fn stop(&self, index: usize) -> usize {
+        let end = self.end(index);
+        let mut at = self.exits[index];
+        while at > index + 1 && self.events[at - 1].kind == EventKind::Exit {
+            at -= 1;
+            if self.events[at].name == Name::LineEnding {
+                if end == self.bytes.len() {
+                    return self.events[at - 1].point.index;
+                }
+                if self.events[at].point.index == end {
+                    if let Some(hole) = self.holes.iter().find(|hole| hole.start == end) {
+                        return hole.end;
+                    }
+                }
+                break;
+            }
+        }
+        end
+    }
+
+    /// Whether the token at `index`, whose last line starts at `start`
+    /// after a line ending, holds that line when it is empty: it goes on
+    /// past its start, or the input does.
+    fn holds_line(&self, index: usize, start: usize) -> bool {
+        let end = self.end(index);
+        end > start || end < self.bytes.len()
+    }
+
     fn slice(&self, start: usize, end: usize) -> &'a str {
         str::from_utf8(&self.bytes[start..end]).expect("expected events at char boundaries")
     }
@@ -247,7 +281,7 @@ impl<'a> Compiler<'a> {
             }
         }
         match found {
-            Some(child) => (self.exits[child], self.end(child)),
+            Some(child) => (self.exits[child], self.stop(child)),
             None => (index, self.start(index)),
         }
     }
@@ -271,6 +305,12 @@ impl<'a> Compiler<'a> {
             match event.name {
                 Name::BlankLineEnding => {
                     found = Some(event.point.index);
+                    index = self.exits[index] + 1;
+                }
+                // So does the whitespace of a last line at the end of the
+                // input, with no line ending after it.
+                Name::SpaceOrTab | Name::ContainerIndent if self.end(index) == self.bytes.len() => {
+                    found = Some(self.bytes.len());
                     index = self.exits[index] + 1;
                 }
                 name if between(name) => index = self.exits[index] + 1,
@@ -379,7 +419,7 @@ impl<'a> Compiler<'a> {
                 Kind::Comment {
                     literal: self.fenced_literal(index, Name::CommentFence, Name::CommentChunk),
                 },
-                self.runs(self.lead(index), self.last(index).1),
+                self.runs(self.lead(index), self.stop(index)),
             ),
             Block::HtmlFlow => {
                 let literal = self.literal_lines(index, Name::HtmlFlowData);
@@ -389,10 +429,10 @@ impl<'a> Compiler<'a> {
                     },
                     None => Kind::HtmlBlock { literal },
                 };
-                Node::new(kind, self.runs(self.lead(index), self.last(index).1))
+                Node::new(kind, self.runs(self.lead(index), self.stop(index)))
             }
             Block::Quote => {
-                let runs = Self::whole(self.lead(index), self.end(index));
+                let runs = Self::whole(self.lead(index), self.stop(index));
                 let content = self.block_content(index);
                 let header = self.child(index, Name::Callout);
                 let (variant, collapsed, title) = match header {
@@ -470,12 +510,12 @@ impl<'a> Compiler<'a> {
                     Kind::FormulaBlock {
                         literal: literal.trim_matches(WHITESPACE).to_string(),
                     },
-                    self.runs(self.lead(index), self.end(index)),
+                    self.runs(self.lead(index), self.stop(index)),
                 )
             }
-            // Frontmatter compiles with the dialect’s properties, which are
-            // not ported yet; an identifier line with the block before it,
-            // by `block_range`.
+            // Frontmatter is the document’s metadata (`metadata`); an
+            // identifier line goes with the block before it, by
+            // `block_range`.
             Block::Frontmatter | Block::Identifier => return None,
         };
         let mut node = node;
@@ -534,11 +574,14 @@ impl<'a> Compiler<'a> {
     }
 
     /// Whether the line before the one of `at` is blank, its container
-    /// markers aside.
+    /// markers aside: no more quote markers than the line of `at` has, so
+    /// the marker of a quote that ends there is not one of them.
     fn blank_before(&self, at: usize) -> bool {
         let mut index = at;
+        let mut quotes = 0;
         while index > 0 && self.bytes[index - 1] != b'\n' {
             index -= 1;
+            quotes += usize::from(self.bytes[index] == b'>');
         }
         if index == 0 {
             return false;
@@ -546,8 +589,10 @@ impl<'a> Compiler<'a> {
         index -= 1;
         while index > 0 && self.bytes[index - 1] != b'\n' {
             index -= 1;
-            if !matches!(self.bytes[index], b' ' | b'\t' | b'>' | b'\r') {
-                return false;
+            match self.bytes[index] {
+                b' ' | b'\t' | b'\r' => {}
+                b'>' if quotes > 0 => quotes -= 1,
+                _ => return false,
             }
         }
         true
@@ -608,6 +653,7 @@ impl<'a> Compiler<'a> {
         let mut literal = String::new();
         let mut line = String::new();
         let mut open = false;
+        let mut start = None;
         for child in self.inside(index) {
             let name = self.name(child);
             if name == data {
@@ -618,9 +664,11 @@ impl<'a> Compiler<'a> {
                 literal.push('\n');
                 line.clear();
                 open = false;
+                start = Some(self.end(child));
             }
         }
-        if open {
+        // An empty last line is a line when the token holds it.
+        if open || start.map_or(false, |start| self.holds_line(index, start)) {
             literal.push_str(&line);
             literal.push('\n');
         }
@@ -702,7 +750,7 @@ impl<'a> Compiler<'a> {
             .count()
             > 1;
         let literal = self.fenced_literal(index, Name::CodeFencedFence, Name::CodeFlowChunk);
-        let runs = self.runs(self.lead(index), self.last(index).1);
+        let runs = self.runs(self.lead(index), self.stop(index));
         // A fence whose info string is `formula` is a formula block.
         if info.as_deref().map(|info| info.trim_matches(WHITESPACE)) == Some("formula") {
             return Node::new(
@@ -738,6 +786,7 @@ impl<'a> Compiler<'a> {
         let mut literal = String::new();
         let mut fences = 0;
         let mut line: Option<String> = None;
+        let mut start = self.end(index);
         for child in self.inside(index) {
             let name = self.name(child);
             if name == fence {
@@ -751,13 +800,17 @@ impl<'a> Compiler<'a> {
                     literal.push('\n');
                 }
                 line = Some(String::new());
+                start = self.end(child);
             } else if name == chunk {
                 line.get_or_insert_with(String::new)
                     .push_str(&self.value(child));
             }
         }
+        // The last line is a line when it holds text, or, in a block no
+        // fence closes, when it is no end of the input: an empty line its
+        // containers go on to.
         if let Some(text) = line {
-            if !text.is_empty() {
+            if !text.is_empty() || (fences < 2 && self.holds_line(index, start)) {
                 literal.push_str(&text);
                 literal.push('\n');
             }
@@ -781,7 +834,7 @@ impl<'a> Compiler<'a> {
         let start = items.first().map_or(self.start(index), Node::start);
         let end = items.last().map_or(self.end(index), Node::end).max(
             self.blank_tail(self.exits[index])
-                .unwrap_or_else(|| self.end(index)),
+                .unwrap_or_else(|| self.stop(index)),
         );
         let prefix = first.and_then(|child| self.child(child, Name::ListItemPrefix));
         let (flavor, start_value, delimiter) =
@@ -843,8 +896,15 @@ impl<'a> Compiler<'a> {
                 }
                 Name::BlankLineEnding if bodies.is_empty() => compact = false,
                 Name::DefinitionBody => {
+                    // A body ends with its last line, the whitespace after
+                    // its marker included.
                     let (_, last) = self.last(child);
-                    end = end.max(last);
+                    let tail = self
+                        .inside(child)
+                        .last()
+                        .filter(|last| self.name(**last) == Name::SpaceOrTab)
+                        .map_or(last, |space| self.end(*space));
+                    end = end.max(last).max(tail);
                     bodies.push(self.block_content(child));
                 }
                 _ => {}
@@ -862,9 +922,12 @@ impl<'a> Compiler<'a> {
 
     fn list_item(&mut self, index: usize) -> Node {
         let (last, content_end) = self.last(index);
-        // An item with no content is closed by the blank line after it.
+        // An item with no content is closed by the blank line after it,
+        // unless that line is indented to its content: the item goes on to
+        // the end of the line's whitespace.
         let end = if self.name(last) == Name::ListItemPrefix {
-            line_stop(self.bytes, content_end)
+            self.void_tail(index)
+                .unwrap_or_else(|| line_stop(self.bytes, content_end))
         } else {
             self.blank_tail(last).unwrap_or(content_end)
         };
@@ -890,10 +953,55 @@ impl<'a> Compiler<'a> {
                 self.item_paragraph = Some(first);
             }
         }
+        // The anchor of an item around this one, which its first paragraph
+        // named before this item started, is that item's.
+        let held = self.item_anchor.take();
         let content = self.block_content(index);
         let mut node = Node::new(Kind::ListItem { status, content }, runs);
         node.anchor = self.item_anchor.take();
+        self.item_anchor = held;
         node
+    }
+
+    /// Where the whitespace-only lines after the empty list item at `index`
+    /// end, when the first is indented to its content: an empty item goes
+    /// on over them, as over a line indented to an item's content, and then
+    /// over empty lines too.
+    fn void_tail(&self, index: usize) -> Option<usize> {
+        let marker = self
+            .child(index, Name::ListItemPrefix)
+            .and_then(|prefix| self.child(prefix, Name::ListItemMarker))?;
+        let column = self.events[self.exits[marker]].point.column + 1;
+        let mut at = self.exits[index] + 1;
+        let mut found = None;
+        let mut ended = false;
+        while at < self.events.len() {
+            let event = &self.events[at];
+            if event.kind == EventKind::Exit {
+                at += 1;
+                continue;
+            }
+            match event.name {
+                Name::BlankLineEnding | Name::LineEnding if !ended => {
+                    ended = true;
+                }
+                // An empty line goes on with an item that went on.
+                Name::BlankLineEnding if found.is_some() => {
+                    found = Some(event.point.index);
+                }
+                Name::SpaceOrTab if ended => {
+                    if self.events[self.exits[at]].point.column < column {
+                        break;
+                    }
+                    found = Some(self.end(at));
+                    ended = false;
+                }
+                name if prefix(name) => {}
+                _ => break,
+            }
+            at = self.exits[at] + 1;
+        }
+        found
     }
 
     /// The task status of the list item at `index`: the value of the check
@@ -1023,6 +1131,14 @@ impl<'a> Compiler<'a> {
                 }
                 [one] => start = self.end(one),
                 [] => {}
+            }
+            // A cell no divider opens starts after the whitespace before it.
+            if start == self.start(child) {
+                if let Some(&first) = parts.first() {
+                    if self.name(first) == Name::SpaceOrTab && end > self.end(first) {
+                        start = self.end(first);
+                    }
+                }
             }
             if start == end && end < self.end(index) {
                 end += 1;
@@ -1324,7 +1440,12 @@ impl<'a> Compiler<'a> {
                 }
             }
             Inline::Literal => {
-                let literal = self.text(index).to_string();
+                // An address read across escapes holds their pieces.
+                let literal = if self.exits[index] > index + 1 {
+                    self.string(index + 1, self.exits[index])
+                } else {
+                    self.text(index).to_string()
+                };
                 let dest = match name {
                     Name::AutolinkLiteralWww => format!("http://{}", literal),
                     Name::AutolinkLiteralEmail => format!("mailto:{}", literal),
@@ -1640,15 +1761,25 @@ impl<'a> Compiler<'a> {
     /// The literal of a code span.
     fn code(&self, index: usize, data: Name) -> String {
         let mut literal = String::new();
+        // The spaces and tabs that start a line are the paragraph's, which
+        // strips them (CommonMark 4.8), not the code's.
+        let mut start = false;
         for child in self.inside(index) {
             let name = self.name(child);
-            if name == data && self.cell {
-                literal.push_str(&self.text(child).replace("\\|", "|"));
-            } else if name == data {
-                literal.push_str(self.text(child));
+            if name == data {
+                let mut text = self.text(child);
+                if start {
+                    text = text.trim_start_matches([' ', '\t']);
+                }
+                if self.cell {
+                    literal.push_str(&text.replace("\\|", "|"));
+                } else {
+                    literal.push_str(text);
+                }
             } else if name == Name::LineEnding {
                 literal.push(' ');
             }
+            start = name == Name::LineEnding;
         }
         let bytes = literal.as_bytes();
         if bytes.len() > 2

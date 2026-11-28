@@ -71,6 +71,10 @@ pub const CHOICE: Choice = Choice::new(
             step: StateName::Comment(comment::Step::Start),
         },
         Entry {
+            starts: autolink_literal::ADDRESS,
+            step: StateName::AutolinkLiteral(autolink_literal::Step::AddressStart),
+        },
+        Entry {
             starts: directive_text::STARTS,
             step: StateName::DirectiveText(directive_text::Step::Start),
         },

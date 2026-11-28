@@ -57,26 +57,6 @@ pub fn after_index(bytes: &[u8], index: usize) -> Option<char> {
     String::from_utf8_lossy(&bytes[index..end]).chars().next()
 }
 
-/// Classify a char at `index` in bytes (`&[u8]`).
-pub fn kind_after_index(bytes: &[u8], index: usize) -> Kind {
-    if index == bytes.len() {
-        Kind::Whitespace
-    } else {
-        let byte = bytes[index];
-        if byte.is_ascii_whitespace() {
-            Kind::Whitespace
-        } else if byte.is_ascii_punctuation() {
-            Kind::Punctuation
-        } else if byte.is_ascii_alphanumeric() {
-            Kind::Other
-        } else {
-            // Otherwise: seems to be an ASCII control, so it seems to be a
-            // non-ASCII `char`.
-            class_opt(after_index(bytes, index))
-        }
-    }
-}
-
 /// Classify whether a `char` represents whitespace, punctuation, or something
 /// else.
 ///

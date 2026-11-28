@@ -532,11 +532,11 @@ pub fn group(sections: &[Section]) -> bool {
     sections.iter().all(|section| section.key.is_some())
 }
 
-/// Whether a bracket with `sections` is a tail: its first section, the
-/// suffix of the key before it when it holds no key, is not empty, and each
-/// later section holds a key.
+/// Whether a bracket with `sections` is a tail: its first section is the
+/// suffix of the key before it when it holds no key, an empty one included
+/// (`@k []`), and each later section holds a key.
 pub fn tail(sections: &[Section]) -> bool {
-    sections[0].content.is_some() && group(&sections[1..])
+    group(&sections[1..])
 }
 
 /// Insert the events of the group or the tail `label`, with `author` the
@@ -577,7 +577,9 @@ pub fn insert(tokenizer: &mut Tokenizer, label: &Label, author: Option<usize>, p
                 &[(Kind::Enter, Name::Cite), (Kind::Enter, Name::Citation)],
             );
             if all[0].key.is_none() {
-                let (start, end) = all[0].content.expect("expected a tail suffix");
+                // An empty suffix is where the bracket opens.
+                let open = whole(label.start.1 + 1);
+                let (start, end) = all[0].content.unwrap_or((open, open));
                 add(start, &[(Kind::Enter, Name::CitationSuffix)]);
                 add(
                     end,

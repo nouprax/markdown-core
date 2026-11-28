@@ -44,7 +44,7 @@
 use crate::choice::Starts;
 use crate::construct::parts;
 use crate::construct::parts::space_or_tab::{space_or_tab, space_or_tab_min_max};
-use crate::event::Name;
+use crate::event::{Kind, Name};
 use crate::state::{Name as StateName, State};
 use crate::tokenizer::Tokenizer;
 use crate::util::constant::TAB_SIZE;
@@ -114,7 +114,7 @@ fn white(byte: Option<u8>) -> bool {
 /// ```
 fn start(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
-        Some(b'$') => {
+        Some(b'$') if dollars(tokenizer) % 2 == 0 => {
             tokenizer.enter(Name::Formula);
             tokenizer.enter(Name::FormulaSequence);
             tokenizer.consume();
@@ -128,6 +128,31 @@ fn start(tokenizer: &mut Tokenizer) -> State {
         }
         _ => State::Nok,
     }
+}
+
+/// How many dollars of text are right before the current byte.
+///
+/// An opener `$$` with no closer is text whole, as both its dollars: the
+/// `$` after it opens nothing (`$$x$`), and the one after that may.
+fn dollars(tokenizer: &Tokenizer) -> usize {
+    let events = &tokenizer.events;
+    let bytes = tokenizer.parse_state.bytes;
+    let mut floor = tokenizer.point.index;
+    let mut index = events.len();
+    while index >= 2
+        && events[index - 1].kind == Kind::Exit
+        && events[index - 1].name == Name::Data
+        && events[index - 1].point.index == floor
+        && events[index - 2].kind == Kind::Enter
+    {
+        floor = events[index - 2].point.index;
+        index -= 2;
+    }
+    let mut at = tokenizer.point.index;
+    while at > floor && bytes[at - 1] == b'$' {
+        at -= 1;
+    }
+    tokenizer.point.index - at
 }
 
 /// After the first `$`.

@@ -150,9 +150,10 @@ use crate::event::{Event, Kind, Name};
 use crate::state::{Name as StateName, State};
 use crate::tokenizer::Tokenizer;
 use crate::util::{
-    char::{after_index, kind_after_index, Kind as CharacterKind},
+    char::after_index,
+    character_reference::decode_at,
     classes::{classes, PUNCTUATION},
-    slice::{Position, Slice},
+    slice::Slice,
 };
 use alloc::vec::Vec;
 
@@ -161,6 +162,44 @@ pub const PROTOCOL: Starts = Starts::Bytes(b"FHfh");
 
 /// Bytes the `www.` kind (`www.a.b`) can start at.
 pub const WWW: Starts = Starts::Bytes(b"Ww");
+
+/// Bytes an address claims (`mailto:a@b.c`, `x:a@b.c`): its colon.
+pub const ADDRESS: Starts = Starts::Bytes(b":");
+
+/// At a colon an email address follows, which owns it as text: a directive
+/// name there is the address's.
+///
+/// The colon is data, and the address is linked with the text around it
+/// when text resolves, as cmark-gfm links it.
+///
+/// ```markdown
+/// > | mailto:a@b.c
+///           ^
+/// ```
+fn address_start(tokenizer: &mut Tokenizer) -> State {
+    if tokenizer.current == Some(b':')
+        && address(tokenizer.parse_state.bytes, tokenizer.point.index + 1)
+    {
+        tokenizer.enter(Name::Data);
+        tokenizer.consume();
+        tokenizer.exit(Name::Data);
+        State::Ok
+    } else {
+        State::Nok
+    }
+}
+
+/// Whether an email address, as the colon claims it, starts at `start`: a
+/// second `@` ends its domain (`:a@b.c@[]`), as it ends the one text links.
+fn address(bytes: &[u8], start: usize) -> bool {
+    let mut at = start;
+    while at < bytes.len()
+        && matches!(bytes[at], b'+' | b'-' | b'.' | b'0'..=b'9' | b'A'..=b'Z' | b'_' | b'a'..=b'z')
+    {
+        at += 1;
+    }
+    at > start && bytes.get(at) == Some(&b'@') && domain(bytes, at + 1, false).is_some()
+}
 
 /// Start of protocol autolink literal.
 ///
@@ -476,10 +515,8 @@ fn path_inside(tokenizer: &mut Tokenizer, mut path: Path) -> State {
         }
         _ => {
             // Source: <https://github.com/github/cmark-gfm/blob/ef1cfcb/extensions/autolink.c#L12>.
-            if tokenizer.current.is_none()
-                || kind_after_index(tokenizer.parse_state.bytes, tokenizer.point.index)
-                    == CharacterKind::Whitespace
-            {
+            // Whitespace, a space, a tab or a line ending, ends the path.
+            if matches!(tokenizer.current, None | Some(b'\t' | b'\n' | b'\r' | b' ')) {
                 State::Ok
             } else {
                 tokenizer.consume();
@@ -548,10 +585,9 @@ fn trail(tokenizer: &mut Tokenizer) -> State {
         Some(b'<') => State::Ok,
         Some(b']') if !tokenizer.labels.starts.is_empty() => State::Ok,
         _ => {
-            // Whitespace is the end of the URL, anything else is continuation.
-            if kind_after_index(tokenizer.parse_state.bytes, tokenizer.point.index)
-                == CharacterKind::Whitespace
-            {
+            // Whitespace, a space, a tab or a line ending, is the end of the
+            // URL, anything else is continuation.
+            if matches!(tokenizer.current, None | Some(b'\t' | b'\n' | b'\r' | b' ')) {
                 State::Ok
             } else {
                 State::Nok
@@ -607,6 +643,10 @@ fn host(bytes: &[u8], index: usize) -> bool {
 }
 
 /// Resolve: postprocess text to find email autolink literals.
+///
+/// An address is read in the text that a run of data, escapes and character
+/// references leaves, as cmark-gfm reads its merged text: `\_@b.c` is the
+/// address `_@b.c`.
 pub fn resolve(tokenizer: &mut Tokenizer) {
     tokenizer.map.consume(&mut tokenizer.events);
 
@@ -616,120 +656,217 @@ pub fn resolve(tokenizer: &mut Tokenizer) {
     while index < tokenizer.events.len() {
         let event = &tokenizer.events[index];
 
-        if event.kind == Kind::Enter {
-            if event.name == Name::Link {
+        if event.kind == Kind::Enter && links == 0 && piece(event.name) {
+            index = run(tokenizer, index);
+            continue;
+        }
+
+        if event.name == Name::Link {
+            if event.kind == Kind::Enter {
                 links += 1;
-            }
-        } else {
-            if event.name == Name::Data && links == 0 {
-                let slice = Slice::from_position(
-                    tokenizer.parse_state.bytes,
-                    &Position::from_exit_event(&tokenizer.events, index),
-                );
-                let bytes = slice.bytes;
-                let mut byte_index = 0;
-                let mut replace = Vec::new();
-                let mut point = tokenizer.events[index - 1].point.clone();
-                let start_index = point.index;
-                let mut min = 0;
-
-                while byte_index < bytes.len() {
-                    if bytes[byte_index] == b'@' {
-                        let mut span = (0, 0, Name::AutolinkLiteralEmail);
-
-                        if let Some(start) = peek_bytes_atext(bytes, min, byte_index) {
-                            let (start, kind) = peek_protocol(bytes, min, start);
-
-                            if let Some(end) = peek_bytes_email_domain(
-                                bytes,
-                                byte_index + 1,
-                                kind == Name::AutolinkLiteralXmpp,
-                            ) {
-                                // Note: normally we’d truncate trailing
-                                // punctuation from the link.
-                                // However, email autolink literals cannot
-                                // contain any of those markers, except for
-                                // `.`, but that can only occur if it isn’t
-                                // trailing.
-                                // So we can ignore truncating while
-                                // postprocessing!
-                                span = (start, end, kind);
-                            }
-                        }
-
-                        if span.1 != 0 {
-                            byte_index = span.1;
-
-                            // If there is something between the last link
-                            // (or `min`) and this link.
-                            if min != span.0 {
-                                replace.push(Event {
-                                    kind: Kind::Enter,
-                                    name: Name::Data,
-                                    point: point.clone(),
-                                    link: None,
-                                });
-                                point = point
-                                    .shift_to(tokenizer.parse_state.bytes, start_index + span.0);
-                                replace.push(Event {
-                                    kind: Kind::Exit,
-                                    name: Name::Data,
-                                    point: point.clone(),
-                                    link: None,
-                                });
-                            }
-
-                            // Add the link.
-                            replace.push(Event {
-                                kind: Kind::Enter,
-                                name: span.2,
-                                point: point.clone(),
-                                link: None,
-                            });
-                            point =
-                                point.shift_to(tokenizer.parse_state.bytes, start_index + span.1);
-                            replace.push(Event {
-                                kind: Kind::Exit,
-                                name: span.2,
-                                point: point.clone(),
-                                link: None,
-                            });
-                            min = span.1;
-                        }
-                    }
-
-                    byte_index += 1;
-                }
-
-                // If there was a link, and we have more bytes left.
-                if min != 0 && min < bytes.len() {
-                    replace.push(Event {
-                        kind: Kind::Enter,
-                        name: Name::Data,
-                        point: point.clone(),
-                        link: None,
-                    });
-                    replace.push(Event {
-                        kind: Kind::Exit,
-                        name: Name::Data,
-                        point: event.point.clone(),
-                        link: None,
-                    });
-                }
-
-                // If there were links.
-                if !replace.is_empty() {
-                    tokenizer.map.add(index - 1, 2, replace);
-                }
-            }
-
-            if event.name == Name::Link {
+            } else {
                 links -= 1;
             }
         }
 
         index += 1;
     }
+}
+
+/// Whether a token of `name` is a piece of the text an address is read in.
+fn piece(name: Name) -> bool {
+    matches!(
+        name,
+        Name::Data | Name::CharacterEscape | Name::CharacterReference
+    )
+}
+
+/// A piece of a run of text.
+struct Piece {
+    /// Its enter event.
+    first: usize,
+    /// Its exit event.
+    last: usize,
+    /// Where its bytes start in the source.
+    start: usize,
+    /// Where its bytes end in the source.
+    end: usize,
+    /// Where its text starts in the run's text.
+    at: usize,
+    /// Whether it is data, whose text is its bytes.
+    data: bool,
+}
+
+/// Link the addresses in the run of text pieces whose first enter event is
+/// `first`; the index of the event after the run.
+fn run(tokenizer: &mut Tokenizer, first: usize) -> usize {
+    let events = &tokenizer.events;
+    let bytes = tokenizer.parse_state.bytes;
+    let mut pieces: Vec<Piece> = Vec::new();
+    let mut text = Vec::new();
+    // The piece each byte of `text` is in.
+    let mut owner = Vec::new();
+    let mut index = first;
+
+    while index < events.len() && events[index].kind == Kind::Enter && piece(events[index].name) {
+        let name = events[index].name;
+        let mut last = index + 1;
+        while !(events[last].kind == Kind::Exit && events[last].name == name) {
+            last += 1;
+        }
+        let start = events[index].point.index;
+        let end = events[last].point.index;
+        let at = text.len();
+        match name {
+            Name::Data => text.extend_from_slice(&bytes[start..end]),
+            Name::CharacterEscape => text.push(bytes[end - 1]),
+            _ => {
+                let value = core::str::from_utf8(&bytes[start..end])
+                    .ok()
+                    .and_then(|source| decode_at(source, 0))
+                    .map(|(value, _)| value);
+                match value {
+                    Some(value) => text.extend_from_slice(value.as_bytes()),
+                    None => text.extend_from_slice(&bytes[start..end]),
+                }
+            }
+        }
+        owner.resize(text.len(), pieces.len());
+        pieces.push(Piece {
+            first: index,
+            last,
+            start,
+            end,
+            at,
+            data: name == Name::Data,
+        });
+        index = last + 1;
+    }
+
+    let after = index;
+    let spans = addresses(&text);
+
+    if spans.is_empty() {
+        return after;
+    }
+
+    // Where in the source each span starts and ends: a piece that is not
+    // data is taken whole.
+    let mut cuts = Vec::new();
+    for (start, end, name) in spans {
+        let head = &pieces[owner[start]];
+        let tail = &pieces[owner[end - 1]];
+        let from = if head.data {
+            head.start + start - head.at
+        } else {
+            head.start
+        };
+        let to = if tail.data {
+            tail.start + end - tail.at
+        } else {
+            tail.end
+        };
+        cuts.push((from, Kind::Enter, name));
+        cuts.push((to, Kind::Exit, name));
+    }
+
+    let mut replace = Vec::new();
+    let mut cut = 0;
+    let mut point = events[first].point.clone();
+
+    for piece in &pieces {
+        let mut at = piece.start;
+
+        while cut < cuts.len() && cuts[cut].0 < piece.end {
+            let (place, kind, name) = cuts[cut].clone();
+            if piece.data && place > at {
+                replace.push(Event {
+                    kind: Kind::Enter,
+                    name: Name::Data,
+                    point: point.clone(),
+                    link: None,
+                });
+                point = point.shift_to(bytes, place);
+                replace.push(Event {
+                    kind: Kind::Exit,
+                    name: Name::Data,
+                    point: point.clone(),
+                    link: None,
+                });
+                at = place;
+            }
+            replace.push(Event {
+                kind,
+                name,
+                point: point.clone(),
+                link: None,
+            });
+            cut += 1;
+        }
+
+        if piece.data {
+            if at < piece.end {
+                replace.push(Event {
+                    kind: Kind::Enter,
+                    name: Name::Data,
+                    point: point.clone(),
+                    link: None,
+                });
+                replace.push(events[piece.last].clone());
+            }
+        } else {
+            replace.extend_from_slice(&events[piece.first..=piece.last]);
+        }
+        point = events[piece.last].point.clone();
+    }
+
+    while cut < cuts.len() {
+        let (_, kind, name) = cuts[cut].clone();
+        replace.push(Event {
+            kind,
+            name,
+            point: point.clone(),
+            link: None,
+        });
+        cut += 1;
+    }
+
+    tokenizer.map.add(first, after - first, replace);
+    after
+}
+
+/// The email addresses in `bytes`, as `(start, end, kind)`.
+fn addresses(bytes: &[u8]) -> Vec<(usize, usize, Name)> {
+    let mut spans = Vec::new();
+    let mut byte_index = 0;
+    let mut min = 0;
+
+    while byte_index < bytes.len() {
+        if bytes[byte_index] == b'@' {
+            if let Some(start) = peek_bytes_atext(bytes, min, byte_index) {
+                let (start, kind) = peek_protocol(bytes, min, start);
+
+                // Note: normally we’d truncate trailing punctuation from
+                // the link. However, email autolink literals cannot contain
+                // any of those markers, except for `.`, but that can only
+                // occur if it isn’t trailing. So we can ignore truncating
+                // while postprocessing!
+                if let Some(end) = peek_bytes_email_domain(
+                    bytes,
+                    byte_index + 1,
+                    kind == Name::AutolinkLiteralXmpp,
+                ) {
+                    spans.push((start, end, kind));
+                    byte_index = end;
+                    min = end;
+                }
+            }
+        }
+
+        byte_index += 1;
+    }
+
+    spans
 }
 
 /// Move back past atext.
@@ -807,6 +944,13 @@ fn peek_protocol(bytes: &[u8], min: usize, end: usize) -> (usize, Name) {
 ///                         ^-- to
 /// ```
 fn peek_bytes_email_domain(bytes: &[u8], start: usize, xmpp: bool) -> Option<usize> {
+    // A second `@` in the run makes it no address.
+    // Source: <https://github.com/github/cmark-gfm/blob/ef1cfcb/extensions/autolink.c#L326>
+    domain(bytes, start, xmpp).filter(|end| bytes.get(*end) != Some(&b'@'))
+}
+
+/// Move past an email domain, to the byte that ends it.
+fn domain(bytes: &[u8], start: usize, xmpp: bool) -> Option<usize> {
     let mut index = start;
     let mut dot = false;
 
@@ -862,6 +1006,7 @@ pub struct Path {
 /// Steps of this construct.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Step {
+    AddressStart,
     ProtocolStart,
     ProtocolAfter,
     ProtocolPrefixInside { start: usize },
@@ -890,6 +1035,7 @@ impl From<Step> for StateName {
 /// Run a step.
 pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
     match step {
+        Step::AddressStart => address_start(tokenizer),
         Step::ProtocolStart => protocol_start(tokenizer),
         Step::ProtocolAfter => protocol_after(tokenizer),
         Step::ProtocolPrefixInside { start } => protocol_prefix_inside(tokenizer, start),
