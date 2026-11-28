@@ -56,14 +56,9 @@ pub const STARTS: Starts = Starts::Any;
 fn start(tokenizer: &mut Tokenizer) -> State {
     let bytes = tokenizer.parse_state.bytes;
     let index = tokenizer.point.index;
-    let eol = bytes[index..]
-        .iter()
-        .position(|byte| matches!(byte, b'\n' | b'\r'))
-        .map_or(bytes.len(), |at| index + at);
+    let eol = line_end(bytes, index);
     // A quick refusal of almost every line: no marker is near.
-    let next = eol + 1;
-    let near = next < bytes.len()
-        && (marks(bytes, next) || blank_at(bytes, next).map_or(false, |after| marks(bytes, after)));
+    let near = near(bytes, index);
     // A term interrupts nothing, and a line that goes on with a table holds
     // none.
     if !near || tokenizer.interrupt || table::open(tokenizer) || reference(tokenizer, eol) {
@@ -80,6 +75,22 @@ fn start(tokenizer: &mut Tokenizer) -> State {
     State::Redo(StateName::DefinitionBody(
         definition_body::Step::MarkerStart,
     ))
+}
+
+/// The end of the line at `index`.
+fn line_end(bytes: &[u8], index: usize) -> usize {
+    bytes[index..]
+        .iter()
+        .position(|byte| matches!(byte, b'\n' | b'\r'))
+        .map_or(bytes.len(), |at| index + at)
+}
+
+/// Whether a body marker is near the line at `index`: on the line after it,
+/// or on the one after a blank line, so that the line may be a term.
+pub fn near(bytes: &[u8], index: usize) -> bool {
+    let next = line_end(bytes, index) + 1;
+    next < bytes.len()
+        && (marks(bytes, next) || blank_at(bytes, next).map_or(false, |after| marks(bytes, after)))
 }
 
 /// Whether the line from the cursor to `eol` holds a reference definition,

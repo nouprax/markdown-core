@@ -1458,3 +1458,16 @@ Document scope=1:1..1:9 anchor=null attributes={} children=1
     ├── Link scope=1:4..1:7 anchor=null attributes={} dest=url("") title=null children=0
     └── Text scope=1:8..1:9 anchor=null attributes={} literal="](" children=0
 ````````````````````````````````
+
+```````````````````````````````` example
+[^[]@b]
+.
+Document scope=1:1..1:7 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:7 anchor=null attributes={} children=3
+    ├── Text scope=1:1..1:4 anchor=null attributes={} literal="[^[]" children=0
+    ├── Cite scope=1:5..1:6 anchor=null attributes={} children=1
+    │   └── Citation scope=1:5..1:6 anchor=null attributes={} referent=bib(key="b",mode=authorInText) children=0
+    │       ├── CitationPrefix children=0
+    │       └── CitationSuffix children=0
+    └── Text scope=1:7..1:7 anchor=null attributes={} literal="]" children=0
+````````````````````````````````

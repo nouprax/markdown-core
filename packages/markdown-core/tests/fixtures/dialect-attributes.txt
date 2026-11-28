@@ -719,3 +719,24 @@ Document scope=1:1..3:4 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..3:4 anchor=null attributes={} children=1
     └── Directive scope=1:1..3:4 anchor=null attributes={e="a b" f="c d"} name="n" children=0
 ````````````````````````````````
+
+```````````````````````````````` example
+{.c}
+-
+
+a
+{#x}
+=
+
+> b
+> {.d}
+> -
+.
+Document scope=1:1..10:3 anchor=null attributes={} children=3
+├── Heading scope=1:1..2:1 anchor=null attributes={.c} level=2 children=0
+├── Heading scope=4:1..6:1 anchor="x" attributes={} level=1 children=1
+│   └── Text scope=4:1..4:1 anchor=null attributes={} literal="a" children=0
+└── Callout scope=8:1..10:3 anchor=null attributes={} variant=null collapsed=null children=1
+    └── Heading scope=8:3..9:0,9:3..10:0,10:3..10:3 anchor=null attributes={.d} level=2 children=1
+        └── Text scope=8:3..8:3 anchor=null attributes={} literal="b" children=0
+````````````````````````````````

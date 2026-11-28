@@ -1461,12 +1461,14 @@ impl<'a> Compiler<'a> {
                 let mut text = None;
                 for child in self.inside(index) {
                     match self.name(child) {
+                        // Character references are read in an autolink
+                        // (CommonMark 2.5); backslash escapes are not.
                         Name::AutolinkProtocol => {
-                            dest = self.text(child).to_string();
+                            dest = references(self.text(child));
                             text = Some(child);
                         }
                         Name::AutolinkEmail => {
-                            dest = format!("mailto:{}", self.text(child));
+                            dest = format!("mailto:{}", references(self.text(child)));
                             text = Some(child);
                         }
                         _ => {}
@@ -1476,7 +1478,7 @@ impl<'a> Compiler<'a> {
                     .map(|child| {
                         Node::new(
                             Kind::Text {
-                                literal: self.text(child).to_string(),
+                                literal: references(self.text(child)),
                             },
                             self.runs(self.start(child), self.end(child)),
                         )
@@ -2033,6 +2035,27 @@ impl<'a> Compiler<'a> {
         }
         Some(dimensions)
     }
+}
+
+/// `text` with each character reference decoded.
+fn references(text: &str) -> String {
+    let mut result = String::new();
+    let mut from = 0;
+    let mut index = 0;
+    while let Some(at) = text[index..].find('&') {
+        index += at;
+        match decode_at(text, index) {
+            Some((value, end)) => {
+                result.push_str(&text[from..index]);
+                result.push_str(&value);
+                from = end;
+                index = end;
+            }
+            None => index += 1,
+        }
+    }
+    result.push_str(&text[from..]);
+    result
 }
 
 /// `text` with each backslash before ASCII punctuation dropped, and, when

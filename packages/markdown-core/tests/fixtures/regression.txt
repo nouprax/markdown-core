@@ -1892,3 +1892,55 @@ Document scope=1:1..5:7 anchor=null attributes={} children=3
 │       └── Text scope=3:10..3:10 anchor=null attributes={} literal="^" children=0
 └── Reference scope=5:1..5:7 anchor=null attributes={} label="x" dest=url("/u") title=null children=0
 ````````````````````````````````
+
+```````````````````````````````` example
+~~~\&uml;
+.
+Document scope=1:1..1:9 anchor=null attributes={} children=1
+└── CodeBlock scope=1:1..1:9 anchor=null attributes={} info="\\¨" language="\\¨" literal="" fenced=true closed=false children=0
+````````````````````````````````
+
+```````````````````````````````` example autolink
+a&#64;.c@a
+.
+Document scope=1:1..1:10 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:10 anchor=null attributes={} children=2
+    ├── Text scope=1:1..1:6 anchor=null attributes={} literal="a@" children=0
+    └── Link scope=1:7..1:10 anchor=null attributes={} dest=url("mailto:.c@a") title=null children=1
+        └── Text scope=1:7..1:10 anchor=null attributes={} literal=".c@a" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+<http://a.b/&amp;x>
+.
+Document scope=1:1..1:19 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:19 anchor=null attributes={} children=1
+    └── Link scope=1:1..1:19 anchor=null attributes={} dest=url("http://a.b/&x") title=null children=1
+        └── Text scope=1:2..1:18 anchor=null attributes={} literal="http://a.b/&x" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+-	x
+
+  y
+.
+Document scope=1:1..3:3 anchor=null attributes={} children=2
+├── List scope=1:1..2:0 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=1
+│   └── ListItem scope=1:1..2:0 anchor=null attributes={} status=null children=1
+│       └── Paragraph scope=1:3..1:3 anchor=null attributes={} children=1
+│           └── Text scope=1:3..1:3 anchor=null attributes={} literal="x" children=0
+└── Paragraph scope=3:3..3:3 anchor=null attributes={} children=1
+    └── Text scope=3:3..3:3 anchor=null attributes={} literal="y" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+- >
+  a
+.
+Document scope=1:1..2:3 anchor=null attributes={} children=1
+└── List scope=1:1..2:3 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=1
+    └── ListItem scope=1:1..2:3 anchor=null attributes={} status=null children=2
+        ├── Callout scope=1:3..1:3 anchor=null attributes={} variant=null collapsed=null children=0
+        └── Paragraph scope=2:3..2:3 anchor=null attributes={} children=1
+            └── Text scope=2:3..2:3 anchor=null attributes={} literal="a" children=0
+````````````````````````````````

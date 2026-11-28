@@ -370,6 +370,13 @@
             "why": "Only an unmatched opening quote is part of an unquoted value, as attributes.md states; this quote is matched, so the container never closes. The Rust parser's output is recorded as a departure in packages/markdown-core-rs/tests/departures.txt; when C is removed and its output is written back, this entry stops reproducing and is deleted."
         },
         {
+            "id": "setext-attributes-line",
+            "input": "{.c}\n-\n\na\n{#x}\n=\n\n> b\n> {.d}\n> -\n",
+            "authority": "docs/specs/dialect/attributes.md",
+            "summary": "A Setext heading whose last content line holds only an attribute container takes it: `{.c}` over `-` is an empty heading with class `c`, and `a` over `{#x}` over `=` is the heading `a` with anchor `x`; remark keeps the container as text.",
+            "why": "attributes.md gives the suffix to the last content line of a Setext heading and lets `# {#empty}` be an empty heading, so a line of the container alone is a suffix with nothing before it, as in Pandoc."
+        },
+        {
             "id": "shared-attributes-normalization-order",
             "input": ":n{#a#b}\n\n:n{-k=v}\n\n:n{.one.two #1}\n\n:n{k=\"a\\\"b&amp;c\" m=a&amp;b n= id=}\n\n:n{class=\"a b\" .a k=1 k=2}\n",
             "authority": "docs/specs/dialect/attributes.md",

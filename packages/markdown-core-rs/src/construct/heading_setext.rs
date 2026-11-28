@@ -78,7 +78,7 @@ use crate::resolve::Name as ResolveName;
 use crate::state::{Name as StateName, State};
 use crate::subtokenize::Subresult;
 use crate::tokenizer::Tokenizer;
-use crate::util::{constant::TAB_SIZE, skip};
+use crate::util::{constant::TAB_SIZE, skip, slice::advance};
 use alloc::vec;
 
 /// Bytes this construct can start at.
@@ -356,8 +356,51 @@ fn tail(tokenizer: &mut Tokenizer, exit: usize) {
         return;
     }
     if let Some((cut, events)) = parts::attributes::line_tail(tokenizer, start, end) {
-        tokenizer.events[data].point = cut.clone();
-        tokenizer.events[exit].point = cut;
+        let enter = data - 1;
+        if cut.index > start.index {
+            tokenizer.events[data].point = cut.clone();
+            tokenizer.events[exit].point = cut;
+        } else if let Some(previous) = tokenizer.events[enter]
+            .link
+            .as_ref()
+            .and_then(|link| link.previous)
+        {
+            let bytes = tokenizer.parse_state.bytes;
+            let from = tokenizer.events[previous].point.index;
+            let mut to = tokenizer.events[previous + 1].point.index;
+            while to > from && matches!(bytes[to - 1], b'\n' | b'\r') {
+                to -= 1;
+            }
+            // After a hard break escape, the line is the text's.
+            let slashes = bytes[from..to]
+                .iter()
+                .rev()
+                .take_while(|byte| **byte == b'\\')
+                .count();
+            if slashes % 2 == 1 {
+                return;
+            }
+            while to > from && matches!(bytes[to - 1], b'\t' | b' ') {
+                to -= 1;
+            }
+            // A line of attributes alone: the text ends with the line before,
+            // without its line ending.
+            if let Some(link) = tokenizer.events[previous].link.as_mut() {
+                link.next = None;
+            }
+            let point = advance(bytes, &tokenizer.events[previous].point, to);
+            tokenizer.events[previous + 1].point = point.clone();
+            tokenizer.events[exit].point = point;
+            // What is between the lines (container prefixes) goes after the
+            // text, before the attributes.
+            let between = tokenizer.events[previous + 2..enter].to_vec();
+            tokenizer.map.add(previous + 2, data - previous - 1, vec![]);
+            tokenizer.map.add(exit + 1, 0, between);
+        } else {
+            // The heading's only line: it has no text.
+            tokenizer.events[exit].point = tokenizer.events[enter].point.clone();
+            tokenizer.map.add(enter, 2, vec![]);
+        }
         tokenizer.map.add(exit + 1, 0, events);
     }
 }

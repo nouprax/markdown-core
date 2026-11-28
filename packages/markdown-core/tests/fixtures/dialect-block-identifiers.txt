@@ -1357,3 +1357,24 @@ Document scope=1:1..3:1 anchor=null attributes={} children=1
     ├── SoftBreak scope=1:2..2:0 anchor=null attributes={} children=0
     └── Text scope=2:1..2:5 anchor=null attributes={} literal="t #a#" children=0
 ````````````````````````````````
+
+```````````````````````````````` example
+|a|
+|-|
+|m|
+#d#
+.
+Document scope=1:1..4:3 anchor=null attributes={} children=1
+└── Table scope=1:1..4:3 anchor=null attributes={} columns=[none] children=3
+    ├── TableHead children=1
+    │   └── TableRow scope=1:1..1:3 anchor=null attributes={} children=1
+    │       └── TableCell scope=1:2..1:2 anchor=null attributes={} children=1
+    │           └── Text scope=1:2..1:2 anchor=null attributes={} literal="a" children=0
+    └── TableBody children=2
+        ├── TableRow scope=3:1..3:3 anchor=null attributes={} children=1
+        │   └── TableCell scope=3:2..3:2 anchor=null attributes={} children=1
+        │       └── Text scope=3:2..3:2 anchor=null attributes={} literal="m" children=0
+        └── TableRow scope=4:1..4:3 anchor=null attributes={} children=1
+            └── TableCell scope=4:1..4:3 anchor=null attributes={} children=1
+                └── Text scope=4:1..4:3 anchor=null attributes={} literal="#d#" children=0
+````````````````````````````````

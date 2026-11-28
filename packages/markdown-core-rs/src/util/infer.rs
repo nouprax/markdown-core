@@ -150,7 +150,21 @@ pub fn list_item_loose(events: &[Event], mut index: usize) -> bool {
                     at_prefix = true;
                 }
 
-                if !at_prefix {
+                // The line ending of a line that a quote or a container
+                // directive in the item ended on, which is not blank:
+                //
+                // ```markdown
+                // > | - >␊
+                //        ^
+                //   |   a
+                // ```
+                let enter = &events[index - 1];
+                let ended = &events[index - 2];
+                let inner = ended.kind == Kind::Exit
+                    && matches!(ended.name, Name::BlockQuote | Name::DirectiveContainer)
+                    && ended.point.line == enter.point.line;
+
+                if !at_prefix && !inner {
                     blank = true;
                 }
             }

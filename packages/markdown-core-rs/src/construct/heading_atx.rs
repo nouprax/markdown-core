@@ -71,7 +71,7 @@ use crate::state::{Name as StateName, State};
 use crate::subtokenize::Subresult;
 use crate::tokenizer::Tokenizer;
 use crate::util::constant::{HEADING_ATX_OPEN_FENCE_SIZE_MAX, TAB_SIZE};
-use alloc::vec;
+use alloc::{vec, vec::Vec};
 
 /// Bytes this construct can start at.
 pub const STARTS: Starts = Starts::Bytes(b"\t #");
@@ -149,7 +149,9 @@ fn at_break(tokenizer: &mut Tokenizer) -> State {
             );
             State::Redo(space_or_tab())
         }
-        Some(b'#') => {
+        // A sequence ends at whitespace, the line's end, or attributes;
+        // otherwise its hashes are text (`# #a`).
+        Some(b'#') if sequence_ends(tokenizer) => {
             tokenizer.enter(Name::HeadingAtxSequence);
             State::Redo(StateName::HeadingAtx(Step::SequenceFurther))
         }
@@ -163,6 +165,16 @@ fn at_break(tokenizer: &mut Tokenizer) -> State {
         }
         Some(_) => State::Redo(StateName::HeadingAtx(Step::DataStart)),
     }
+}
+
+/// Whether the hashes at the current byte end where a sequence may.
+fn sequence_ends(tokenizer: &Tokenizer) -> bool {
+    let bytes = tokenizer.parse_state.bytes;
+    let mut index = tokenizer.point.index;
+    while bytes.get(index) == Some(&b'#') {
+        index += 1;
+    }
+    matches!(bytes.get(index), None | Some(b'\t' | b'\n' | b' ' | b'{'))
 }
 
 /// At text, which is not attributes that end the line.
@@ -254,12 +266,15 @@ fn data_escape(tokenizer: &mut Tokenizer) -> State {
     }
 }
 
-/// Resolve heading (atx).
+/// Resolve heading (atx): its text runs from the first text or sequence
+/// after the opening sequence to the last one before a closing sequence,
+/// so that the sequences in it are text (`# # a`, `# ## ##`).
 pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
     let mut index = 0;
     let mut heading_inside = false;
-    let mut data_start: Option<usize> = None;
-    let mut data_end: Option<usize> = None;
+    // The enter and exit of each text or sequence after the opening one.
+    let mut items: Vec<(usize, usize)> = vec![];
+    let mut opened = false;
 
     while index < tokenizer.events.len() {
         let event = &tokenizer.events[index];
@@ -267,10 +282,25 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
         if event.name == Name::HeadingAtx {
             if event.kind == Kind::Enter {
                 heading_inside = true;
+                opened = false;
+                items.clear();
             } else {
-                if let Some(start) = data_start {
-                    // If `start` is some, `end` is too.
-                    let end = data_end.unwrap();
+                // A sequence that ends the heading closes it.
+                if items.last().map_or(false, |item| {
+                    tokenizer.events[item.0].name == Name::HeadingAtxSequence
+                }) {
+                    items.pop();
+                }
+                if let (Some(first), Some(last)) = (items.first(), items.last()) {
+                    let (start, end) = (first.0, last.1);
+                    for at in [start, end] {
+                        tokenizer.events[at].name = Name::Data;
+                    }
+                    tokenizer.events[start].link = Some(Link {
+                        previous: None,
+                        next: None,
+                        content: Content::Text,
+                    });
 
                     tokenizer.map.add(
                         start,
@@ -299,16 +329,14 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
                 }
 
                 heading_inside = false;
-                data_start = None;
-                data_end = None;
             }
-        } else if heading_inside && event.name == Name::Data {
-            if event.kind == Kind::Enter {
-                if data_start.is_none() {
-                    data_start = Some(index);
-                }
-            } else {
-                data_end = Some(index);
+        } else if heading_inside && matches!(event.name, Name::Data | Name::HeadingAtxSequence) {
+            if event.name == Name::HeadingAtxSequence && !opened {
+                opened = event.kind == Kind::Exit;
+            } else if event.kind == Kind::Enter {
+                items.push((index, index));
+            } else if let Some(item) = items.last_mut() {
+                item.1 = index;
             }
         }
 

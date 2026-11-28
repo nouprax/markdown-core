@@ -33,6 +33,7 @@
 
 use crate::choice::Starts;
 use crate::construct::parts::space_or_tab::{space_or_tab, space_or_tab_min_max};
+use crate::construct::{definition_term, table};
 use crate::event::{Content, Event, Kind, Link, Name, Point};
 use crate::state::{Name as StateName, State};
 use crate::tokenizer::Tokenizer;
@@ -285,8 +286,12 @@ pub fn restore(tokenizer: &mut Tokenizer, enter: usize, exit: usize) {
 ///     ^
 /// ```
 fn start(tokenizer: &mut Tokenizer) -> State {
-    // A line in a paragraph is the paragraph’s.
-    if tokenizer.interrupt {
+    // A line in a paragraph is the paragraph’s, one after a table row the
+    // table’s, and one a body marker is near may be a term.
+    if tokenizer.interrupt
+        || table::open(tokenizer)
+        || definition_term::near(tokenizer.parse_state.bytes, tokenizer.point.index)
+    {
         return State::Nok;
     }
     tokenizer.enter(Name::BlockIdentifierLine);
@@ -372,7 +377,7 @@ fn after(tokenizer: &mut Tokenizer) -> State {
             tokenizer.interrupt = true;
             tokenizer.check(
                 State::Next(StateName::BlockIdentifier(Step::Done)),
-                State::Nok,
+                State::Next(StateName::BlockIdentifier(Step::Fail)),
             );
             tokenizer.enter(Name::LineEnding);
             tokenizer.consume();
@@ -439,6 +444,13 @@ fn done(tokenizer: &mut Tokenizer) -> State {
     State::Ok
 }
 
+/// When the line after is no blank line: the line is no identifier line,
+/// and what else it is interrupts nothing.
+fn fail(tokenizer: &mut Tokenizer) -> State {
+    tokenizer.interrupt = false;
+    State::Nok
+}
+
 /// Steps of this construct.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Step {
@@ -450,6 +462,7 @@ pub enum Step {
     Follow,
     Blank,
     Done,
+    Fail,
 }
 
 impl From<Step> for StateName {
@@ -469,5 +482,6 @@ pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
         Step::Follow => follow(tokenizer),
         Step::Blank => blank(tokenizer),
         Step::Done => done(tokenizer),
+        Step::Fail => fail(tokenizer),
     }
 }

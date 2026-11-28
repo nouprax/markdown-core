@@ -112,8 +112,7 @@ fn close(tokenizer: &mut Tokenizer, name: Name) -> State {
 /// ends, and the attributes’ events.
 ///
 /// The first brace, not escaped, that starts attributes which end the line
-/// is theirs.
-/// Text must come before them.
+/// is theirs; the line may hold nothing else (`{#a}` over `===`).
 pub fn line_tail(tokenizer: &Tokenizer, start: &Point, end: usize) -> Option<(Point, Vec<Event>)> {
     let bytes = tokenizer.parse_state.bytes;
     let mut at = start.index;
@@ -128,17 +127,14 @@ pub fn line_tail(tokenizer: &Tokenizer, start: &Point, end: usize) -> Option<(Po
                 while cut > start.index && matches!(bytes[cut - 1], b'\t' | b' ') {
                     cut -= 1;
                 }
-                if cut > start.index {
-                    let mut scratch =
-                        Tokenizer::new(advance(bytes, start, at), tokenizer.parse_state);
-                    let state = scratch.run(
-                        (at, 0),
-                        (end, 0),
-                        State::Next(StateName::Attributes(Step::Tail)),
-                    );
-                    if state == State::Ok {
-                        return Some((advance(bytes, start, cut), scratch.events));
-                    }
+                let mut scratch = Tokenizer::new(advance(bytes, start, at), tokenizer.parse_state);
+                let state = scratch.run(
+                    (at, 0),
+                    (end, 0),
+                    State::Next(StateName::Attributes(Step::Tail)),
+                );
+                if state == State::Ok {
+                    return Some((advance(bytes, start, cut), scratch.events));
                 }
             }
             _ => {}
