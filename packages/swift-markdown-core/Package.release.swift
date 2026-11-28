@@ -22,9 +22,7 @@ let package = Package(
         .iOS(.v26),
         .macOS(.v26),
     ],
-    products: [
-        .library(name: "MarkdownCore", targets: ["MarkdownCore"]),
-    ],
+    products: [.library(name: "MarkdownCore", targets: ["MarkdownCore"])],
     targets: [
         .target(
             name: "MarkdownCoreC",
