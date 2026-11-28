@@ -116,3 +116,19 @@ Document scope=1:1..1:10 anchor=null attributes={} children=1
     ├── Link scope=1:2..1:5 anchor=null attributes={} dest=url("") title=null children=0
     └── Text scope=1:6..1:10 anchor=null attributes={} literal="[]]()" children=0
 ````````````````````````````````
+
+```````````````````````````````` departure regression.txt 84
+A domain has no underscore in its last two segments (GFM 6.9), and that
+does not depend on where the paragraph ends; cmark-gfm's domain scan stops
+one byte short of the paragraph's end, so it links `http://x.com` before a
+final `_` and not before `_ here`.
+.
+Document scope=1:1..3:23 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:18 anchor=null attributes={} children=1
+│   └── Emphasis scope=1:1..1:18 anchor=null attributes={} children=1
+│       └── Text scope=1:2..1:17 anchor=null attributes={} literal="see http://x.com" children=0
+└── Paragraph scope=3:1..3:23 anchor=null attributes={} children=2
+    ├── Emphasis scope=3:1..3:18 anchor=null attributes={} children=1
+    │   └── Text scope=3:2..3:17 anchor=null attributes={} literal="see http://x.com" children=0
+    └── Text scope=3:19..3:23 anchor=null attributes={} literal=" here" children=0
+````````````````````````````````

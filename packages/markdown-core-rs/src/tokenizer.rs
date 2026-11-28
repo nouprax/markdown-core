@@ -370,6 +370,9 @@ pub struct Tokenizer<'a> {
     ///
     /// Used when tokenizing [document content][crate::construct::document].
     pub term: Option<usize>,
+    /// An index a construct's check leaves for the attempt after it: where
+    /// the check found its construct ends.
+    pub mark: usize,
 }
 
 impl<'a> Tokenizer<'a> {
@@ -399,6 +402,7 @@ impl<'a> Tokenizer<'a> {
             lazy: false,
             closing: false,
             term: None,
+            mark: 0,
             resolvers: vec![],
         }
     }
