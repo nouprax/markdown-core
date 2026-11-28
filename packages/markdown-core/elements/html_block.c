@@ -118,12 +118,7 @@ static const markdown_core_line_ops HTML_BLOCK_LINES = {
     .ends = ends_html,
 };
 
-const markdown_core_facet MARKDOWN_CORE_HTML_BLOCK_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_NONE},
-};
-
 const markdown_core_element MARKDOWN_CORE_ELEMENT_HTML_BLOCK = {
-    .facets = MARKDOWN_CORE_HTML_BLOCK_FACETS,
     .name = "html_block",
     .content = &HTML_BLOCK_CONTENT,
     .opens = &HTML_BLOCK_OPENS,

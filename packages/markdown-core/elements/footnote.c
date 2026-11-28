@@ -180,12 +180,7 @@ static const markdown_core_line_ops FOOTNOTE_LINES = {
     .prefix = continue_container,
 };
 
-const markdown_core_facet MARKDOWN_CORE_FOOTNOTE_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_NONE},
-};
-
 const markdown_core_element MARKDOWN_CORE_ELEMENT_FOOTNOTE = {
-    .facets = MARKDOWN_CORE_FOOTNOTE_FACETS,
     .peers = FOOTNOTE_PEERS,
     .spaces = FOOTNOTE_SPACES,
     .name = "footnote",

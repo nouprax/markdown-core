@@ -220,8 +220,6 @@ static bool decode(properties *p, size_t start, size_t end, markdown_core_metada
         value->kind = MARKDOWN_CORE_METADATA_SCALAR;
         valid = e + 1 == last && e->line == line && (e->style != MARKDOWN_CORE_YAML_LITERAL || prose) &&
                 resolve(p, e, &value->as.scalar);
-        if (valid) {
-        }
         return valid;
     }
     if (e->kind != MARKDOWN_CORE_YAML_LIST_START || last[-1].kind != MARKDOWN_CORE_YAML_LIST_END) {

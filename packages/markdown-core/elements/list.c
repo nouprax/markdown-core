@@ -220,12 +220,7 @@ static const markdown_core_line_ops LIST_LINES = {
     .blank_runs = true,
 };
 
-const markdown_core_facet MARKDOWN_CORE_LIST_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_NONE},
-};
-
 const markdown_core_element MARKDOWN_CORE_ELEMENT_LIST = {
-    .facets = MARKDOWN_CORE_LIST_FACETS,
     .state_size = sizeof(markdown_core_list_work),
     .name = "list",
     .fold = &LIST_FOLD,

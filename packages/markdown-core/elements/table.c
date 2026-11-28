@@ -619,13 +619,8 @@ static const markdown_core_line_ops TABLE_LINES = {
     .uncut = true,
 };
 
-const markdown_core_facet MARKDOWN_CORE_TABLE_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_NONE},
-};
-
 const markdown_core_element MARKDOWN_CORE_ELEMENT_TABLE = {
     .peers = TABLE_PEERS,
-    .facets = MARKDOWN_CORE_TABLE_FACETS,
     .follows = TABLE_FOLLOWS,
     .name = "table",
     .payload = &TABLE_PAYLOAD,

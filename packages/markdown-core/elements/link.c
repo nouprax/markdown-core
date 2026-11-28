@@ -737,12 +737,7 @@ static const markdown_core_open_ops LINK_OPENS = {
     .cut_needs = {.bytes = "["},
 };
 
-const markdown_core_facet MARKDOWN_CORE_LINK_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_NONE},
-};
-
 const markdown_core_element MARKDOWN_CORE_ELEMENT_LINK = {
-    .facets = MARKDOWN_CORE_LINK_FACETS,
     .peers = LINK_PEERS,
     .spaces = LINK_SPACES,
     .state_size = sizeof(S_state),

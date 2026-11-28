@@ -148,13 +148,8 @@ static const markdown_core_inline_ops CROSS_LINK_INLINES = {
     .dispatch = "[!",
 };
 
-const markdown_core_facet MARKDOWN_CORE_CROSS_LINK_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_NONE},
-};
-
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CROSS_LINK = {
     .peers = CROSS_LINK_PEERS,
-    .facets = MARKDOWN_CORE_CROSS_LINK_FACETS,
     .name = "cross_link",
     .state_size = sizeof(markdown_core_cross_link_work),
     .inlines = &CROSS_LINK_INLINES,

@@ -1019,11 +1019,6 @@ static const markdown_core_inline_ops ATTRIBUTES_INLINES = {
     .closer = ']',
 };
 
-const markdown_core_facet MARKDOWN_CORE_ATTRIBUTES_FACETS[] = {
-
-    {.kind = MARKDOWN_CORE_KIND_NONE},
-};
-
 const markdown_core_element MARKDOWN_CORE_ELEMENT_ATTRIBUTES = {
     .name = "attributes",
     .peers = ATTRIBUTES_PEERS,
@@ -1031,6 +1026,5 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_ATTRIBUTES = {
     .run_state_size = sizeof(S_run),
     .dispose_parser = dispose_parser,
     .follows = ATTRIBUTES_FOLLOWS,
-    .facets = MARKDOWN_CORE_ATTRIBUTES_FACETS,
     .inlines = &ATTRIBUTES_INLINES,
 };

@@ -791,12 +791,7 @@ static const markdown_core_inline_ops CITATION_INLINES = {
     .dispatch = "@-;",
 };
 
-const markdown_core_facet MARKDOWN_CORE_CITATION_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_NONE},
-};
-
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CITATION = {
-    .facets = MARKDOWN_CORE_CITATION_FACETS,
     .peers = CITATION_PEERS,
     .state_size = sizeof(markdown_core_citation_work),
     .run_state_size = sizeof(markdown_core_citation_run),

@@ -118,12 +118,7 @@ static const markdown_core_inline_ops HTML_INLINES = {
     .dispatch = "<",
 };
 
-const markdown_core_facet MARKDOWN_CORE_HTML_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_NONE},
-};
-
 const markdown_core_element MARKDOWN_CORE_ELEMENT_HTML = {
-    .facets = MARKDOWN_CORE_HTML_FACETS,
     .name = "html",
     .peers = HTML_PEERS,
     .inlines = &HTML_INLINES,

@@ -78,12 +78,7 @@ static const markdown_core_inline_ops TEXT_INLINES = {
     .plain = MARKDOWN_CORE_NODE_TEXT,
 };
 
-const markdown_core_facet MARKDOWN_CORE_TEXT_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_NONE},
-};
-
 const markdown_core_element MARKDOWN_CORE_ELEMENT_TEXT = {
-    .facets = MARKDOWN_CORE_TEXT_FACETS,
     .peers = TEXT_PEERS,
     .state_size = sizeof(markdown_core_text_work),
     .name = "text",

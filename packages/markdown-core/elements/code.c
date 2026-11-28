@@ -192,13 +192,8 @@ static const markdown_core_inline_ops CODE_INLINES = {
     .dispatch = "`",
 };
 
-const markdown_core_facet MARKDOWN_CORE_CODE_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_NONE},
-};
-
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CODE = {
     .peers = CODE_PEERS,
-    .facets = MARKDOWN_CORE_CODE_FACETS,
     .run_state_size = sizeof(markdown_core_backticks),
     .name = "code",
     .inlines = &CODE_INLINES,

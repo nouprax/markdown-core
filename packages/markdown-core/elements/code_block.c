@@ -252,13 +252,8 @@ static const markdown_core_line_ops CODE_BLOCK_LINES = {
     .blank_last = blank_line,
 };
 
-const markdown_core_facet MARKDOWN_CORE_CODE_BLOCK_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_NONE},
-};
-
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CODE_BLOCK = {
     .peers = CODE_BLOCK_PEERS,
-    .facets = MARKDOWN_CORE_CODE_BLOCK_FACETS,
     .name = "code_block",
     .content = &CODE_BLOCK_CONTENT,
     .opens = &CODE_BLOCK_OPENS,

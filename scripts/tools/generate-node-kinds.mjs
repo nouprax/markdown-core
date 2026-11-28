@@ -419,7 +419,7 @@ export function outputs(model, readSource) {
         edit(`${PACKAGE}/elements/core-elements.c`, { "node kinds": structureTables(model) }),
         edit(`${PACKAGE}/tests/support/test_support.h`, { "node kinds": testKindCount(model) }),
         [
-            "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/markup/Kinds.kt",
+            "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/markup/NodeKind.kt",
             kotlin(model)
         ],
         ["packages/es-markdown-core/src/wire/kinds.ts", es(model)],

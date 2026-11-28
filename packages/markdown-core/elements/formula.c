@@ -290,9 +290,6 @@ static markdown_core_node *match_formula_delimiter(const markdown_core_element_i
         int from = start + len;
         close = markdown_core_inline_state_find_opaque_close(inline_state, rule, from, scan_formula_closer);
         markdown_core_chunk *input = markdown_core_inline_state_get_chunk(inline_state);
-        /* An opener with no closer opens a formula once one follows. */
-        if (close < 0) {
-        }
         if (close >= 0 && formula_body_admitted(rule, input->data + from, close - from)) {
             /* A dynamic parent's policy is observed at delimiter reduction, in
              * source order with other deferred replacements. Keep that lifetime

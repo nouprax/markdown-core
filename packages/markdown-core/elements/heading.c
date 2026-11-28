@@ -156,12 +156,7 @@ static const markdown_core_line_ops HEADING_LINES = {
     .blank_opaque = true,
 };
 
-const markdown_core_facet MARKDOWN_CORE_HEADING_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_NONE},
-};
-
 const markdown_core_element MARKDOWN_CORE_ELEMENT_HEADING = {
-    .facets = MARKDOWN_CORE_HEADING_FACETS,
     .peers = HEADING_PEERS,
     .name = "heading",
     .content = &HEADING_CONTENT,

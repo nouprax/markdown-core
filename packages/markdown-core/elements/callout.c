@@ -7,10 +7,9 @@ static const markdown_core_element *const CALLOUT_PEERS[] = {&MARKDOWN_CORE_ELEM
 
 /* What a callout's scan found after its marker (WHAT THE SCAN FOUND,
  * block_internal.h): a header `[!variant]`, its fold and where its title
- * starts, and where a variant the line's end cuts short stands, -1 for
- * none, which its open reports. */
+ * starts. */
 typedef struct {
-    bufsize_t variant, variant_end, title, report;
+    bufsize_t variant, variant_end, title;
     bool metadata, fold, collapsed;
     /* Where the marker's motion leaves the reader. */
     markdown_core_reader_mark after;
@@ -55,7 +54,7 @@ static void S_callout_marker(markdown_core_reader *reader) {
  * LINE). */
 static void S_callout_header(markdown_core_callout_work *counts, markdown_core_parser *parser,
                              markdown_core_reader *reader, markdown_core_callout_header *header) {
-    *header = (markdown_core_callout_header){.report = -1};
+    *header = (markdown_core_callout_header){0};
     bufsize_t pos = reader->offset;
     bufsize_t begin = pos;
     while (markdown_core_reader_peek(reader, pos) == ' ' && pos - begin < 3) {
@@ -153,12 +152,11 @@ static bool callout_text(const markdown_core_element_instance *self, markdown_co
 }
 
 /* Where a callout holds the title its text made (element.h,
- * markdown_core_edit_ops). */
+ * markdown_core_line_ops, `field`). */
 static markdown_core_node **callout_title(markdown_core_node *node) { return &node->as.callout->title; }
 
-/* A callout's open builds what its scan read: the marker's motion, the
- * report of a variant cut short, and the header, after which the line is
- * the header's. */
+/* A callout's open builds what its scan read: the marker's motion and the
+ * header, after which the line is the header's. */
 static bool markdown_core_callout_open(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                        markdown_core_node **container, markdown_core_reader *reader,
                                        block_start *start) {
@@ -170,8 +168,6 @@ static bool markdown_core_callout_open(const markdown_core_element_instance *sel
         markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_CALLOUT, blockquote_startpos + 1);
     if (!*container) {
         return false;
-    }
-    if (header->report >= 0) {
     }
     if (header->metadata) {
         S_callout_build(parser, *container, reader, header);
@@ -241,13 +237,8 @@ static const markdown_core_line_ops CALLOUT_LINES = {
     .text = callout_text,
 };
 
-const markdown_core_facet MARKDOWN_CORE_CALLOUT_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_NONE},
-};
-
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CALLOUT = {
     .peers = CALLOUT_PEERS,
-    .facets = MARKDOWN_CORE_CALLOUT_FACETS,
     .state_size = sizeof(markdown_core_callout_work),
     .name = "callout",
     .opens = &CALLOUT_OPENS,

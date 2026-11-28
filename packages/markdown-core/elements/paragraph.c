@@ -81,12 +81,7 @@ static const markdown_core_line_ops PARAGRAPH_LINES = {
     .cuts = true,
 };
 
-const markdown_core_facet MARKDOWN_CORE_PARAGRAPH_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_NONE},
-};
-
 const markdown_core_element MARKDOWN_CORE_ELEMENT_PARAGRAPH = {
-    .facets = MARKDOWN_CORE_PARAGRAPH_FACETS,
     .state_size = sizeof(markdown_core_block_identifier_work),
     .name = "paragraph",
     .follows = PARAGRAPH_FOLLOWS,
