@@ -213,6 +213,9 @@ fn after(tokenizer: &mut Tokenizer) -> State {
 /// Resolve heading (setext).
 pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
     let mut enter = skip::to(&tokenizer.events, 0, &[Name::HeadingSetextUnderline]);
+    // A paragraph an underline was moved into opens where the underline did:
+    // its old enter, which the map removes, and its new one.
+    let mut moved: Option<(usize, usize)> = None;
 
     while enter < tokenizer.events.len() {
         let exit = skip::to(
@@ -235,11 +238,16 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
 
         // There’s a paragraph before: this is a setext heading.
         if tokenizer.events[paragraph_exit_before].name == Name::Paragraph {
-            let paragraph_enter = skip::to_back(
+            let mut paragraph_enter = skip::to_back(
                 &tokenizer.events,
                 paragraph_exit_before - 1,
                 &[Name::Paragraph],
             );
+            if let Some((old, new)) = moved {
+                if paragraph_enter == old {
+                    paragraph_enter = new;
+                }
+            }
 
             // A heading has no block identifier.
             block_identifier::restore(tokenizer, paragraph_enter, paragraph_exit_before);
@@ -279,6 +287,7 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
                 tokenizer.map.add(enter + 1, exit - enter, vec![]);
                 // Remove old Paragraph:Enter.
                 tokenizer.map.add(exit + 3, 1, vec![]);
+                moved = Some((exit + 3, enter));
             } else {
                 // Swap type.
                 tokenizer.events[enter].name = Name::Paragraph;
