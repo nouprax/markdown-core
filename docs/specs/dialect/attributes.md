@@ -53,7 +53,9 @@ byte, `{#a#b}` is the single anchor `a#b` and `{.one.two}` the single class
 Values may be unquoted, single-quoted, or double-quoted, and may be empty.
 Quoted values decode ASCII punctuation escapes and character references;
 unquoted values decode escapes but retain character references literally.
-Permitted line endings inside quoted values become one space.
+Permitted line endings inside quoted values become one space; the spaces and
+tabs that begin the next line are that line's, as in a paragraph, not the
+value's.
 
 ```markdown
 `x`{quoted="a&amp;b" raw=a&amp;b empty=}

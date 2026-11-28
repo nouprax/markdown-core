@@ -364,7 +364,7 @@ fn quoted(tokenizer: &mut Tokenizer, quote: u8, line: bool) -> State {
             tokenizer.enter(Name::LineEnding);
             tokenizer.consume();
             tokenizer.exit(Name::LineEnding);
-            State::Next(StateName::Attributes(Step::Quoted { quote, line }))
+            State::Next(StateName::Attributes(Step::QuotedLead { quote }))
         }
         Some(byte) if byte == quote => {
             tokenizer.enter(Name::AttributeValueMarker);
@@ -376,6 +376,24 @@ fn quoted(tokenizer: &mut Tokenizer, quote: u8, line: bool) -> State {
             tokenizer.enter(Name::AttributeValueText);
             State::Redo(StateName::Attributes(Step::QuotedText { quote, line }))
         }
+    }
+}
+
+/// At the start of a line in a quoted value: the line's leading spaces and
+/// tabs are not the value's, as they are not a paragraph's.
+///
+/// ```markdown
+///   | `a`{b="c
+/// > |   d"}
+///     ^
+/// ```
+fn quoted_lead(tokenizer: &mut Tokenizer, quote: u8) -> State {
+    let quoted = StateName::Attributes(Step::Quoted { quote, line: false });
+    if matches!(tokenizer.current, Some(b'\t' | b' ')) {
+        tokenizer.attempt(State::Next(quoted), State::Nok);
+        State::Redo(space_or_tab())
+    } else {
+        State::Redo(quoted)
     }
 }
 
@@ -537,6 +555,9 @@ pub enum Step {
         quote: u8,
         line: bool,
     },
+    QuotedLead {
+        quote: u8,
+    },
     QuotedText {
         quote: u8,
         line: bool,
@@ -582,6 +603,7 @@ pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
         Step::NameInside { line } => name_inside(tokenizer, line),
         Step::ValueStart { line } => value_start(tokenizer, line),
         Step::Quoted { quote, line } => quoted(tokenizer, quote, line),
+        Step::QuotedLead { quote } => quoted_lead(tokenizer, quote),
         Step::QuotedText { quote, line } => quoted_text(tokenizer, quote, line),
         Step::QuotedEscape { quote, line } => quoted_escape(tokenizer, quote, line),
         Step::Unquoted { line } => unquoted(tokenizer, line),

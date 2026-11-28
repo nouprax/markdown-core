@@ -209,6 +209,13 @@
             "why": "Directives are the first attachment site of the single Pandoc 3.11 attribute operation. The dialect owns normalization and the Unicode letter-first directive envelope; remark supplies independent evidence, not alternate parsing modes."
         },
         {
+            "id": "shared-attributes-quoted-line-indent",
+            "input": ":n{e=\"a\n  b\" f=\"c\n\td\"}\n",
+            "authority": "docs/specs/dialect/attributes.md",
+            "summary": "A quoted line ending becomes one ASCII space and the spaces and tabs that begin the next line are the line's, as a paragraph's are; remark keeps the newline and the indentation.",
+            "why": "The attribute member grammar and its normalization are the dialect's own, stated in attributes.md; remark supplies evidence for the directive envelope and attachment position, not for the member grammar."
+        },
+        {
             "id": "shared-attributes-bare-member-atomic",
             "input": ":data[label]{muted dup=first dup=last unicode=中文😀 title=\"My Video\"}\n",
             "authority": "docs/specs/dialect/attributes.md",

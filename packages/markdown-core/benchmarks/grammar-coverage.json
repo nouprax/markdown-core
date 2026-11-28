@@ -81,7 +81,7 @@
         {
             "feature": "attributes",
             "specification": "docs/specs/dialect/attributes.md",
-            "sha256": "b3fd7e465926de70cb3975d8c8109b21635b119a2b8d7db40f13768a80670ea5",
+            "sha256": "c5f0717fd08e3c29a888425b29654a78246c4664298a65ebb1e9e69fd63aa2ae",
             "sections": [
                 {
                     "title": "Attributes",
@@ -107,7 +107,7 @@
                     "title": "Values and spacing",
                     "line": 51,
                     "level": 2,
-                    "sha256": "38557e5017b67b2cc34abd34eb832736a1758ec2d8838ca1ce84ab10a75845dc",
+                    "sha256": "22d10c9bf398f799f538d55388eead92c2bfdca52d2eaccf697cc3994f7f5a5c",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": [
@@ -122,7 +122,7 @@
                 },
                 {
                     "title": "Attachment sites",
-                    "line": 77,
+                    "line": 79,
                     "level": 2,
                     "sha256": "ab71b05f8f8ff06a1d74268592cc2e89ca45d9d1c169c23cf0a2d20c806527fd",
                     "disposition": {
@@ -142,7 +142,7 @@
                 },
                 {
                     "title": "Inline code",
-                    "line": 97,
+                    "line": 99,
                     "level": 3,
                     "sha256": "f05d16b8f45e5f9e39d3afa428aa54421994e55193138e2d75b59aecca2bc910",
                     "disposition": {
@@ -152,7 +152,7 @@
                 },
                 {
                     "title": "Headings",
-                    "line": 106,
+                    "line": 108,
                     "level": 3,
                     "sha256": "c7a0f6101803682370dd3493414734c6c81fb73f59c0df2a9275745fb5fc3cc6",
                     "disposition": {
@@ -162,7 +162,7 @@
                 },
                 {
                     "title": "Callouts",
-                    "line": 120,
+                    "line": 122,
                     "level": 3,
                     "sha256": "e1ed898c7f4403a9df303a71e786493bce1e39ce81d006faedd9df735ca6835b",
                     "disposition": {
@@ -172,7 +172,7 @@
                 },
                 {
                     "title": "Fenced code",
-                    "line": 133,
+                    "line": 135,
                     "level": 3,
                     "sha256": "98bfe640027c99bc53ee70c798cdab4ac835e50db9b62c1e154d335e758947c0",
                     "disposition": {
@@ -182,7 +182,7 @@
                 },
                 {
                     "title": "Links, images, and reference definitions",
-                    "line": 146,
+                    "line": 148,
                     "level": 3,
                     "sha256": "7fc303d979a7b18f44465aefb64540aae9c9ffc308f071fa57547ca6b86bd2cb",
                     "disposition": {
@@ -197,7 +197,7 @@
                 },
                 {
                     "title": "Invalid containers",
-                    "line": 169,
+                    "line": 171,
                     "level": 2,
                     "sha256": "2cdacae499d86370f96a4168c5746c97d1ce5affa7e68bc60dd8dbd7fb31fac4",
                     "disposition": {

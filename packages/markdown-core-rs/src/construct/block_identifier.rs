@@ -231,11 +231,22 @@ fn dormant(kind: Kind, point: Point) -> Event {
 /// Give the paragraph from `enter` to `exit` its identifier back, as data:
 /// a setext heading has no identifier.
 pub fn restore(tokenizer: &mut Tokenizer, enter: usize, exit: usize) {
-    let mut last = None;
+    let mut last: Option<usize> = None;
     let mut index = enter + 1;
     while index < exit {
         let name = tokenizer.events[index].name;
         if name == Name::BlockIdentifier {
+            tokenizer.map.add(index, 2, vec![]);
+            index += 2;
+            continue;
+        }
+        // A tail right after the data it was cut from joins it again.
+        let touches = name == Name::BlockIdentifierTail
+            && tokenizer.events[index].kind == Kind::Enter
+            && matches!(last, Some(previous) if tokenizer.events[previous + 1].point.index
+                == tokenizer.events[index].point.index);
+        if let (true, Some(previous)) = (touches, last) {
+            tokenizer.events[previous + 1].point = tokenizer.events[index + 1].point.clone();
             tokenizer.map.add(index, 2, vec![]);
             index += 2;
             continue;
