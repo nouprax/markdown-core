@@ -5,8 +5,10 @@
 // glue for a recursive type and derived traits are calls in the IR like any
 // other. A cycle whose depth grows with the input overflows the call stack,
 // which Rust cannot catch, so every cycle must be one the list names:
-// `bounded` ones with the reason their depth is, `pending` ones until the
-// explicit-stack work removes them.
+// `bounded` ones with the reason their depth is, and `grown` ones, whose
+// depth the input sets, which must run each level in
+// `markdown_core::util::stack::room` (room on the stack, from `stacker`):
+// one of the cycle's functions is that function.
 //
 // An entry names its cycle by `functions`, each a path a member equals or,
 // ending in `::`, begins with.
@@ -128,8 +130,10 @@ for (const start of graph.keys()) {
         at += size;
     }
 }
+const ROOM = "markdown_core::util::stack::room";
 const used = new Set();
 const unknown = [];
+const roomless = [];
 for (const members of cycles) {
     const entry = policy.cycles.find((candidate) =>
         candidate.functions.some((name) =>
@@ -138,18 +142,18 @@ for (const members of cycles) {
     );
     if (entry) {
         used.add(entry.id);
+        if (entry.status === "grown" && !members.some((member) => member.startsWith(ROOM))) {
+            roomless.push(entry.id);
+        }
     } else {
         unknown.push(members);
     }
 }
 const stale = policy.cycles.filter((entry) => !used.has(entry.id));
-const pending = policy.cycles.filter((entry) => entry.status === "pending" && used.has(entry.id));
+const grown = policy.cycles.filter((entry) => entry.status === "grown" && used.has(entry.id));
 
-process.stdout.write(`rust recursion: ${cycles.length} call cycles, ${pending.length} pending removal\n`);
-for (const entry of pending) {
-    process.stdout.write(`  pending: ${entry.id}\n`);
-}
-if (unknown.length || stale.length) {
+process.stdout.write(`rust recursion: ${cycles.length} call cycles, ${grown.length} grown in room on the stack\n`);
+if (unknown.length || stale.length || roomless.length) {
     for (const members of unknown) {
         process.stdout.write(`\nnew call cycle (${members.length} functions):\n`);
         for (const name of members) {
@@ -159,9 +163,13 @@ if (unknown.length || stale.length) {
     for (const entry of stale) {
         process.stdout.write(`\nstale entry ${entry.id}: no cycle holds any of its functions\n`);
     }
+    for (const id of roomless) {
+        process.stdout.write(`\ngrown cycle ${id} runs no level in ${ROOM}\n`);
+    }
     process.stdout.write(
-        "\nRecursion whose depth grows with the input overflows the call stack. Use the explicit stack,\n" +
-            "or add the cycle to scripts/tools/rust-recursion.json as bounded, saying why its depth is.\n"
+        "\nRecursion whose depth grows with the input overflows the call stack. Run each level in\n" +
+            `${ROOM} and add the cycle to scripts/tools/rust-recursion.json as grown, or add it as\n` +
+            "bounded, saying why its depth is.\n"
     );
     process.exit(1);
 }

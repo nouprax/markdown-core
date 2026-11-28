@@ -9,6 +9,7 @@ pub mod normalize_identifier;
 pub mod properties;
 pub mod skip;
 pub mod slice;
+pub mod stack;
 #[rustfmt::skip]
 pub mod tables;
 pub mod classes;

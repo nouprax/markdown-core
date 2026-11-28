@@ -239,9 +239,10 @@ use alloc::vec;
 pub const STARTS: Starts = Starts::Any;
 
 /// Whether a table goes on at this line: a row follows its head or rows,
-/// and no new container pierces it.
+/// no new container pierces it, and it is no lazy line.
 pub fn open(tokenizer: &Tokenizer) -> bool {
     !tokenizer.pierce
+        && !tokenizer.lazy
         && !tokenizer.events.is_empty()
         && matches!(
             tokenizer.events[skip_opt_back(

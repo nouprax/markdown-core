@@ -4,6 +4,7 @@ use crate::ast::{
     Attributes, Delimiter, Destination, Dimensions, Fields, Flavor, Flow, Item, Kind, Mode, Node,
     Note, Placement, Referent, Scalar, Span, Status, Value,
 };
+use crate::util::stack::room;
 use alloc::{format, string::String, vec::Vec};
 use core::fmt::Write;
 
@@ -114,7 +115,12 @@ impl Out {
         self.prefix.truncate(saved);
     }
 
+    /// Print `node`, with room on the stack for its children.
     fn node(&mut self, node: &Node, connector: Option<bool>) {
+        room(|| self.node_lines(node, connector));
+    }
+
+    fn node_lines(&mut self, node: &Node, connector: Option<bool>) {
         let mut line = String::new();
         line.push_str(name(&node.kind));
         line.push_str(" scope=");
@@ -125,7 +131,7 @@ impl Out {
         line.push_str(" attributes=");
         attributes(&mut line, &node.attributes);
         let (count, entries) = fields(&mut line, &node.kind);
-        let _ = write!(line, " children={}", count);
+        let _ = write!(line, " children={count}");
         self.line(connector, &line);
         self.entries(connector, &entries);
     }
@@ -223,7 +229,7 @@ fn fields<'a>(line: &mut String, kind: &'a Kind) -> (usize, Vec<Row<'a>>) {
         | Kind::Superscript { content }
         | Kind::Subscript { content } => (content.len(), nodes(content)),
         Kind::Heading { level, content } => {
-            let _ = write!(line, " level={}", level);
+            let _ = write!(line, " level={level}");
             (content.len(), nodes(content))
         }
         Kind::ThematicBreak | Kind::SoftBreak | Kind::LineBreak => (0, Vec::new()),
@@ -241,7 +247,7 @@ fn fields<'a>(line: &mut String, kind: &'a Kind) -> (usize, Vec<Row<'a>>) {
             line.push_str(" start=");
             match start {
                 Some(start) => {
-                    let _ = write!(line, "{}", start);
+                    let _ = write!(line, "{start}");
                 }
                 None => line.push_str("null"),
             }
@@ -250,7 +256,7 @@ fn fields<'a>(line: &mut String, kind: &'a Kind) -> (usize, Vec<Row<'a>>) {
                 Some(Delimiter::Period) => " delimiter=period",
                 Some(Delimiter::Parenthesis) => " delimiter=parenthesis",
             });
-            let _ = write!(line, " tight={}", tight);
+            let _ = write!(line, " tight={tight}");
             (items.len(), nodes(items))
         }
         Kind::ListItem { status, content } => {
@@ -276,7 +282,7 @@ fn fields<'a>(line: &mut String, kind: &'a Kind) -> (usize, Vec<Row<'a>>) {
             opt_text(line, language.as_deref());
             line.push_str(" literal=");
             string(line, literal);
-            let _ = write!(line, " fenced={} closed={}", fenced, closed);
+            let _ = write!(line, " fenced={fenced} closed={closed}");
             (0, Vec::new())
         }
         Kind::HtmlBlock { literal }
@@ -405,7 +411,7 @@ fn fields<'a>(line: &mut String, kind: &'a Kind) -> (usize, Vec<Row<'a>>) {
             bodies,
             compact,
         } => {
-            let _ = write!(line, " compact={}", compact);
+            let _ = write!(line, " compact={compact}");
             let mut entries = alloc::vec![Row::Group("DefinitionTerm", term)];
             entries.extend(bodies.iter().map(|body| Row::Group("DefinitionBody", body)));
             (bodies.len(), entries)
@@ -488,7 +494,7 @@ fn metadata(line: &mut String, fields: &Fields) {
         ("comment", comment),
     ];
     for (field, value) in all {
-        let _ = write!(line, " {}=", field);
+        let _ = write!(line, " {field}=");
         match value {
             None => line.push_str("null"),
             Some(Value::Scalar(scalar)) => {
@@ -496,7 +502,7 @@ fn metadata(line: &mut String, fields: &Fields) {
                 match scalar {
                     Scalar::Null => line.push_str("null"),
                     Scalar::Bool(value) => {
-                        let _ = write!(line, "bool({})", value);
+                        let _ = write!(line, "bool({value})");
                     }
                     Scalar::Number(value) => {
                         line.push_str("number(");
@@ -561,10 +567,10 @@ fn option_dimensions(line: &mut String, dimensions: Option<Dimensions>) {
     match dimensions {
         None => line.push_str("null"),
         Some(Dimensions { width, height }) => {
-            let _ = write!(line, "(width={},height=", width);
+            let _ = write!(line, "(width={width},height=");
             match height {
                 Some(height) => {
-                    let _ = write!(line, "{}", height);
+                    let _ = write!(line, "{height}");
                 }
                 None => line.push_str("null"),
             }
@@ -577,7 +583,7 @@ fn option_bool(line: &mut String, value: Option<bool>) {
     match value {
         None => line.push_str("null"),
         Some(value) => {
-            let _ = write!(line, "{}", value);
+            let _ = write!(line, "{value}");
         }
     }
 }

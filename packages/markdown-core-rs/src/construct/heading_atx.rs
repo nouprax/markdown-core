@@ -286,9 +286,10 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
                 items.clear();
             } else {
                 // A sequence that ends the heading closes it.
-                if items.last().map_or(false, |item| {
-                    tokenizer.events[item.0].name == Name::HeadingAtxSequence
-                }) {
+                if items
+                    .last()
+                    .is_some_and(|item| tokenizer.events[item.0].name == Name::HeadingAtxSequence)
+                {
                     items.pop();
                 }
                 if let (Some(first), Some(last)) = (items.first(), items.last()) {

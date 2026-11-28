@@ -114,7 +114,7 @@ fn white(byte: Option<u8>) -> bool {
 /// ```
 fn start(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
-        Some(b'$') if dollars(tokenizer) % 2 == 0 => {
+        Some(b'$') if dollars(tokenizer).is_multiple_of(2) => {
             tokenizer.enter(Name::Formula);
             tokenizer.enter(Name::FormulaSequence);
             tokenizer.consume();
@@ -591,7 +591,7 @@ fn fence_before(tokenizer: &mut Tokenizer, form: Option<Form>) -> State {
         Some(b'\\') => Form::Square,
         _ => return State::Nok,
     };
-    if form.map_or(false, |form| form != found) {
+    if form.is_some_and(|form| form != found) {
         return State::Nok;
     }
     tokenizer.enter(Name::FormulaSequence);

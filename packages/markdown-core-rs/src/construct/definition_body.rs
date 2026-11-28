@@ -66,12 +66,13 @@ fn start(tokenizer: &mut Tokenizer) -> State {
         && document
             .child
             .as_ref()
-            .map_or(false, |child| child.term == Some(tokenizer.point.line));
+            .is_some_and(|child| child.term == Some(tokenizer.point.line));
     // After a body at this depth, which did not go on.
     let peer = document.stack.len() > continued + 1
-        && document.stack.last().map_or(false, |container| {
-            container.kind == Container::DefinitionBody
-        });
+        && document
+            .stack
+            .last()
+            .is_some_and(|container| container.kind == Container::DefinitionBody);
     if !term && !peer {
         return State::Nok;
     }

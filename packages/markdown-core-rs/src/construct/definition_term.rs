@@ -90,7 +90,7 @@ fn line_end(bytes: &[u8], index: usize) -> usize {
 pub fn near(bytes: &[u8], index: usize) -> bool {
     let next = line_end(bytes, index) + 1;
     next < bytes.len()
-        && (marks(bytes, next) || blank_at(bytes, next).map_or(false, |after| marks(bytes, after)))
+        && (marks(bytes, next) || blank_at(bytes, next).is_some_and(|after| marks(bytes, after)))
 }
 
 /// Whether the line from the cursor to `eol` holds a reference definition,

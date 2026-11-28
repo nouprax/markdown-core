@@ -6,6 +6,7 @@
 //! A node's source is its [`Node::runs`]: byte ranges of the document source,
 //! in source order.
 
+use crate::util::stack::room;
 use alloc::{boxed::Box, string::String, vec, vec::Vec};
 
 /// A byte span of the document source.
@@ -30,6 +31,15 @@ pub struct Node {
     pub anchor: Option<String>,
     pub attributes: Attributes,
     pub kind: Kind,
+}
+
+/// A tree drops a level at a time, with room on the stack for the levels
+/// under it: what a node holds is in its kind.
+impl Drop for Node {
+    fn drop(&mut self) {
+        let kind = core::mem::replace(&mut self.kind, Kind::ThematicBreak);
+        room(move || drop(kind));
+    }
 }
 
 impl Node {

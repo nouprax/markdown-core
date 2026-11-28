@@ -19,6 +19,7 @@
 //! a name deeper than its collection opens a nested one, and a token
 //! shallower closes it; a value left out reads as an empty plain scalar.
 
+use crate::util::stack::room;
 use alloc::{vec, vec::Vec};
 
 /// The deepest nesting of collections, block and flow together.
@@ -181,7 +182,7 @@ fn punctuation(c: Option<u8>) -> bool {
 }
 /// A character that starts a token other than plain text.
 fn indicator(c: Option<u8>) -> bool {
-    c.map_or(false, |c| b"-?:,[]{}#&*!|>'\"%@`".contains(&c))
+    c.is_some_and(|c| b"-?:,[]{}#&*!|>'\"%@`".contains(&c))
 }
 fn hex(c: Option<u8>) -> Option<u32> {
     match c? {
@@ -604,7 +605,7 @@ impl Reader<'_> {
                 continue;
             }
             if depth == 0 {
-                if indent.map_or(false, |indent| spaces <= indent) || spaces == 0 {
+                if indent.is_some_and(|indent| spaces <= indent) || spaces == 0 {
                     break;
                 }
                 depth = spaces;
@@ -675,6 +676,11 @@ impl Reader<'_> {
     /// pair; in a mapping a node no `:` follows is a name whose value is
     /// left out.
     fn flow(&mut self) -> bool {
+        room(|| self.flow_node())
+    }
+
+    /// A flow node, as [`Self::flow`][], on the stack [`room`][] made.
+    fn flow_node(&mut self) -> bool {
         let map = is(self.peek(0), b'{');
         let close = if map {
             Token::MapClose
@@ -887,12 +893,17 @@ impl Reader<'_> {
     /// A block node at `at`, a token a pass reached, inside a block
     /// collection at column `indent` (`None` for a document’s root).
     fn block(&mut self, indent: Option<usize>, indentless: bool, index: &mut usize) -> Found {
+        room(|| self.block_node(indent, indentless, index))
+    }
+
+    /// A block node, as [`Self::block`][], on the stack [`room`][] made.
+    fn block_node(&mut self, indent: Option<usize>, indentless: bool, index: &mut usize) -> Found {
         let token = self.look();
         let at = self.column();
         *index = self.events.len();
         match token {
             Token::Item => {
-                if indent.map_or(true, |indent| at > indent) {
+                if indent.is_none_or(|indent| at > indent) {
                     self.items(at, false, index)
                 } else if indentless {
                     self.items(at, true, index)

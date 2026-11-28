@@ -79,6 +79,36 @@ const bytes = /b"((?:\\.|[^"\\])*)"/g;
 const keyword =
     /(?:Some\("([A-Za-z][A-Za-z]+)"\)|==\s*b?"([A-Za-z][A-Za-z]+)"|b?"([A-Za-z][A-Za-z]+)"\s*(?:=>|==|\|))/g;
 
+/// Read the byte tests of one line of source, without its comment: call
+/// `put(name, test)` for each, and return whether the line reads a byte in
+/// a way these forms do not model.
+function scan(line, put) {
+    line = line.replace(range, (_, lo, inclusive, hi) => {
+        const low = value(lo);
+        const high = value(hi) - (inclusive ? 0 : 1);
+        put(`[${low}-${high}]`, (b) => b >= low && b <= high);
+        return " ";
+    });
+    // `byte < 0x80` is whether a byte is ASCII.
+    line = line.replace(/<\s*0x80\b/g, () => {
+        put("[0-127]", (b) => b < 128);
+        return " ";
+    });
+    line = line.replace(bytes, (_, body) => {
+        for (const b of unescape(body)) put(`=${b}`, (x) => x === b);
+        return " ";
+    });
+    const unmodeled = /(?<![=-])[<>]=?\s*(?:b'|0x[0-9A-Fa-f])|(?:b'(?:\\.|[^'\\])'|0x[0-9A-Fa-f]+)\s*[<>]/.test(line);
+    for (const token of line.match(single) ?? []) {
+        const b = value(token);
+        if (b !== undefined) put(`=${b}`, (x) => x === b);
+    }
+    for (const [name, test] of Object.entries(named)) {
+        if (new RegExp(String.raw`\b${name}\b`).test(line)) put(name, test);
+    }
+    return unmodeled;
+}
+
 for (const path of files(root)) {
     const file = relative(root, path);
     if (skip.has(file)) continue;
@@ -96,34 +126,29 @@ for (const path of files(root)) {
             keywords.get(word).push(site);
             return " ";
         });
-        line = line.replace(range, (_, lo, inclusive, hi) => {
-            const low = value(lo);
-            const high = value(hi) - (inclusive ? 0 : 1);
-            add(`[${low}-${high}]`, (b) => b >= low && b <= high, site);
-            return " ";
-        });
-        // `byte < 0x80` is whether a byte is ASCII.
-        line = line.replace(/<\s*0x80\b/g, () => {
-            add("[0-127]", (b) => b < 128, site);
-            return " ";
-        });
-        line = line.replace(bytes, (_, body) => {
-            for (const b of unescape(body)) add(`=${b}`, (x) => x === b, site);
-            return " ";
-        });
-        // A byte read any other way than by the forms above would escape the
-        // partition: refuse it, so the partition stays complete.
-        if (/(?<![=-])[<>]=?\s*(?:b'|0x[0-9A-Fa-f])|(?:b'(?:\\.|[^'\\])'|0x[0-9A-Fa-f]+)\s*[<>]/.test(line)) {
-            unread.push(site);
-        }
-        for (const token of line.match(single) ?? []) {
-            const b = value(token);
-            if (b !== undefined) add(`=${b}`, (x) => x === b, site);
-        }
-        for (const [name, test] of Object.entries(named)) {
-            if (new RegExp(String.raw`\b${name}\b`).test(line)) add(name, test, site);
-        }
+        // A byte read any other way than by the forms scan reads would
+        // escape the partition: refuse it, so the partition stays complete.
+        if (scan(line, (name, test) => add(name, test, site))) unread.push(site);
     });
+}
+
+/// The classes of bytes that the source `text` (a step's function) tells
+/// apart: for a byte, or 256 for the end, the key of its class, which is
+/// the set of the byte tests of `text` it passes.
+export function local(text) {
+    const found = new Map();
+    for (const raw of text.split("\n")) {
+        const line = raw.replace(/\/\/.*$/, "").replace(keyword, " ");
+        if (line.trim()) scan(line, (name, test) => found.set(name, test));
+    }
+    const tests = [...found.entries()];
+    return (byte) =>
+        byte === 256
+            ? "end"
+            : tests
+                  .filter(([, test]) => test(byte))
+                  .map(([name]) => name)
+                  .join(" ") || "other";
 }
 
 // ASCII classes: bytes that every predicate of the region answers alike.

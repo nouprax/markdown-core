@@ -80,9 +80,8 @@ fn tail(
     let last = (enter + 1..exit)
         .rev()
         .find(|index| events[*index].kind == Kind::Enter && events[*index].link.is_some());
-    let last = match last {
-        Some(last) => last,
-        None => return,
+    let Some(last) = last else {
+        return;
     };
     let first = enter + 1;
     let saved = events[last + 1].point.clone();

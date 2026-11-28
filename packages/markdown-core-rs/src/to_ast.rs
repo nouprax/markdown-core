@@ -10,6 +10,7 @@ use crate::ast::{
     Referent, Span, Status,
 };
 use crate::event::{Block, Event, Inline, Kind as EventKind, Name, Role, Space};
+use crate::util::stack::room;
 use crate::util::{
     character_reference::{decode as decode_character_reference, decode_at},
     classes::normalize_label,
@@ -412,7 +413,12 @@ impl<'a> Compiler<'a> {
         self.block_range(index + 1, self.exits[index])
     }
 
+    /// The block at `index`, with room on the stack for the blocks it holds.
     fn block(&mut self, index: usize) -> Option<Node> {
+        room(|| self.block_node(index))
+    }
+
+    fn block_node(&mut self, index: usize) -> Option<Node> {
         let block = match self.name(index).role() {
             Role::Block(block) => block,
             Role::Inline(_) | Role::Space(_) | Role::Part => return None,
@@ -589,11 +595,14 @@ impl<'a> Compiler<'a> {
         let (start, end) = (self.start(identifier), self.end(identifier));
         let runs = self.runs(start, end);
         // The line the item starts on names the item: it is an empty
-        // paragraph.
+        // paragraph, over the line.
         if self.item_paragraph == Some(index) {
             self.item_paragraph = None;
             self.item_anchor = Some(text[1..text.len() - 1].to_string());
-            return Some(Node::new(Kind::Paragraph { content: vec![] }, runs));
+            return Some(Node::new(
+                Kind::Paragraph { content: vec![] },
+                self.runs(start, self.end(index)),
+            ));
         }
         if let Some(owner) = owner {
             let trailed = matches!(
@@ -615,16 +624,18 @@ impl<'a> Compiler<'a> {
                 return None;
             }
         }
+        // A paragraph of the identifier's text; as a paragraph's line does,
+        // the paragraph goes on over the spaces and tabs after it.
         Some(Node::new(
             Kind::Paragraph {
                 content: vec![Node::new(
                     Kind::Text {
                         literal: text.to_string(),
                     },
-                    runs.clone(),
+                    runs,
                 )],
             },
-            runs,
+            self.runs(start, self.end(index)),
         ))
     }
 
@@ -723,7 +734,7 @@ impl<'a> Compiler<'a> {
             }
         }
         // An empty last line is a line when the token holds it.
-        if open || start.map_or(false, |start| self.holds_line(index, start)) {
+        if open || start.is_some_and(|start| self.holds_line(index, start)) {
             literal.push_str(&line);
             literal.push('\n');
         }
@@ -1005,9 +1016,7 @@ impl<'a> Compiler<'a> {
                 Name::Paragraph | Name::BlockIdentifierLine
             ) && self
                 .child(first, Name::BlockIdentifier)
-                .map_or(false, |identifier| {
-                    self.events[identifier].point.line == line
-                });
+                .is_some_and(|identifier| self.events[identifier].point.line == line);
             if named {
                 self.item_paragraph = Some(first);
             }
@@ -1431,7 +1440,13 @@ impl<'a> Compiler<'a> {
         }
     }
 
+    /// The inline at `index`, with room on the stack for the inlines it
+    /// holds.
     fn inline(&mut self, index: usize) -> Option<Node> {
+        room(|| self.inline_node(index))
+    }
+
+    fn inline_node(&mut self, index: usize) -> Option<Node> {
         let name = self.name(index);
         let runs = self.runs(self.start(index), self.end(index));
         let inline = match name.role() {
@@ -1523,8 +1538,8 @@ impl<'a> Compiler<'a> {
                     self.unpiped(self.text(index))
                 };
                 let dest = match name {
-                    Name::AutolinkLiteralWww => format!("http://{}", literal),
-                    Name::AutolinkLiteralEmail => format!("mailto:{}", literal),
+                    Name::AutolinkLiteralWww => format!("http://{literal}"),
+                    Name::AutolinkLiteralEmail => format!("mailto:{literal}"),
                     _ => literal.clone(),
                 };
                 Kind::Link {
@@ -1860,8 +1875,8 @@ impl<'a> Compiler<'a> {
             } else if name == Name::LineEnding {
                 literal.push(' ');
             }
-            start = name == Name::LineEnding
-                || (start && matches!(name, Name::BlockQuotePrefix | Name::ContainerIndent));
+            start =
+                name == Name::LineEnding || (start && (prefix(name) || name == Name::SpaceOrTab));
         }
         let bytes = literal.as_bytes();
         if bytes.len() > 2
@@ -2093,7 +2108,7 @@ fn unescape(text: &str, references: bool) -> String {
     let mut from = 0;
     let mut index = 0;
     while index < bytes.len() {
-        if bytes[index] == b'\\' && bytes.get(index + 1).map_or(false, u8::is_ascii_punctuation) {
+        if bytes[index] == b'\\' && bytes.get(index + 1).is_some_and(u8::is_ascii_punctuation) {
             result.push_str(&text[from..index]);
             from = index + 1;
             index += 2;

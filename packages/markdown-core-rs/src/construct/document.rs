@@ -467,9 +467,10 @@ fn flow_end(tokenizer: &mut Tokenizer) -> State {
     // continues nothing. The end after a last line ending is no line.
     let blank = tokenizer.current.is_none()
         && tokenizer.point.column > 1
-        && tokenizer.document.data.map_or(true, |data| {
-            tokenizer.events[data].point.line < tokenizer.point.line
-        });
+        && tokenizer
+            .document
+            .data
+            .is_none_or(|data| tokenizer.events[data].point.line < tokenizer.point.line);
     if blank {
         stack_index = 0;
     }

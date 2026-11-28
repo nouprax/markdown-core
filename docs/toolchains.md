@@ -22,7 +22,7 @@ that source of truth. The versions below were reviewed on 2026-11-22.
 | Maven | 3.9.16 | Maven 3 GA line; Maven 4 remains prerelease |
 | clang-format / cmake-format | 23.1.3 / 0.6.13 | Repository-managed, hash-locked formatting tools |
 | SwiftLint | 0.65.1 | Release assets are selected per host and verified by SHA-256 |
-| Rust (rustc, rustfmt, clippy) | 1.97.0 | `packages/markdown-core-rs/rust-toolchain.toml` pins the toolchain that builds, formats and lints the Rust core; the crate itself supports Rust 1.56 (`rust-version`) |
+| Rust (rustc, rustfmt, clippy) | 1.97.0 | `packages/markdown-core-rs/rust-toolchain.toml` pins the toolchain that builds, formats and lints the Rust core; the crate itself supports Rust 1.88 (`rust-version`), which its `stacker` dependency (through `psm`) needs |
 
 Android API 37 is still a preview SDK, so the production contract remains API
 36. Preview SDKs and release candidates are not adopted merely because they

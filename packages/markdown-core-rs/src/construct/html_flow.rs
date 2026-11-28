@@ -532,7 +532,9 @@ fn complete_attribute_value_quoted(tokenizer: &mut Tokenizer, quote: u8) -> Stat
 /// ```
 fn complete_attribute_value_unquoted(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
-        None | Some(b'\t' | b'\n' | b' ' | b'"' | b'\'' | b'/' | b'<' | b'=' | b'>' | b'`') => {
+        // Every byte but these may be in an unquoted value, `/` too
+        // (CommonMark 6.6).
+        None | Some(b'\t' | b'\n' | b' ' | b'"' | b'\'' | b'<' | b'=' | b'>' | b'`') => {
             State::Redo(StateName::HtmlFlow(Step::CompleteAttributeNameAfter))
         }
         Some(_) => {

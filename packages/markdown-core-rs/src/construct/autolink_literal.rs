@@ -418,7 +418,7 @@ fn reach(tokenizer: &mut Tokenizer, start: usize, end: usize) -> State {
         Some(b'\\')
             if bytes
                 .get(tokenizer.point.index + 1)
-                .map_or(false, |next| next.is_ascii_punctuation() && *next != b'<') =>
+                .is_some_and(|next| next.is_ascii_punctuation() && *next != b'<') =>
         {
             tokenizer.consume();
             State::Next(StateName::AutolinkLiteral(Step::Escape { start, end }))
@@ -558,7 +558,7 @@ fn host(bytes: &[u8], index: usize) -> bool {
     match bytes.get(index) {
         None | Some(b'\t' | b'\n' | b'\r' | b' ') => false,
         Some(byte) if byte.is_ascii() => !byte.is_ascii_punctuation(),
-        Some(_) => after_index(bytes, index).map_or(false, |char| classes(char) & PUNCTUATION == 0),
+        Some(_) => after_index(bytes, index).is_some_and(|char| classes(char) & PUNCTUATION == 0),
     }
 }
 

@@ -1,5 +1,10 @@
-//! Coverage of the state machine: which steps ran after which. Each step
-//! decides its successor, so these pairs are the branches of the machine.
+//! Coverage of the state machine: which steps ran after which, and at which
+//! bytes. Each step decides its successor, so the pairs are the branches of
+//! the machine; the byte a step runs at is the value it decides on.
+//!
+//! With `scripts/correctness/cover.mjs`, which builds the crate with
+//! LLVM's coverage guards (`-sanitizer-coverage-trace-pc-guard`), also the
+//! edges of the code: every branch of every function, outside this module.
 //!
 //! Only with the `cover` feature, for the coverage tools in
 //! `scripts/correctness`.
@@ -12,9 +17,11 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::cell::RefCell;
 use core::fmt::{self, Write};
+use core::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 
 /// What coverage has seen: each step once, by name and in order, the step
-/// that ran last, and the steps after steps, as indices into `steps`.
+/// that ran last, the steps after steps, as indices into `steps`, and the
+/// steps at bytes (256 for the end).
 struct Seen {
     recent: Vec<(Name, usize)>,
     index: BTreeMap<String, usize>,
@@ -22,17 +29,19 @@ struct Seen {
     last: usize,
     told: usize,
     after: BTreeSet<(usize, usize)>,
+    at: BTreeSet<(usize, u16)>,
 }
 
 std::thread_local! {
-    static SEEN: RefCell<Seen> = RefCell::new(Seen {
+    static SEEN: RefCell<Seen> = const { RefCell::new(Seen {
         recent: Vec::new(),
         index: BTreeMap::new(),
         steps: Vec::new(),
         last: usize::MAX,
         told: 0,
         after: BTreeSet::new(),
-    });
+        at: BTreeSet::new(),
+    }) };
 }
 
 /// The start of a step's debug form: its name, up to the values it carries.
@@ -68,7 +77,7 @@ fn plain(name: &Name) -> Head {
         size: 0,
         open: 0,
     };
-    let _ = write!(head, "{:?}", name);
+    let _ = write!(head, "{name:?}");
     while head.open > 0 && head.size < head.bytes.len() {
         head.bytes[head.size] = b')';
         head.size += 1;
@@ -106,21 +115,29 @@ fn named(seen: &mut Seen, name: &Name) -> usize {
     seen.steps.len() - 1
 }
 
-/// Record that the step `name` runs, after the step that ran last.
-pub fn hit(name: &Name) {
+/// Record that the step `name` runs at `current`, after the step that ran
+/// last. Never inlined, so that its code is no code of the parser's.
+#[inline(never)]
+pub fn hit(name: &Name, current: Option<u8>) {
+    QUIET.store(true, Ordering::Relaxed);
     SEEN.with(|seen| {
         let seen = &mut *seen.borrow_mut();
         let index = index(seen, name);
         seen.after.insert((seen.last, index));
+        seen.at.insert((index, current.map_or(256, u16::from)));
         seen.last = index;
     });
+    QUIET.store(false, Ordering::Relaxed);
 }
 
 /// Write what was recorded since the last call, and clear it: a
 /// `last<TAB>step` line for each step after a step (`-` when it ran first),
+/// and a `@step<TAB>byte` line for each step at a byte (256 for the end),
 /// with steps by index, after a `=index<TAB>name` line for each step not
-/// written before.
+/// written before; then a `!number` line for each coverage guard that ran.
+#[inline(never)]
 pub fn take(out: &mut String) {
+    QUIET.store(true, Ordering::Relaxed);
     SEEN.with(|seen| {
         let seen = &mut *seen.borrow_mut();
         seen.last = usize::MAX;
@@ -130,10 +147,76 @@ pub fn take(out: &mut String) {
         }
         for (last, step) in core::mem::take(&mut seen.after) {
             if last == usize::MAX {
-                let _ = writeln!(out, "-\t{}", step);
+                let _ = writeln!(out, "-\t{step}");
             } else {
-                let _ = writeln!(out, "{}\t{}", last, step);
+                let _ = writeln!(out, "{last}\t{step}");
             }
         }
+        for (step, byte) in core::mem::take(&mut seen.at) {
+            let _ = writeln!(out, "@{step}\t{byte}");
+        }
+        let count = COUNT.load(Ordering::Relaxed).min(MOST);
+        for (slot, number) in RAN.iter().zip(NUMBERS.iter()).take(count) {
+            let number = number.load(Ordering::Relaxed);
+            // Armed again, for the next input.
+            unsafe { *(slot.load(Ordering::Relaxed) as *mut u32) = number };
+            let _ = writeln!(out, "!{number}");
+        }
+        COUNT.store(0, Ordering::Relaxed);
     });
+    QUIET.store(false, Ordering::Relaxed);
+}
+
+/// The most coverage guards an input can run.
+const MOST: usize = 1 << 16;
+/// The coverage guards numbered so far.
+static NUMBERED: AtomicU32 = AtomicU32::new(0);
+/// The guards that ran since the last `take`, as addresses, and their
+/// numbers; a guard that ran is disarmed (0) until then.
+#[allow(clippy::declare_interior_mutable_const)]
+const NONE: AtomicUsize = AtomicUsize::new(0);
+#[allow(clippy::declare_interior_mutable_const)]
+const ZERO: AtomicU32 = AtomicU32::new(0);
+static RAN: [AtomicUsize; MOST] = [NONE; MOST];
+static NUMBERS: [AtomicU32; MOST] = [ZERO; MOST];
+static COUNT: AtomicUsize = AtomicUsize::new(0);
+/// Whether the code running is this module's, whose guards are no guards of
+/// the parser's.
+static QUIET: AtomicBool = AtomicBool::new(false);
+
+/// Number the coverage guards of a module, from 1, after those of the
+/// modules before.
+///
+/// # Safety
+///
+/// LLVM calls it with the bounds of a module's guards.
+#[no_mangle]
+pub unsafe extern "C" fn __sanitizer_cov_trace_pc_guard_init(start: *mut u32, stop: *mut u32) {
+    if start == stop || *start != 0 {
+        return;
+    }
+    let mut slot = start;
+    while slot < stop {
+        *slot = NUMBERED.fetch_add(1, Ordering::Relaxed) + 1;
+        slot = slot.add(1);
+    }
+}
+
+/// Record that the code of the guard at `slot` ran, and disarm it.
+///
+/// # Safety
+///
+/// LLVM calls it with a slot that the function above numbered.
+#[no_mangle]
+pub unsafe extern "C" fn __sanitizer_cov_trace_pc_guard(slot: *mut u32) {
+    let number = *slot;
+    if number == 0 || QUIET.load(Ordering::Relaxed) {
+        return;
+    }
+    *slot = 0;
+    let at = COUNT.fetch_add(1, Ordering::Relaxed);
+    if at < MOST {
+        RAN[at].store(slot as usize, Ordering::Relaxed);
+        NUMBERS[at].store(number, Ordering::Relaxed);
+    }
 }

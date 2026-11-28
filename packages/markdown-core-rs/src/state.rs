@@ -82,7 +82,7 @@ pub enum Name {
 /// Call the corresponding state for a state name.
 pub fn call(tokenizer: &mut Tokenizer, name: Name) -> State {
     #[cfg(feature = "cover")]
-    crate::cover::hit(&name);
+    crate::cover::hit(&name, tokenizer.current);
     match name {
         Name::Ahead(step) => crate::ahead::step(tokenizer, step),
         Name::Attention(step) => construct::attention::step(tokenizer, step),

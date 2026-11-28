@@ -13,6 +13,7 @@ use crate::parser::ParseState;
 use crate::resolve::{call as call_resolve, Name as ResolveName};
 use crate::state::{call, Name as StateName, State};
 use crate::subtokenize::Subresult;
+use crate::util::stack::room;
 
 use crate::util::{constant::TAB_SIZE, edit_map::EditMap};
 use alloc::{boxed::Box, string::String, vec, vec::Vec};
@@ -736,8 +737,20 @@ fn enter_impl(tokenizer: &mut Tokenizer, name: Name, link: Option<Link>) {
     });
 }
 
-/// Run the tokenizer.
+/// Run the tokenizer, with room on the stack: content tokenized inside
+/// content, and containers in containers, run it again, once a level.
 fn push_impl(
+    tokenizer: &mut Tokenizer,
+    from: (usize, usize),
+    to: (usize, usize),
+    state: State,
+    flush: bool,
+) -> State {
+    room(|| push_steps(tokenizer, from, to, state, flush))
+}
+
+/// Run the tokenizer.
+fn push_steps(
     tokenizer: &mut Tokenizer,
     from: (usize, usize),
     to: (usize, usize),

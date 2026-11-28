@@ -9,10 +9,16 @@ keywords = ["commonmark", "markdown", "parse", "render", "tokenize"]
 license = "MIT"
 name = "markdown-core"
 repository = "https://github.com/nouprax/markdown-core"
-rust-version = "1.56"
+rust-version = "1.88"
 version = "1.0.0"
 
+[dependencies]
+stacker = { version = "0.1.25", optional = true }
+
 [features]
+default = ["std"]
+# Room on the call stack for any nesting depth (src/util/stack.rs).
+std = ["dep:stacker"]
 # Record which state machine steps run on which scalars, for the coverage
 # tools in scripts/correctness.
 cover = []

@@ -403,11 +403,14 @@ fn title_after_optional_whitespace(tokenizer: &mut Tokenizer) -> State {
     }
 }
 
-/// After destination or title, at whitespace before attributes.
+/// After destination or title, before attributes, which may follow spaces
+/// and tabs and at most one line ending.
 ///
 /// ```markdown
 /// > | [a]: b {.c}
 ///           ^
+/// > | [a]: <b>{.c}
+///             ^
 /// ```
 fn attributes_before(tokenizer: &mut Tokenizer) -> State {
     if matches!(tokenizer.current, Some(b'\t' | b'\n' | b' ')) {
@@ -417,7 +420,7 @@ fn attributes_before(tokenizer: &mut Tokenizer) -> State {
         );
         State::Redo(space_or_tab_eol())
     } else {
-        State::Nok
+        State::Redo(StateName::Definition(Step::AttributesOpen))
     }
 }
 

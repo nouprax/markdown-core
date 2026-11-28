@@ -578,9 +578,8 @@ fn tag_open_attribute_value_quoted(tokenizer: &mut Tokenizer, marker: u8) -> Sta
 fn tag_open_attribute_value_unquoted(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         None | Some(b'"' | b'\'' | b'<' | b'=' | b'`') => State::Nok,
-        Some(b'\t' | b'\n' | b' ' | b'/' | b'>') => {
-            State::Redo(StateName::HtmlText(Step::TagOpenBetween))
-        }
+        // `/` may be in an unquoted value (CommonMark 6.6).
+        Some(b'\t' | b'\n' | b' ' | b'>') => State::Redo(StateName::HtmlText(Step::TagOpenBetween)),
         Some(_) => {
             tokenizer.consume();
             State::Next(StateName::HtmlText(Step::TagOpenAttributeValueUnquoted))

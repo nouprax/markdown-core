@@ -133,9 +133,8 @@ pub fn tail(tokenizer: &mut Tokenizer) {
         let to = tokenizer.events[*enter + 1].point.index;
         text.extend_from_slice(&bytes[from..to]);
     }
-    let found = match scan(&text) {
-        Some(found) => found,
-        None => return,
+    let Some(found) = scan(&text) else {
+        return;
     };
     // The source place of an offset in the text.
     let place = |offset: usize| -> usize {

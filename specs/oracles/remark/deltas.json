@@ -836,6 +836,12 @@
             "note": "packages/markdown-core/tests/fixtures/dialect-attributes.txt:753: the dialect attaches normalized attributes at code, heading and link sites and inherits reference-definition values; remark has no such attachment sites. Fenced-code info remains the authored text outside the container. Its competing base/extension parse is preserved as exact evidence."
         },
         {
+            "id": "p2-attribute-sites-83",
+            "input": "[l]: <u>{.a}\n\n[m]: /u \"t\"{.b}\n",
+            "authority": "docs/specs/dialect/attributes.md; P2a–P2d",
+            "note": "packages/markdown-core/tests/fixtures/dialect-attributes.txt:816: the dialect attaches normalized attributes at code, heading and link sites and inherits reference-definition values; remark has no such attachment sites. Fenced-code info remains the authored text outside the container. Its competing base/extension parse is preserved as exact evidence."
+        },
+        {
             "id": "span-after-failed-directive",
             "input": ":n{.a=b}::note[Label]{.c}\n",
             "authority": "docs/specs/dialect/bracketed-spans.md (P5)",

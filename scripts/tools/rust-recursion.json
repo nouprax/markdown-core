@@ -1,39 +1,39 @@
 {
-    "note": "Every call cycle of the Rust core, which scripts/tools/check-rust-recursion.mjs checks. A bounded cycle says why its depth is bounded. A pending one grows with the input: it moves onto the explicit stack, and its entry goes with it.",
+    "note": "Every call cycle of the Rust core, which scripts/tools/check-rust-recursion.mjs checks. A bounded cycle says why its depth is bounded. A grown one, whose depth the input sets, runs each level in markdown_core::util::stack::room, which gives it room on the stack.",
     "cycles": [
         {
             "id": "tokenizer",
-            "status": "pending",
+            "status": "grown",
             "why": "Container nesting and content re-tokenized inside content: push, the construct steps, flush, the resolvers, subtokenize and ahead call each other once per level.",
             "functions": ["markdown_core::subtokenize::subtokenize", "markdown_core::tokenizer::push_impl"]
         },
         {
             "id": "ast-blocks",
-            "status": "pending",
+            "status": "grown",
             "why": "Building a block calls building the blocks it holds.",
             "functions": ["<markdown_core::to_ast::Compiler>::block"]
         },
         {
             "id": "ast-inlines",
-            "status": "pending",
+            "status": "grown",
             "why": "Building an inline calls building the inlines it holds.",
             "functions": ["<markdown_core::to_ast::Compiler>::inline"]
         },
         {
             "id": "ast-drop",
-            "status": "pending",
+            "status": "grown",
             "why": "The drop glue of Node drops its children, one call per level of the tree.",
             "functions": ["core::ptr::drop_glue::<markdown_core::ast::Node>"]
         },
         {
             "id": "dump",
-            "status": "pending",
+            "status": "grown",
             "why": "Printing a node prints its children.",
             "functions": ["<markdown_core::dump::Out>::node"]
         },
         {
             "id": "properties",
-            "status": "pending",
+            "status": "grown",
             "why": "A nested value in the properties envelope is read by the reader of its parent.",
             "functions": [
                 "<markdown_core::util::properties::reader::Reader>::block",

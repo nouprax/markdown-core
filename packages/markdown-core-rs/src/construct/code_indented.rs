@@ -157,7 +157,7 @@ fn further_start(tokenizer: &mut Tokenizer) -> State {
     let line_start = tokenizer
         .events
         .last()
-        .map_or(false, |event| event.name == Name::LineEnding);
+        .is_some_and(|event| event.name == Name::LineEnding);
     if tokenizer.current == Some(b'\n') && !(line_start && tokenizer.pierce) {
         tokenizer.enter(Name::LineEnding);
         tokenizer.consume();

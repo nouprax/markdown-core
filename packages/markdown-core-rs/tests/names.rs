@@ -13,6 +13,10 @@ use std::path::{Path, PathBuf};
 /// Names defined outside this crate.
 const OUTSIDE: &[&str] = &[
     "Copy",
+    "Ordering",
+    "__sanitizer_cov_trace_pc_guard",
+    "__sanitizer_cov_trace_pc_guard_init",
+    "cfg_attr",
     "Debug",
     "String",
     "ToString",
@@ -39,12 +43,15 @@ const OUTSIDE: &[&str] = &[
     "is_empty",
     "join",
     "libfuzzer_sys",
+    "maybe_grow",
     "missing_panics_doc",
+    "no_mangle",
     "read_to_string",
     "saturating_sub",
     "sort_by_key",
     "sort_unstable_by",
     "string",
+    "sync",
     "to_string",
     "to_string_lossy",
     "too_many_lines",
@@ -127,10 +134,10 @@ fn files(directory: &Path, found: &mut Vec<PathBuf>) {
     for item in fs::read_dir(directory).expect("expected a folder") {
         let path = item.expect("expected a folder item").path();
         if path.is_dir() {
-            if path.file_name().map_or(false, |name| name != "target") {
+            if path.file_name().is_some_and(|name| name != "target") {
                 files(&path, found);
             }
-        } else if path.extension().map_or(false, |ext| ext == "rs") {
+        } else if path.extension().is_some_and(|ext| ext == "rs") {
             found.push(path);
         }
     }

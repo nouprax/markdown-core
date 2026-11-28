@@ -58,9 +58,7 @@ pub const STARTS: Starts = Starts::Bytes(b"-@");
 
 /// Whether `char` is a key character: a letter, a number, or `_`.
 pub fn key_char(char: Option<char>) -> bool {
-    char.map_or(false, |char| {
-        char == '_' || classes(char) & (LETTER | NUMBER) != 0
-    })
+    char.is_some_and(|char| char == '_' || classes(char) & (LETTER | NUMBER) != 0)
 }
 
 /// The width of the key character at the current byte, or 0.

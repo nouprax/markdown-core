@@ -12,6 +12,8 @@
 #![allow(clippy::too_many_lines)]
 
 extern crate alloc;
+#[cfg(feature = "std")]
+extern crate std;
 mod ahead;
 pub mod ast;
 mod choice;

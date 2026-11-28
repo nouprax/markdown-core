@@ -364,8 +364,8 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
                     // as written, not what earlier matches left of them.
                     if spec.three
                         && (sequence_open.close || sequence_close.open)
-                        && sequence_close.run % 3 != 0
-                        && (sequence_open.run + sequence_close.run) % 3 == 0
+                        && !sequence_close.run.is_multiple_of(3)
+                        && (sequence_open.run + sequence_close.run).is_multiple_of(3)
                     {
                         continue;
                     }
