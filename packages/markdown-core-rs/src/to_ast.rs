@@ -919,13 +919,22 @@ impl<'a> Compiler<'a> {
                 Name::DefinitionBody => {
                     // A body ends with its last line, the whitespace after
                     // its marker included.
+                    // A blank line that follows, whitespace only, does
+                    // not take that whitespace away.
                     let (_, last) = self.last(child);
-                    let tail = self
-                        .inside(child)
+                    let inside = self.inside(child);
+                    let marker = inside
+                        .iter()
+                        .position(|token| self.name(*token) == Name::DefinitionBodyPrefix);
+                    let lead = marker
+                        .and_then(|at| inside.get(at + 1))
+                        .filter(|space| self.name(**space) == Name::SpaceOrTab)
+                        .map_or(last, |space| self.end(*space));
+                    let tail = inside
                         .last()
                         .filter(|last| self.name(**last) == Name::SpaceOrTab)
                         .map_or(last, |space| self.end(*space));
-                    end = end.max(last).max(tail);
+                    end = end.max(last).max(lead).max(tail);
                     bodies.push(self.block_content(child));
                 }
                 _ => {}

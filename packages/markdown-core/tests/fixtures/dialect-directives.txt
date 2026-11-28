@@ -474,3 +474,15 @@ Document scope=1:1..2:3 anchor=null attributes={} children=1
         └── Paragraph scope=2:3..2:3 anchor=null attributes={} children=1
             └── Text scope=2:3..2:3 anchor=null attributes={} literal="b" children=0
 ````````````````````````````````
+
+```````````````````````````````` example
+:{} and :[x]
+.
+Document scope=1:1..1:14 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:14 anchor=null attributes={} children=3
+    ├── Directive scope=1:1..1:4 anchor=null attributes={} name="\u000b" children=0
+    ├── Text scope=1:5..1:9 anchor=null attributes={} literal=" and " children=0
+    └── Directive scope=1:10..1:14 anchor=null attributes={} name="\f" children=0
+        └── DirectiveLabel scope=1:12..1:14 anchor=null attributes={} children=1
+            └── Text scope=1:13..1:13 anchor=null attributes={} literal="x" children=0
+````````````````````````````````

@@ -349,6 +349,13 @@
             "why": "An inline directive is a name that is a string without spaces, as the generic directive proposal on the CommonMark wiki has it, followed immediately by a bracketed label or an attribute container; it is that part that makes the colon a directive, and nothing in the name is classified by Unicode category. micromark-extension-directive's name character classes and its part-less `:name` form are that implementation's own rules, so remark is not the authority for either."
         },
         {
+            "id": "directive-name-control-bytes",
+            "input": ":\u000b{} and :\f[x]\n",
+            "authority": "docs/specs/dialect/directives.md",
+            "summary": "A vertical tab or a form feed is a name byte, so `:\\v{}` and `:\\f[x]` are directives; remark ends a name at either.",
+            "why": "A directive name is one or more bytes other than a space, a tab, a line ending, `[`, `{` or `:`, as directives.md states; micromark-extension-directive's name character classes are that implementation's own rule."
+        },
+        {
             "id": "shared-attributes-normalization-order",
             "input": ":n{#a#b}\n\n:n{-k=v}\n\n:n{.one.two #1}\n\n:n{k=\"a\\\"b&amp;c\" m=a&amp;b n= id=}\n\n:n{class=\"a b\" .a k=1 k=2}\n",
             "authority": "docs/specs/dialect/attributes.md",

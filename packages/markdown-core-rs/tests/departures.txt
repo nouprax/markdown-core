@@ -184,3 +184,92 @@ Document scope=1:1..3:3 anchor=null attributes={} children=2
     │           └── Text scope=2:3..2:3 anchor=null attributes={} literal="-" children=0
     └── TableBody children=0
 ````````````````````````````````
+
+```````````````````````````````` departure regression.txt 94
+An HTML comment is `<!--`, text that does not hold `-->`, and `-->`
+(CommonMark 6.6), so `<!----->` is one, with the text `-`; cmark leaves it
+text and C follows cmark.
+.
+Document scope=1:1..1:9 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:9 anchor=null attributes={} children=2
+    ├── Text scope=1:1..1:1 anchor=null attributes={} literal="x" children=0
+    └── Comment scope=1:2..1:9 anchor=null attributes={} literal="-" children=0
+````````````````````````````````
+
+```````````````````````````````` departure regression.txt 95
+`<!--` with no `-->` after it opens no comment, and the `<!l>` after it is a
+declaration (CommonMark 6.6); cmark leaves both text and C follows cmark.
+.
+Document scope=1:1..1:9 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:9 anchor=null attributes={} children=2
+    ├── Text scope=1:1..1:5 anchor=null attributes={} literal="a<!--" children=0
+    └── HTML scope=1:6..1:9 anchor=null attributes={} literal="<!l>" children=0
+````````````````````````````````
+
+```````````````````````````````` departure regression.txt 96
+A backtick string is neither preceded nor followed by a backtick (CommonMark
+6.1), so after the code span `c` the single backticks around `r` make another;
+cmark misses it and C follows cmark.
+.
+Document scope=1:1..1:10 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:10 anchor=null attributes={} children=4
+    ├── Text scope=1:1..1:3 anchor=null attributes={} literal="``u" children=0
+    ├── Code scope=1:4..1:6 anchor=null attributes={} literal="c" children=0
+    ├── Text scope=1:7..1:7 anchor=null attributes={} literal="d" children=0
+    └── Code scope=1:8..1:10 anchor=null attributes={} literal="r" children=0
+````````````````````````````````
+
+```````````````````````````````` departure regression.txt 97
+Links may not contain other links (CommonMark 6.3): the inner `[]()` makes the
+bracket before it inactive, so that bracket is text; cmark nests the links and
+C follows cmark.
+.
+Document scope=1:1..1:10 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:10 anchor=null attributes={} children=3
+    ├── Text scope=1:1..1:1 anchor=null attributes={} literal="[" children=0
+    ├── Link scope=1:2..1:5 anchor=null attributes={} dest=url("") title=null children=0
+    └── Text scope=1:6..1:10 anchor=null attributes={} literal="[]]()" children=0
+````````````````````````````````
+
+```````````````````````````````` departure regression.txt 98
+An extended email autolink's domain holds at least one period (GFM 6.9), and
+`a` holds none; cmark-gfm links `.b@a` and C follows cmark-gfm.
+.
+Document scope=1:1..1:6 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:6 anchor=null attributes={} children=1
+    └── Text scope=1:1..1:6 anchor=null attributes={} literal="d@.b@a" children=0
+````````````````````````````````
+
+```````````````````````````````` departure regression.txt 99
+An xmpp autolink is `xmpp:` followed by a valid email autolink (GFM 6.9), and
+`@.o` has no local part; cmark-gfm links it and C follows cmark-gfm.
+.
+Document scope=1:1..1:8 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:8 anchor=null attributes={} children=1
+    └── Text scope=1:1..1:8 anchor=null attributes={} literal="xmpp:@.o" children=0
+````````````````````````````````
+
+```````````````````````````````` departure elements-formula-conflicts.txt 11
+A `$` body that begins with a backtick must end with one, and an unmatched
+opener releases its source (formulas.md), so the second `$` can open `$d$`; C
+keeps the rejected pair and leaves the rest text.
+.
+Document scope=1:1..1:5 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:5 anchor=null attributes={} children=2
+    ├── Text scope=1:1..1:2 anchor=null attributes={} literal="$`" children=0
+    └── Formula scope=1:3..1:5 anchor=null attributes={} mode=embedded literal="d" children=0
+````````````````````````````````
+
+```````````````````````````````` departure dialect-citations.txt 53
+The code span's attribute block takes the backtick inside it, so no code span
+owns the braces of the braced key `@{`}` (citations.md); C pairs the backticks
+before the attribute block takes its own and leaves the citation text.
+.
+Document scope=1:1..1:10 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:10 anchor=null attributes={} children=2
+    ├── Code scope=1:1..1:6 anchor=null attributes={`="true"} literal="a" children=0
+    └── Cite scope=1:7..1:10 anchor=null attributes={} children=1
+        └── Citation scope=1:7..1:10 anchor=null attributes={} referent=bib(key="`",mode=authorInText) children=0
+            ├── CitationPrefix children=0
+            └── CitationSuffix children=0
+````````````````````````````````

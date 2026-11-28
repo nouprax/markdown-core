@@ -1698,3 +1698,58 @@ Document scope=1:1..2:1 anchor=null attributes={} children=1
 └── Callout scope=1:1..2:1 anchor=null attributes={} variant=null collapsed=null children=1
     └── CodeBlock scope=1:7..2:0,2:2..2:1 anchor=null attributes={} info=null language=null literal="m\n" fenced=false closed=true children=0
 ````````````````````````````````
+
+```````````````````````````````` example
+x<!----->
+.
+Document scope=1:1..1:9 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:9 anchor=null attributes={} children=1
+    └── Text scope=1:1..1:9 anchor=null attributes={} literal="x<!----->" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+a<!--<!l>
+.
+Document scope=1:1..1:9 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:9 anchor=null attributes={} children=1
+    └── Text scope=1:1..1:9 anchor=null attributes={} literal="a<!--<!l>" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+``u`c`d`r`
+.
+Document scope=1:1..1:10 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:10 anchor=null attributes={} children=3
+    ├── Text scope=1:1..1:3 anchor=null attributes={} literal="``u" children=0
+    ├── Code scope=1:4..1:6 anchor=null attributes={} literal="c" children=0
+    └── Text scope=1:7..1:10 anchor=null attributes={} literal="d`r`" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+[[]()[]]()
+.
+Document scope=1:1..1:10 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:10 anchor=null attributes={} children=1
+    └── Link scope=1:1..1:10 anchor=null attributes={} dest=url("") title=null children=2
+        ├── Link scope=1:2..1:5 anchor=null attributes={} dest=url("") title=null children=0
+        └── Text scope=1:6..1:7 anchor=null attributes={} literal="[]" children=0
+````````````````````````````````
+
+```````````````````````````````` example autolink
+d@.b@a
+.
+Document scope=1:1..1:6 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:6 anchor=null attributes={} children=2
+    ├── Text scope=1:1..1:2 anchor=null attributes={} literal="d@" children=0
+    └── Link scope=1:3..1:6 anchor=null attributes={} dest=url("mailto:.b@a") title=null children=1
+        └── Text scope=1:3..1:6 anchor=null attributes={} literal=".b@a" children=0
+````````````````````````````````
+
+```````````````````````````````` example autolink
+xmpp:@.o
+.
+Document scope=1:1..1:8 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:8 anchor=null attributes={} children=1
+    └── Link scope=1:1..1:8 anchor=null attributes={} dest=url("xmpp:@.o") title=null children=1
+        └── Text scope=1:1..1:8 anchor=null attributes={} literal="xmpp:@.o" children=0
+````````````````````````````````

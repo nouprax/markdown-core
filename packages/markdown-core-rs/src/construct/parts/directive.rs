@@ -43,7 +43,7 @@ const LABEL_DEPTH_MAX: usize = 32;
 fn name_end(byte: Option<u8>) -> bool {
     matches!(
         byte,
-        None | Some(b'\t' | b'\n' | b'\x0b' | b'\x0c' | b'\r' | b' ' | b'[' | b'{' | b':')
+        None | Some(b'\t' | b'\n' | b'\r' | b' ' | b'[' | b'{' | b':')
     )
 }
 
