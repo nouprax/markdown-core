@@ -608,17 +608,17 @@ fn done(tokenizer: &mut Tokenizer, end: usize) -> State {
     // Remove the start.
     let label_start = tokenizer.labels.starts.pop().unwrap();
 
-    // If this is a link or footnote, we need to mark earlier link starts as no
-    // longer viable for use (as they would otherwise contain a link).
+    // If this is a link, we need to mark earlier link starts as no longer
+    // viable for use (as they would otherwise contain a link).
     // These link starts are still looking for balanced closing brackets, so
     // we can’t remove them, but we can mark them.
     // An inline note holds its own links: they do not reach past it, and the
     // note is no link either.
-    // A bracketed span is no link either.
-    // Nor are citations.
+    // A footnote call, a bracketed span and a citation are no links either.
     if !matches!(
         label_start.kind,
         LabelKind::Image
+            | LabelKind::Footnote
             | LabelKind::Note
             | LabelKind::Span
             | LabelKind::Group

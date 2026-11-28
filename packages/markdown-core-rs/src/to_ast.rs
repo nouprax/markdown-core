@@ -1511,7 +1511,7 @@ impl<'a> Compiler<'a> {
                 let literal = if self.exits[index] > index + 1 {
                     self.string(index + 1, self.exits[index])
                 } else {
-                    self.text(index).to_string()
+                    self.unpiped(self.text(index))
                 };
                 let dest = match name {
                     Name::AutolinkLiteralWww => format!("http://{}", literal),
