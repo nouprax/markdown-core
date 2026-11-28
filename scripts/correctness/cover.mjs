@@ -2,7 +2,9 @@
 // its state machine run after which. A step decides its successor, so the
 // pairs are the branches of the machine.
 //
-// `node scripts/correctness/cover.mjs` reports the coverage of the fixtures.
+// `node scripts/correctness/cover.mjs` reports the coverage of the fixtures;
+// with `--check`, it fails unless the fixtures reach exactly the transitions
+// of the closure (`tests/edges.txt` in the crate, written by `minimal.mjs`).
 import { Buffer } from "node:buffer";
 import { execFile, execFileSync } from "node:child_process";
 import { promisify } from "node:util";
@@ -148,11 +150,14 @@ export function steps() {
 /// The `Name(Step)` of a recorded step, without what its step carries.
 export const step = (recorded) => /^\w+\(\w+/.exec(recorded)?.[0].concat(")") ?? recorded;
 
-/// The inputs of every fixture example.
-export function fixtures() {
+/// The transitions of the closure, one `last|step` a line.
+export const record = join(crate, "tests/edges.txt");
+
+/// The inputs of every fixture example, but those of the files `skip` names.
+export function fixtures(skip = []) {
     const dir = "packages/markdown-core/tests/fixtures";
     return readdirSync(join(repo, dir))
-        .filter((name) => name.endsWith(".txt"))
+        .filter((name) => name.endsWith(".txt") && !skip.includes(name))
         .flatMap((name) => readExamples(repo, join(dir, name)).map((example) => example.input));
 }
 
@@ -174,4 +179,21 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
         `${inputs.length} fixture inputs: ${known.length - missed.length}/${known.length} steps, ${all.size} transitions`
     );
     console.log(`steps no fixture reaches: ${missed.join(" ")}`);
+    if (process.argv.includes("--check")) {
+        const recorded = new Set(readFileSync(record, "utf8").split("\n").filter(Boolean));
+        const seen = new Set([...all].map((edge) => transitions[edge]));
+        const lost = [...recorded].filter((edge) => !seen.has(edge));
+        const fresh = [...seen].filter((edge) => !recorded.has(edge));
+        for (const edge of lost) console.log(`no fixture reaches ${edge}`);
+        for (const edge of fresh) console.log(`not in the closure: ${edge}`);
+        if (lost.length || fresh.length) {
+            console.log(
+                "The fixtures must reach exactly the closure's transitions. A parser change that moves them\n" +
+                    "needs the closure again: node scripts/correctness/closure.mjs, then\n" +
+                    "node scripts/correctness/minimal.mjs --write, and the new dumps reviewed."
+            );
+            process.exit(1);
+        }
+        console.log(`the fixtures reach the ${recorded.size} transitions of the closure`);
+    }
 }

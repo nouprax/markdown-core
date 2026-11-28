@@ -9,6 +9,17 @@ tag (`table`, `footnotes`, `directive`, ...) classifies the example for the
 oracle corpora, which select `tagged` or `untagged` examples, and selects
 nothing; `disabled` is the one tag the runner acts on.
 
+Inputs write a tab as `→` (U+2192) and NUL as `␀` (U+2400). A `␃` (U+2403)
+ending the last input line means the input ends there, without a final line
+ending; every other input ends with one.
+
+`coverage.txt` is generated: the inputs of the minimal test set
+(`scripts/correctness/minimal.mjs --write`) that no other fixture holds. The
+fixtures together reach every state-machine transition of the Rust parser's
+coverage closure (`scripts/correctness/closure.mjs`), recorded in
+`packages/markdown-core-rs/tests/edges.txt`; `pnpm check:rust-coverage`
+holds them to it.
+
 The directive and formula fixtures are the product's reviewed extension
 requirements. CTest executes their input and expected blocks directly. The
 upstream cmark-gfm and remark/micromark parity gates reuse selected **input**

@@ -6,6 +6,54 @@
     "corpus": "every example in packages/markdown-core/tests/fixtures/*.txt",
     "expected": [
         {
+            "source": "packages/markdown-core/tests/fixtures/coverage.txt:1266",
+            "input": "[^n]({.x} [^[note]]{.x} ^[note]{.x}\n\n[^n]: note\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.2.0.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:12..1:18",
+                    "parentKind": "Citation",
+                    "parentScope": "1:14..1:17",
+                    "closedBy": "unassigned"
+                },
+                {
+                    "nodePath": "0.0.4.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:25..1:31",
+                    "parentKind": "Citation",
+                    "parentScope": "1:27..1:30",
+                    "closedBy": "unassigned"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/coverage.txt:2423",
+            "input": "[^n]({.x} \"[^[note]]{.x} ^[note]{.x}\n\n[^n]: note\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.2.0.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:13..1:19",
+                    "parentKind": "Citation",
+                    "parentScope": "1:15..1:18",
+                    "closedBy": "unassigned"
+                },
+                {
+                    "nodePath": "0.0.4.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:26..1:32",
+                    "parentKind": "Citation",
+                    "parentScope": "1:28..1:31",
+                    "closedBy": "unassigned"
+                }
+            ]
+        },
+        {
             "source": "packages/markdown-core/tests/fixtures/dialect-anchors.txt:639",
             "input": "# Shared\n\n^[a [declaration]{#shared}]\n\n:d[[decl]{#shared-1}]\n",
             "findings": [

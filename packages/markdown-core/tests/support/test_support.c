@@ -207,6 +207,13 @@ int ts_spec_load(const char *path, ts_spec_file *out) {
                 memset(&pending, 0, sizeof(pending));
                 finished.markdown =
                     ts_replace_arrows(markdown.data ? markdown.data : "", markdown.length, &markdown_length);
+                /* U+2403 ending the last input line: the input ends there,
+                 * without a final line ending. */
+                if (finished.markdown && markdown_length >= 4 &&
+                    memcmp(finished.markdown + markdown_length - 4, "\xE2\x90\x83\n", 4) == 0) {
+                    markdown_length -= 4;
+                    finished.markdown[markdown_length] = 0;
+                }
                 finished.markdown_length = markdown_length;
                 finished.expected =
                     ts_replace_arrows(expected.data ? expected.data : "", expected.length, &expected_length);

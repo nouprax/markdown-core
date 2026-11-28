@@ -231,6 +231,11 @@ markdown_core_add_test(spec_entities spec 240 entity_runner)
 markdown_core_add_test(regression_commonmark regression 120 spec_runner --spec
                        "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/regression.txt")
 
+# regression: the inputs of the minimal test set that no other fixture holds
+# (scripts/correctness/minimal.mjs).
+markdown_core_add_test(regression_coverage regression 120 spec_runner --spec
+                       "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/coverage.txt")
+
 # regression: every injected allocation failure terminates the parse and is
 # reported to the facade consumer; no lossless fallback may return a document.
 if(MARKDOWN_CORE_STATIC)

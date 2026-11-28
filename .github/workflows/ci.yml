@@ -238,6 +238,8 @@ jobs:
               run: scripts/tools/lint-rust.sh
             - name: Check Rust call cycles
               run: node scripts/tools/check-rust-recursion.mjs
+            - name: Check Rust transition coverage
+              run: node scripts/correctness/cover.mjs --check
 
     health-checks-ready:
         name: Health Checks - Ready

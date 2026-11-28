@@ -20,6 +20,12 @@ struct Example {
 
 const FENCE: &str = "````````````````````````````````";
 
+/// The input `markdown` as written: U+2403 ending its last line means it
+/// ends there, without a final line ending.
+fn ended(markdown: &str) -> &str {
+    markdown.strip_suffix("\u{2403}\n").unwrap_or(markdown)
+}
+
 /// The examples of a fixture file, as the C loader reads them.
 fn load(text: &str) -> Vec<Example> {
     let mut examples = vec![];
@@ -41,7 +47,7 @@ fn load(text: &str) -> Vec<Example> {
                 examples.push(Example {
                     number,
                     line: start,
-                    markdown: markdown.replace('\u{2192}', "\t").replace('\u{2400}', "\0"),
+                    markdown: ended(&markdown).replace('\u{2192}', "\t").replace('\u{2400}', "\0"),
                     expected: expected.replace('\u{2192}', "\t"),
                 });
             }
