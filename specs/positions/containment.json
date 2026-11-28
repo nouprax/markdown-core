@@ -21,7 +21,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-bracketed-spans.txt:229",
+            "source": "packages/markdown-core/tests/fixtures/dialect-bracketed-spans.txt:227",
             "input": "[^n]{.x} [^[note]]{.x} ^[note]{.x}\n\n[^n]: note\n",
             "findings": [
                 {
@@ -795,6 +795,21 @@
             ]
         },
         {
+            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:1105",
+            "input": "> ^[a\n> ]\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0.0.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:3..2:0,2:3..2:3",
+                    "parentKind": "Citation",
+                    "parentScope": "1:5..2:0",
+                    "closedBy": "unassigned"
+                }
+            ]
+        },
+        {
             "source": "packages/markdown-core/tests/fixtures/dialect-insertion.txt:563",
             "input": "++a[^n] b^[++inline++]++\n\n[^n]: ++note++\n",
             "findings": [
@@ -1088,6 +1103,21 @@
                     "previousKind": "TableCell",
                     "previousScope": "6:2..6:23",
                     "closedBy": "Q44's cost, accepted by the owner 2026-08-23: an autocompleted cell points AT the place it was completed -- the row's last byte -- and the cell before it ends on that byte too. An empty range past it would need column len+1, which is off the line."
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/regression.txt:1433",
+            "input": " a|b\n-|-\n c\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.1.0.1",
+                    "violation": "sibling-overlap",
+                    "kind": "TableCell",
+                    "scope": "3:2..3:2",
+                    "previousKind": "TableCell",
+                    "previousScope": "3:2..3:2",
+                    "closedBy": "unassigned"
                 }
             ]
         },
