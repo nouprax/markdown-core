@@ -82,6 +82,8 @@ escapes or character references.
 | Heading | At the end of the final heading-content line. |
 | Fenced code | At the end of the opening fence's info region. |
 | Direct link/image, resolving full/collapsed reference, angle autolink | Immediately after the complete occurrence. |
+| Cross link, cross embed | Immediately after the closing `]]`. |
+| Callout | At the end of its marker line, after the title. |
 | Link reference definition | After its destination and optional title. |
 | Bracketed span | Immediately after its closing bracket. |
 | Named directive | Immediately after its name or label. |
@@ -115,6 +117,19 @@ whitespace are removed before applying the ordinary closing-hash rule. For
 Setext headings the suffix belongs to the last content line. `# {#empty}` is
 an empty heading with an explicit anchor.
 
+### Callouts
+
+```markdown
+> [!note] Read **this** {#tip .compact}
+> Body text.
+```
+
+The callout has anchor `tip` and class `compact`; its title is `Read`
+and strong `this`. As for a heading, the block and the spaces before it are
+removed from the title, a code span or other token of the title that owns
+the brace keeps it, and `> [!note] {.compact}` has a null title. See
+[callouts](callouts.md#attributes).
+
 ### Fenced code
 
 ````markdown
@@ -147,7 +162,8 @@ to the ordinary definition grammar.
 
 An attribute container after a shortcut-looking bracket makes a
 [span](bracketed-spans.md), since spans have earlier precedence. Bare automatic
-links accept no container. Image width/height records are independent of typed
+links accept no container. A [cross link or embed](cross-links.md#attributes)
+takes its container right after its `]]`. Image width/height records are independent of typed
 [dimensions](links-and-images.md#image-dimensions).
 
 ## Invalid containers

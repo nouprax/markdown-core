@@ -1094,7 +1094,7 @@ static bool weigh(const context_query *query, const markdown_core_context_sink *
             : SIZE_MAX;
     const markdown_core_node_kind owner = field->owner;
     const bool tail = owner == MARKDOWN_CORE_KIND_HEADING || owner == MARKDOWN_CORE_KIND_CODE_BLOCK ||
-                      owner == MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK;
+                      owner == MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK || owner == MARKDOWN_CORE_KIND_CALLOUT;
     size_t past = SIZE_MAX;
     const size_t brace = opener->place.start;
     if (opener->kind == MARKDOWN_CORE_KIND_NONE && !tail && brace < query->length && query->source[brace] == '{') {

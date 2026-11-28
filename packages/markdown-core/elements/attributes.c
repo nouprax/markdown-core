@@ -1285,10 +1285,14 @@ static void dispose_inline(const markdown_core_element_instance *self, markdown_
 }
 /* A LINE'S ATTRIBUTE TAIL (element.h, MARKDOWN_CORE_FOLLOW_TAIL): an
  * attribute block that ends the line, after the spaces and tabs before it,
- * is the block's, taken with those spaces. */
+ * is the block's, taken with those spaces. The tail is all the attributes
+ * the block has, so a block an edit's reading offers its line again, as a
+ * callout's marker line, has none but what the line now gives. */
 static bufsize_t S_follow_tail(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                markdown_core_lead *lead) {
     markdown_core_node *node = lead->node;
+    markdown_core_attributes_free(&node->attributes);
+    memset(&node->attributes, 0, sizeof(node->attributes));
     const unsigned char *line = lead->line;
     const bufsize_t from = lead->from, to = lead->to;
     bufsize_t end = to;
@@ -1331,18 +1335,18 @@ static void S_untake(const markdown_core_element_instance *self, markdown_core_p
     (void)parser;
     markdown_core_attributes_free(&node->attributes);
     memset(&node->attributes, 0, sizeof(node->attributes));
-    node->cut_back = 0;
 }
 
 /* The nodes an attribute block follows: inline, those of the tokens that
  * say a later token may follow them (markdown_core_inline_made); at a
  * line's end, the blocks that offer it. A heading's inline tokens win over
  * its tail. */
-static const markdown_core_node_type ATTRIBUTES_TOKEN_KINDS[] = {MARKDOWN_CORE_NODE_CODE, MARKDOWN_CORE_NODE_LINK,
-                                                                 MARKDOWN_CORE_NODE_EMBED, MARKDOWN_CORE_NODE_DIRECTIVE,
-                                                                 MARKDOWN_CORE_NODE_NONE};
-static const markdown_core_node_type ATTRIBUTES_TAIL_KINDS[] = {MARKDOWN_CORE_NODE_HEADING,
-                                                                MARKDOWN_CORE_NODE_CODE_BLOCK, MARKDOWN_CORE_NODE_NONE};
+static const markdown_core_node_type ATTRIBUTES_TOKEN_KINDS[] = {
+    MARKDOWN_CORE_NODE_CODE,       MARKDOWN_CORE_NODE_LINK,        MARKDOWN_CORE_NODE_EMBED,
+    MARKDOWN_CORE_NODE_CROSS_LINK, MARKDOWN_CORE_NODE_CROSS_EMBED, MARKDOWN_CORE_NODE_DIRECTIVE,
+    MARKDOWN_CORE_NODE_NONE};
+static const markdown_core_node_type ATTRIBUTES_TAIL_KINDS[] = {
+    MARKDOWN_CORE_NODE_HEADING, MARKDOWN_CORE_NODE_CODE_BLOCK, MARKDOWN_CORE_NODE_CALLOUT, MARKDOWN_CORE_NODE_NONE};
 
 static const markdown_core_follow ATTRIBUTES_FOLLOWS[] = {
     {.at = MARKDOWN_CORE_FOLLOW_TOKEN, .kinds = ATTRIBUTES_TOKEN_KINDS, .follow = S_follow_token},
@@ -1355,20 +1359,24 @@ static const markdown_core_follow ATTRIBUTES_FOLLOWS[] = {
 };
 
 /* The attribute tails the run's end may leave open on the last line of a
- * heading's text, or of a paragraph's that a setext underline may yet make a
- * heading's, where the dialect holds headings, to the run's context sink:
- * every brace that may be one, since which is the tail only the finished
- * line tells. A heading whose tail closed has it taken from its text. */
+ * heading's text, of a title a callout holds, or of a paragraph's that a
+ * setext underline may yet make a heading's, where the dialect holds
+ * headings, to the run's context sink: every brace that may be one, since
+ * which is the tail only the finished line tells. A text whose tail closed
+ * has it taken from it. */
 static void report(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state) {
     (void)self;
-    const markdown_core_node *owner = inline_state->owner;
+    markdown_core_node *owner = inline_state->owner;
     const markdown_core_parser *parser = inline_state->owner_parser;
+    const markdown_core_node *leader = markdown_core_parser_cut_leader(parser, owner);
     bool declares;
-    if (owner->kind == MARKDOWN_CORE_NODE_HEADING) {
+    markdown_core_node_kind kind = MARKDOWN_CORE_KIND_HEADING;
+    if (leader) {
         if (owner->cut_back) {
             return;
         }
         declares = false;
+        kind = markdown_core_node_get_kind(leader);
     } else if (owner->kind == MARKDOWN_CORE_NODE_PARAGRAPH &&
                markdown_core_dialect_block_kind(parser->dialect, MARKDOWN_CORE_NODE_HEADING)->structure) {
         declares = true;
@@ -1387,7 +1395,7 @@ static void report(const markdown_core_element_instance *self, markdown_core_inl
         if (data[at] == '\\' && at + 1 < len && markdown_core_ispunct(data[at + 1])) {
             at++;
         } else if (data[at] == '{' && markdown_core_attributes_open_member(data, len, at, &field, &memo)) {
-            field.owner = MARKDOWN_CORE_KIND_HEADING;
+            field.owner = kind;
             field.declares = declares;
             if (declares) {
                 markdown_core_inline_open_line(inline_state, MARKDOWN_CORE_KIND_NONE, at, at + 1, &field, 1);

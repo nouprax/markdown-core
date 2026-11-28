@@ -394,11 +394,12 @@ impl<'a> Compiler<'a> {
             Block::Quote => {
                 let runs = Self::whole(self.lead(index), self.end(index));
                 let content = self.block_content(index);
-                let (variant, collapsed, title) = match self.child(index, Name::Callout) {
+                let header = self.child(index, Name::Callout);
+                let (variant, collapsed, title) = match header {
                     Some(header) => self.callout(header),
                     None => (None, None, None),
                 };
-                Node::new(
+                let mut node = Node::new(
                     Kind::Callout {
                         variant,
                         collapsed,
@@ -406,7 +407,14 @@ impl<'a> Compiler<'a> {
                         content,
                     },
                     runs,
-                )
+                );
+                // Attributes end the header’s line.
+                if let Some(attributes) =
+                    header.and_then(|header| self.child(header, Name::Attributes))
+                {
+                    self.attributes(attributes, &mut node);
+                }
+                node
             }
             Block::List => self.list(index),
             Block::DefinitionList => self.definition_list(index),

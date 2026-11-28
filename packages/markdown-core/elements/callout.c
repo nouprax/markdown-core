@@ -2,6 +2,10 @@
 #include "block_internal.h"
 #include "parts.h"
 #include "sink.h"
+#include "attributes.h"
+
+/* The elements whose state this element reads, as `self->peers` holds them. */
+static const markdown_core_element *const CALLOUT_PEERS[] = {&MARKDOWN_CORE_ELEMENT_ATTRIBUTES, NULL};
 
 /* What a callout's scan found after its marker (WHAT THE SCAN FOUND,
  * block_internal.h): a header `[!variant]`, its fold and where its title
@@ -136,8 +140,10 @@ static void S_callout_build(markdown_core_parser *parser, markdown_core_node *no
 
 /* THE TEXT OF ITS LINE (element.h, `text`): the text of the line a callout
  * with a variant opened on, past its header, is its title, to the line's
- * end and without the whitespace there. A callout the edit reopens inside
- * the line makes it anew: the engine let the old one go. */
+ * end and without the whitespace there. Its end is offered (element.h,
+ * markdown_core_follow): what is taken is cut from the title, and a title
+ * that was all of it is none. A callout the edit reopens inside the line
+ * makes it anew: the engine let the old one go. */
 static bool callout_text(const markdown_core_element_instance *self, markdown_core_parser *parser,
                          markdown_core_node *node, markdown_core_reader *reader) {
     markdown_core_callout_work *counts = self->state;
@@ -151,7 +157,8 @@ static bool callout_text(const markdown_core_element_instance *self, markdown_co
         length--;
         counts->scan++;
     }
-    if (!length) {
+    const bufsize_t cut = length ? markdown_core_parser_offer(parser, node, text, 0, length, false) : 0;
+    if (cut == length) {
         return true;
     }
     markdown_core_node *title = markdown_core_parser_make_node(parser, MARKDOWN_CORE_NODE_PARAGRAPH);
@@ -162,6 +169,7 @@ static bool callout_text(const markdown_core_element_instance *self, markdown_co
     node->as.callout->title = title;
     title->place = markdown_core_reader_span(reader, parser, pos, pos + length);
     markdown_core_strbuf_put(&title->content, text, length);
+    title->cut_back = cut;
     if (title->content.oom || !markdown_core_reader_marks(reader, parser, title, pos, title->content.size, 0)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
@@ -277,6 +285,7 @@ const markdown_core_facet MARKDOWN_CORE_CALLOUT_FACETS[] = {
 };
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CALLOUT = {
+    .peers = CALLOUT_PEERS,
     .facets = MARKDOWN_CORE_CALLOUT_FACETS,
     .edit = &CALLOUT_EDIT,
     .state_size = sizeof(markdown_core_callout_work),
@@ -285,8 +294,10 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_CALLOUT = {
     .lines = &CALLOUT_LINES,
 };
 
-/* A callout's parts: its variant, inside `[!` and `]` on its first line, and
- * a block identifier on the line after it. The fold sign is a marker. */
+/* A callout's parts: its variant, inside `[!` and `]` on its first line, the
+ * attribute tail that ends that line, unless a node of its title holds the
+ * brace, and a block identifier on the line after it. The fold sign is a
+ * marker. */
 void markdown_core_callout_parts(markdown_core_parts *parts) {
     const unsigned char *text = parts->text;
     bufsize_t at = parts->node->as.callout->variant.has_value ? 0 : parts->length;
@@ -298,6 +309,11 @@ void markdown_core_callout_parts(markdown_core_parts *parts) {
         const bufsize_t end = at + 2 + variant_end(text + at + 2, parts->length - at - 2);
         if (end < parts->length && text[end] == ']') {
             markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_VARIANT, at + 2, end);
+            bufsize_t line = end;
+            while (line < parts->length && !markdown_core_is_line_end(text[line])) {
+                line++;
+            }
+            markdown_core_attributes_tail_parts(parts, end + 1, line);
         }
     }
     markdown_core_block_identifier_parts(parts);

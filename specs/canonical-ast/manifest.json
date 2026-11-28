@@ -804,7 +804,11 @@
                     "Link",
                     "Embed",
                     "Text",
-                    "Reference"
+                    "Reference",
+                    "Callout",
+                    "Strong",
+                    "CrossLink",
+                    "CrossEmbed"
                 ],
                 "states": [
                     "markup.anchor.value",

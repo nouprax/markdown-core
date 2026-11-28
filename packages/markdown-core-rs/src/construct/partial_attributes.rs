@@ -1,6 +1,7 @@
 //! Attributes occur after [code (text)][raw_text], [label end][label_end],
-//! and [autolink][], in [definition][], and at the end of the line of a
-//! [heading (atx)][heading_atx].
+//! [autolink][], and [cross link][cross_link], in [definition][], and at the
+//! end of the line of a [heading (atx)][heading_atx] and of a
+//! [callout][callout] title.
 //!
 //! ## Grammar
 //!
@@ -52,6 +53,8 @@
 //! [autolink]: crate::construct::autolink
 //! [definition]: crate::construct::definition
 //! [heading_atx]: crate::construct::heading_atx
+//! [cross_link]: crate::construct::cross_link
+//! [callout]: crate::construct::callout
 
 use crate::construct::partial_space_or_tab::space_or_tab;
 use crate::event::{Event, Name, Point};

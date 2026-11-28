@@ -649,8 +649,8 @@ impl<'a> Tokenizer<'a> {
         push_impl(self, from, to, state, false)
     }
 
-    /// Tokenize `from..to` as all there is, ending in [`State::Ok`][], and
-    /// without resolving.
+    /// Tokenize `from..to` as all there is, ending in [`State::Ok`][] or
+    /// [`State::Nok`][], and without resolving.
     pub fn run(&mut self, from: (usize, usize), to: (usize, usize), state: State) -> State {
         push_impl(self, from, to, state, true)
     }
@@ -783,7 +783,7 @@ fn push_impl(
     tokenizer.consumed = true;
 
     if flush {
-        debug_assert!(state == State::Ok, "must be ok");
+        debug_assert!(matches!(state, State::Ok | State::Nok), "must be done");
     } else {
         debug_assert!(matches!(state, State::Next(_)), "must have a next state");
     }

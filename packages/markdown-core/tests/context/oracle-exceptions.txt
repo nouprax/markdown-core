@@ -5,7 +5,7 @@
 
 # `[[a#^]]` keeps `^` as its anchor; a sentinel after it makes the anchor a
 # block identifier, whose value drops the `^`.
-dialect-cross-links.txt:224 slot anchor CrossLink # the anchor's value is normalized
+dialect-cross-links.txt:223 slot anchor CrossLink # the anchor's value is normalized
 
 # A label that goes on to another line is normalized across the line
 # break, so a sentinel at its edge lands beside a collapsed space.

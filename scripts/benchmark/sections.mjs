@@ -37,10 +37,13 @@ export const sectionDispositions = {
             "attribute-link",
             "attribute-image",
             "attribute-autolink",
-            "attribute-reference"
+            "attribute-reference",
+            "attribute-cross-link",
+            "attribute-callout"
         ),
         "Inline code": grammar("attribute-code"),
         Headings: grammar("attribute-heading"),
+        Callouts: grammar("attribute-callout"),
         "Fenced code": grammar("attribute-fence"),
         "Links, images, and reference definitions": grammar(
             "attribute-link",
@@ -74,6 +77,7 @@ export const sectionDispositions = {
     callouts: {
         "Quotes and callouts": grammar("common-quote", "callout"),
         "Add a type and title": grammar("callout"),
+        Attributes: grammar("attribute-callout"),
         "Fold state": grammar("callout"),
         "Metadata boundaries": grammar("callout")
     },
@@ -142,6 +146,7 @@ export const sectionDispositions = {
         "Cross links and embeds": grammar("cross-link", "cross-link-absent", "cross-link-empty", "cross-raw-label"),
         "Headings and blocks": grammar("cross-anchor", "cross-local", "cross-block-anchor"),
         Embeds: grammar("cross-embed", "cross-embed-absent", "cross-embed-empty"),
+        Attributes: grammar("attribute-cross-link"),
         Dimensions: grammar("embed-dimensions"),
         "Pipes and tables": grammar("cross-link-table", "cross-embed-table"),
         "Incomplete targets": grammar("fallback-cross-link")

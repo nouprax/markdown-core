@@ -522,6 +522,20 @@ pair(
     inline("<https://", target, "> [](/", k, ' "', v, '")')
 );
 pair(
+    "attribute-cross-link",
+    "attributes",
+    ["cross-link-site", "cross-embed-site"],
+    inline("[[", target, "]]{", k, "=", v, "} ![[", a, "]]{.", v, "}"),
+    inline("[](/", target, ' "', k, " ", v, '") ![](/', a, ' "', v, '")')
+);
+pair(
+    "attribute-callout",
+    "attributes",
+    ["callout-site", "title-cut"],
+    ["> [!note] ", b, " {", k, "=", v, "}\n\n"],
+    ["> [", b, "](/", k, ' "', v, '")\n\n']
+);
+pair(
     "attribute-reference",
     "attributes",
     ["definition-site", "inheritance", "occurrence-order", "anchor-override"],

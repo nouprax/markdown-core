@@ -11897,6 +11897,19 @@ static markdown_core_node **S_field_slot(const markdown_core_dialect *dialect, m
     return slot;
 }
 
+/* (parser.h) */
+markdown_core_node *markdown_core_parser_cut_leader(const markdown_core_parser *parser, markdown_core_node *root) {
+    if (markdown_core_parser_block_kind(parser, root)->follow[MARKDOWN_CORE_FOLLOW_TAIL]) {
+        return root;
+    }
+    markdown_core_node *holder = markdown_core_scaffold_parent(root);
+    if (!holder || !markdown_core_parser_block_kind(parser, holder)->follow[MARKDOWN_CORE_FOLLOW_TAIL]) {
+        return NULL;
+    }
+    markdown_core_node **slot = S_field_slot(parser->dialect, holder);
+    return slot && *slot == root ? holder : NULL;
+}
+
 /* THE RECORD OF AN INLINE ROOT A LOOKUP FOUND NOTHING FOR (parser.h,
  * markdown_core_miss_root), made at its first such lookup: the block that is
  * the root, or that holds it, the block the queue links it to, and where the

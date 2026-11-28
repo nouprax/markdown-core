@@ -822,7 +822,9 @@ typedef struct markdown_core_follow {
      * text (node.h, `cut_back`) wins over it. Their run then reads the
      * whole text, its text ending where the cut begins, a token that starts
      * there ends the run, and one that crosses it has the engine ask `undo`,
-     * which forgets what `follow` wrote and leaves no cut. */
+     * which forgets what `follow` wrote, and leave no cut. The leader may
+     * hold the text as a field, as a callout holds its title
+     * (markdown_core_parser_cut_leader). */
     bool yields;
     void (*undo)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
     /* THE FORMER KIND: a follower that changes its leader's kind to `makes`

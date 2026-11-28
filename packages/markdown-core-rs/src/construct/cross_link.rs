@@ -7,7 +7,7 @@
 //! (<small>see [construct][crate::construct] for character groups</small>):
 //!
 //! ```bnf
-//! cross_link ::= ['!'] '[[' dest [separator label] ']]'
+//! cross_link ::= ['!'] '[[' dest [separator label] ']]' [attributes]
 //!
 //! ; Restriction: not empty; no `[`, `]`, or line ending.
 //! ; Restriction: no part between `#` signs is empty, and the last is not.
@@ -23,6 +23,8 @@
 //! identifier.
 //! An embed whose label ends in dimensions (`100`, `100x200`) after its last
 //! separator has those dimensions.
+//! [Attributes][partial_attributes] right after the closing brackets are
+//! the node's.
 //!
 //! ## Tokens
 //!
@@ -33,8 +35,10 @@
 //! * [`CrossLinkLabel`][Name::CrossLinkLabel]
 //!
 //! [text]: crate::construct::text
+//! [partial_attributes]: crate::construct::partial_attributes
 
 use crate::choice::Starts;
+use crate::construct::partial_attributes;
 use crate::event::Name;
 use crate::state::{Name as StateName, State};
 use crate::tokenizer::Tokenizer;
@@ -241,8 +245,9 @@ fn close_second(tokenizer: &mut Tokenizer) -> State {
     if tokenizer.current == Some(b']') {
         tokenizer.consume();
         tokenizer.exit(Name::CrossLinkMarker);
-        tokenizer.exit(Name::CrossLink);
-        State::Ok
+        State::Next(StateName::Attributes(partial_attributes::Step::After(
+            Name::CrossLink,
+        )))
     } else {
         State::Nok
     }

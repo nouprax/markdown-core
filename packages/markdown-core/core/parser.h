@@ -1469,6 +1469,12 @@ static inline const markdown_core_kind_record *markdown_core_parser_block_kind(c
 bufsize_t markdown_core_parser_offer(markdown_core_parser *parser, markdown_core_node *block, const unsigned char *line,
                                      bufsize_t from, bufsize_t to, bool live);
 
+/* THE LEADER OF A ROOT'S CUT: the block whose tail follower took the cut
+ * from the back of inline root `root`'s text (node.h, `cut_back`) -- the
+ * root itself, or the block that holds it as its field, as a callout holds
+ * its title -- or NULL when neither takes tails. */
+markdown_core_node *markdown_core_parser_cut_leader(const markdown_core_parser *parser, markdown_core_node *root);
+
 /* Whether a block of `node`'s kind changing to `kind` keeps a block: one
  * whose element cuts the items its text opens with, becoming one of a kind
  * that does not, has them cut first (blocks.c, THE FRONT CUT). False when

@@ -81,7 +81,7 @@
         {
             "feature": "attributes",
             "specification": "docs/specs/dialect/attributes.md",
-            "sha256": "b329aef36ea680862b42ecfb3b7b94fe4b7bbc48fc0d961b73d7e395b6affa28",
+            "sha256": "b3fd7e465926de70cb3975d8c8109b21635b119a2b8d7db40f13768a80670ea5",
             "sections": [
                 {
                     "title": "Attributes",
@@ -124,7 +124,7 @@
                     "title": "Attachment sites",
                     "line": 77,
                     "level": 2,
-                    "sha256": "dcafa07f3ef60e37a409aa759ceb022414a3719139bacc63b01e0c0580cde360",
+                    "sha256": "ab71b05f8f8ff06a1d74268592cc2e89ca45d9d1c169c23cf0a2d20c806527fd",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": [
@@ -134,13 +134,15 @@
                             "attribute-link",
                             "attribute-image",
                             "attribute-autolink",
-                            "attribute-reference"
+                            "attribute-reference",
+                            "attribute-cross-link",
+                            "attribute-callout"
                         ]
                     }
                 },
                 {
                     "title": "Inline code",
-                    "line": 95,
+                    "line": 97,
                     "level": 3,
                     "sha256": "f05d16b8f45e5f9e39d3afa428aa54421994e55193138e2d75b59aecca2bc910",
                     "disposition": {
@@ -150,7 +152,7 @@
                 },
                 {
                     "title": "Headings",
-                    "line": 104,
+                    "line": 106,
                     "level": 3,
                     "sha256": "c7a0f6101803682370dd3493414734c6c81fb73f59c0df2a9275745fb5fc3cc6",
                     "disposition": {
@@ -159,8 +161,18 @@
                     }
                 },
                 {
+                    "title": "Callouts",
+                    "line": 120,
+                    "level": 3,
+                    "sha256": "e1ed898c7f4403a9df303a71e786493bce1e39ce81d006faedd9df735ca6835b",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["attribute-callout"]
+                    }
+                },
+                {
                     "title": "Fenced code",
-                    "line": 118,
+                    "line": 133,
                     "level": 3,
                     "sha256": "98bfe640027c99bc53ee70c798cdab4ac835e50db9b62c1e154d335e758947c0",
                     "disposition": {
@@ -170,9 +182,9 @@
                 },
                 {
                     "title": "Links, images, and reference definitions",
-                    "line": 131,
+                    "line": 146,
                     "level": 3,
-                    "sha256": "f950183b8b78fcbc5a57ae278bf506dec25188fe981216987900436c5175a966",
+                    "sha256": "7fc303d979a7b18f44465aefb64540aae9c9ffc308f071fa57547ca6b86bd2cb",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": [
@@ -185,7 +197,7 @@
                 },
                 {
                     "title": "Invalid containers",
-                    "line": 153,
+                    "line": 169,
                     "level": 2,
                     "sha256": "2cdacae499d86370f96a4168c5746c97d1ce5affa7e68bc60dd8dbd7fb31fac4",
                     "disposition": {
@@ -209,10 +221,22 @@
                     "facets": ["bare-names", "boolean-record"]
                 },
                 {
+                    "id": "attribute-callout",
+                    "scope": "paired-document-grammar",
+                    "identity": false,
+                    "facets": ["callout-site", "title-cut"]
+                },
+                {
                     "id": "attribute-code",
                     "scope": "paired-document-grammar",
                     "identity": false,
                     "facets": ["code-site"]
+                },
+                {
+                    "id": "attribute-cross-link",
+                    "scope": "paired-document-grammar",
+                    "identity": false,
+                    "facets": ["cross-link-site", "cross-embed-site"]
                 },
                 {
                     "id": "attribute-double",
@@ -582,7 +606,7 @@
         {
             "feature": "callouts",
             "specification": "docs/specs/dialect/callouts.md",
-            "sha256": "5781fb3982c1c127e56dbe5170e5963ef245f949935f7b6ae56cb38341126bf5",
+            "sha256": "7a2611e67ac6d9507e759d1632bb432f271c63298d2361f7188dd1770a4e2873",
             "sections": [
                 {
                     "title": "Quotes and callouts",
@@ -605,8 +629,18 @@
                     }
                 },
                 {
-                    "title": "Fold state",
+                    "title": "Attributes",
                     "line": 37,
+                    "level": 2,
+                    "sha256": "471a97ed6db2f7518bcae98bad183e25b1bc4bdcd4f11e11df83bdf628009681",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["attribute-callout"]
+                    }
+                },
+                {
+                    "title": "Fold state",
+                    "line": 56,
                     "level": 2,
                     "sha256": "29968094b4670cd775001c4e6906a5fd398d6589bb7c69b2b18f4cee12a7f4e9",
                     "disposition": {
@@ -616,7 +650,7 @@
                 },
                 {
                     "title": "Metadata boundaries",
-                    "line": 53,
+                    "line": 72,
                     "level": 2,
                     "sha256": "cde1c30ed5af316bd31bec2fd2a141b267512c3d2ca58cd6b3ee16d697c585d2",
                     "disposition": {
@@ -1011,7 +1045,7 @@
         {
             "feature": "cross-links",
             "specification": "docs/specs/dialect/cross-links.md",
-            "sha256": "674ff5e3b9eabba61da6241c63529524e884e81681fefd6554b4a0cab7373721",
+            "sha256": "5d157ec775dc9a0f3a73bb20077cd8abe9e34146b52043f21434be11a2d78798",
             "sections": [
                 {
                     "title": "Cross links and embeds",
@@ -1044,8 +1078,18 @@
                     }
                 },
                 {
-                    "title": "Dimensions",
+                    "title": "Attributes",
                     "line": 64,
+                    "level": 2,
+                    "sha256": "aa05765c85834d96f5022df46b091fb00f57d16e1eefc897f2c20891a7abe754",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["attribute-cross-link"]
+                    }
+                },
+                {
+                    "title": "Dimensions",
+                    "line": 77,
                     "level": 2,
                     "sha256": "2c6ad041dfb7097a176827071802634ad627fe8e7641f369bd67b8a5749375eb",
                     "disposition": {
@@ -1055,7 +1099,7 @@
                 },
                 {
                     "title": "Pipes and tables",
-                    "line": 76,
+                    "line": 89,
                     "level": 2,
                     "sha256": "dab1ab625cf2b13c677a601b0c491979da8234332572c2e1407e08b08fc39afb",
                     "disposition": {
@@ -1065,9 +1109,9 @@
                 },
                 {
                     "title": "Incomplete targets",
-                    "line": 91,
+                    "line": 104,
                     "level": 2,
-                    "sha256": "41aa5be5def0701b7676c05dd95a649c063f810565de71593de66a1ed513dc80",
+                    "sha256": "b304c8f9eab4b2201c2ba543e07873063203fa42afa05e6ebb6a0150090d3f80",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["fallback-cross-link"]

@@ -6,11 +6,14 @@
 #include "parser.h"
 #include "inline_internal.h"
 #include "parts.h"
+#include "attributes.h"
 
 /* The elements whose syntax this element asks, as `self->peers` holds
  * them. */
-enum { CROSS_LINK_EMBED };
+enum { CROSS_LINK_EMBED, CROSS_LINK_ATTRIBUTES };
 static const markdown_core_element *const CROSS_LINK_PEERS[] = {[CROSS_LINK_EMBED] = &MARKDOWN_CORE_ELEMENT_EMBED,
+                                                                [CROSS_LINK_ATTRIBUTES] =
+                                                                    &MARKDOWN_CORE_ELEMENT_ATTRIBUTES,
                                                                 NULL};
 
 /* How a cross link's target goes on past a cursor: its path up to the `#`
@@ -177,6 +180,9 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
     }
     markdown_core_inline_state_place(inline_state, node, (int)start, (int)i + 1);
     markdown_core_inline_state_set_offset(inline_state, i + 2);
+    /* What follows a cross link or an embed may update it (no-flush.md
+     * 10.13). */
+    markdown_core_inline_made(inline_state, node);
     return node;
 }
 
@@ -202,13 +208,26 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_CROSS_LINK = {
 /* THE PARTS OF A CROSS LINK OR A CROSS EMBED (parts.h), as `match` reads
  * its body: the path up to the first `#`, the anchor after it and after
  * the `^` of a block identifier, up to the separator, and the label after
- * the separator, up to an embed's last separator before its dimensions. */
+ * the separator, up to an embed's last separator before its dimensions,
+ * and the attribute block that may follow the `]]`. */
+/* The attribute block after the `]]` that closes at `close`. */
+static void S_tail_parts(markdown_core_parts *parts, bufsize_t close) {
+    if (close + 2 < parts->length && parts->text[close + 2] == '{') {
+        markdown_core_attributes_parts(parts, close + 2);
+    }
+}
+
 void markdown_core_cross_link_parts(markdown_core_parts *parts) {
     const unsigned char *s = parts->text;
     const bufsize_t n = parts->length;
     const bool embed = markdown_core_node_get_kind(parts->node) == MARKDOWN_CORE_KIND_CROSS_EMBED;
     const markdown_core_cross_reference *cross = markdown_core_node_cross_reference((markdown_core_node *)parts->node);
-    const bufsize_t body = embed ? 3 : 2, close = n >= 2 ? n - 2 : n;
+    const bufsize_t body = embed ? 3 : 2;
+    /* No bracket stands before the closing `]]`. */
+    bufsize_t close = body;
+    while (close < n && s[close] != ']') {
+        close++;
+    }
     bufsize_t target = body, hash = -1;
     while (target < close && s[target] != '|' && !(s[target] == '\\' && target + 1 < close && s[target + 1] == '|')) {
         hash = hash < 0 && s[target] == '#' ? target : hash;
@@ -220,6 +239,7 @@ void markdown_core_cross_link_parts(markdown_core_parts *parts) {
         markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_ANCHOR, hash + 1 + block, target);
     }
     if (target >= close) {
+        S_tail_parts(parts, close);
         return;
     }
     const bufsize_t label = target + (s[target] == '|' ? 1 : 2);
@@ -239,6 +259,7 @@ void markdown_core_cross_link_parts(markdown_core_parts *parts) {
         markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_NONE, dimensions, close);
     }
     markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_NONE, label, end);
+    S_tail_parts(parts, close);
 }
 
 /* A cross reference's parts (markdown_core_record_ops), which view its text

@@ -2,14 +2,14 @@
 
 The deliverable is the corpus, its generative grammars, and the proofs below.
 [The checked-in corpus catalog](../../packages/markdown-core/benchmarks/grammar-corpus.json)
-contains all 173 certificates, their concrete grammars, normal forms and two
-complete examples per family. The run emits 740 documents, each measured once:
-in each of [two alphabets](#alphabets), 167 whole declared-language pairs, 6
+contains all 175 certificates, their concrete grammars, normal forms and two
+complete examples per family. The run emits 748 documents, each measured once:
+in each of [two alphabets](#alphabets), 169 whole declared-language pairs, 6
 local boundary pairs with complete hosts, and 12 controls for
 [rejection certificates](#rejection-certificates). The [feature acceptance ledger](benchmark-grammar-coverage.md) covers all
-30 syntax-guide features, 127 sections and 34 registered elements. Its explicit
-section mapping names certificates for 126 source-language sections and gives
-reviewed context-only dispositions for five sections. Certificates are registered
+30 syntax-guide features, 129 sections and 34 registered elements. Its explicit
+section mapping names certificates for 123 source-language sections and gives
+reviewed context-only dispositions for six sections. Certificates are registered
 directly from their source grammars and specification obligations.
 
 CommonMark/GFM features use the same input on both sides. Extensions use proved

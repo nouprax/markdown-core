@@ -33,15 +33,15 @@ the responsibility of the existing parity and regression pipelines.
    states. Requested unit counts are lower bounds; they cannot truncate this
    coverage. Callgrind measures these generated documents.
 
-There are **30 specification features, 126 sections, 34 registered elements,
-173 certificates and 740 generated documents**, 370 in each of two
+There are **30 specification features, 129 sections, 34 registered elements,
+175 certificates and 748 generated documents**, 374 in each of two
 [alphabets](benchmark-grammar-corpus.md#alphabets), each measured once.
-Of the 126 sections, **120 link to grammar certificates and six are explicitly
+Of the 129 sections, **123 link to grammar certificates and six are explicitly
 context-only** (headings without an anchor, links to headings, anchor ownership,
 two navigation introductions, and topic boundaries). Cross-feature links reuse the same certificate; a documentation
 heading does not demand another benchmark. Mixed sections link their source
 productions and explicitly keep output-coordinate rules in parity/regression.
-Of these, **167 certify whole declared languages and 6 certify local boundary
+Of these, **169 certify whole declared languages and 6 certify local boundary
 languages**. This is feature coverage, not a theorem that the union of these
 restricted grammars equals every possible document of the unrestricted dialect.
 In particular a boundary's residual is not proved impossible to match against

@@ -61,6 +61,19 @@ These become `CrossEmbed`, requesting transclusion. The second stores a raw
 label of `raw *caption*` and dimensions of 320 by 180. The kind of resource,
 loading, playback, and transclusion are determined by the application.
 
+## Attributes
+
+An [attribute container](attributes.md) right after the closing `]]`
+belongs to the cross link or embed, as one after a link or image does:
+
+```markdown
+[[Note#Part|label]]{#ref .c} ![[movie.mp4|caption|320x180]]{autoplay=1}
+```
+
+The cross link has anchor `ref` and class `c`; the embed keeps its
+dimensions and has the record `autoplay="1"`. A space before the brace
+prevents attachment, and an invalid container stays text.
+
 ## Dimensions
 
 An embed label can be `W`, `WxH`, `label|W`, or `label|WxH`, using the same
@@ -96,6 +109,6 @@ and `[[A##B]]` therefore fall back to ordinary Markdown. Escaping the first `[`
 prevents recognition; escaping `!` leaves a literal exclamation mark followed
 by an ordinary cross link.
 
-A recognized cross link ends at `]]`. A following destination, reference tail,
-or attribute container does not attach. Source inside code, formulas, comments,
+A recognized cross link ends at `]]`. A following destination or reference
+tail does not attach. Source inside code, formulas, comments,
 HTML tokens, and automatic URL tokens remains owned by those constructs.

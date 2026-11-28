@@ -785,10 +785,11 @@ static delimiter *S_insert_delimited_inline(markdown_core_inline_state *inline_s
 /* A token crossed into the owner's cut (element.h, markdown_core_follow,
  * `yields`): the follower gives it back. */
 static void S_cut_crossed(markdown_core_parser *parser, markdown_core_inline_state *inline_state) {
-    const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, inline_state->owner);
+    markdown_core_node *leader = markdown_core_parser_cut_leader(parser, inline_state->owner);
+    const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, leader);
     inline_state->cut = -1;
-    kind->follow[MARKDOWN_CORE_FOLLOW_TAIL]->undo(kind->follower[MARKDOWN_CORE_FOLLOW_TAIL], parser,
-                                                  inline_state->owner);
+    kind->follow[MARKDOWN_CORE_FOLLOW_TAIL]->undo(kind->follower[MARKDOWN_CORE_FOLLOW_TAIL], parser, leader);
+    inline_state->owner->cut_back = 0;
 }
 
 static bufsize_t inline_state_find_special_char(markdown_core_inline_state *inline_state) {
@@ -1114,9 +1115,9 @@ void markdown_core_inline_start_inlines(markdown_core_parser *parser, markdown_c
     }
     /* A cut its inlines may give back (element.h, markdown_core_follow,
      * `yields`) is read with the rest of the text. */
+    markdown_core_node *leader = root && parent->cut_back ? markdown_core_parser_cut_leader(parser, parent) : NULL;
     const markdown_core_follow *tail =
-        root && parent->cut_back ? markdown_core_parser_block_kind(parser, parent)->follow[MARKDOWN_CORE_FOLLOW_TAIL]
-                                 : NULL;
+        leader ? markdown_core_parser_block_kind(parser, leader)->follow[MARKDOWN_CORE_FOLLOW_TAIL] : NULL;
     const bool held = tail && tail->yields;
     bufsize_t text = content.len;
     if (held) {

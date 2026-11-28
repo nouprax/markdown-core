@@ -8,7 +8,7 @@
 //!
 //! ```bnf
 //! ; Restriction: only on the line that starts the block quote.
-//! callout ::= 0*3' ' '[!' 1*variant ']' [fold] [1*space_or_tab [title]]
+//! callout ::= 0*3' ' '[!' 1*variant ']' [fold] [1*space_or_tab [title] [attributes]]
 //!
 //! variant ::= ascii_alphanumeric | '_' | '-'
 //! fold ::= '+' | '-'
@@ -17,6 +17,9 @@
 //!
 //! The header makes its block quote a callout: `variant` is its kind, `+`
 //! makes it fold open and `-` fold shut, and the title is text.
+//! [Attributes][partial_attributes] that end the line, after the spaces and
+//! tabs before them, are the callout's, and a title that was all of them is
+//! none.
 //! Text right after the header, without whitespace, is not a header.
 //!
 //! ## Tokens
@@ -29,8 +32,10 @@
 //!
 //! [flow]: crate::construct::flow
 //! [block_quote]: crate::construct::block_quote
+//! [partial_attributes]: crate::construct::partial_attributes
 
 use crate::choice::Starts;
+use crate::construct::partial_attributes;
 use crate::construct::partial_space_or_tab::{space_or_tab, space_or_tab_min_max};
 use crate::event::{Content, Link, Name};
 use crate::state::{Name as StateName, State};
@@ -175,30 +180,48 @@ fn after(tokenizer: &mut Tokenizer) -> State {
     }
 }
 
-/// After whitespace, at an optional title.
+/// After whitespace, at an optional title, or at attributes that end the
+/// line.
 ///
 /// ```markdown
 /// > | > [!note] a
 ///               ^
 /// ```
 fn title(tokenizer: &mut Tokenizer) -> State {
-    if matches!(tokenizer.current, None | Some(b'\n')) {
-        State::Redo(StateName::Callout(Step::End))
-    } else {
-        tokenizer.enter(Name::CalloutTitle);
-        tokenizer.enter_link(
-            Name::Data,
-            Link {
-                previous: None,
-                next: None,
-                content: Content::Text,
-            },
-        );
-        State::Redo(StateName::Callout(Step::TitleInside))
+    match tokenizer.current {
+        None | Some(b'\n') => State::Redo(StateName::Callout(Step::End)),
+        Some(b'{') => {
+            tokenizer.attempt(
+                State::Next(StateName::Callout(Step::End)),
+                State::Next(StateName::Callout(Step::TitleStart)),
+            );
+            State::Redo(StateName::Attributes(partial_attributes::Step::Tail))
+        }
+        _ => State::Redo(StateName::Callout(Step::TitleStart)),
     }
 }
 
-/// In the title.
+/// At the title, which is not attributes alone.
+///
+/// ```markdown
+/// > | > [!note] a
+///               ^
+/// ```
+fn title_start(tokenizer: &mut Tokenizer) -> State {
+    tokenizer.enter(Name::CalloutTitle);
+    tokenizer.enter_link(
+        Name::Data,
+        Link {
+            previous: None,
+            next: None,
+            content: Content::Text,
+        },
+    );
+    State::Redo(StateName::Callout(Step::TitleInside))
+}
+
+/// In the title: at its end, attributes that end the line are taken from
+/// it.
 ///
 /// ```markdown
 /// > | > [!note] a
@@ -208,6 +231,14 @@ fn title_inside(tokenizer: &mut Tokenizer) -> State {
     if matches!(tokenizer.current, None | Some(b'\n')) {
         tokenizer.exit(Name::Data);
         tokenizer.exit(Name::CalloutTitle);
+        let exit = tokenizer.events.len() - 1;
+        let start = tokenizer.events[exit - 2].point.clone();
+        let end = tokenizer.point.index;
+        if let Some((cut, events)) = partial_attributes::line_tail(tokenizer, &start, end) {
+            tokenizer.events[exit - 1].point = cut.clone();
+            tokenizer.events[exit].point = cut;
+            tokenizer.events.extend(events);
+        }
         State::Redo(StateName::Callout(Step::End))
     } else {
         tokenizer.consume();
@@ -239,6 +270,7 @@ pub enum Step {
     Fold,
     After,
     Title,
+    TitleStart,
     TitleInside,
     End,
 }
@@ -260,6 +292,7 @@ pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
         Step::Fold => fold(tokenizer),
         Step::After => after(tokenizer),
         Step::Title => title(tokenizer),
+        Step::TitleStart => title_start(tokenizer),
         Step::TitleInside => title_inside(tokenizer),
         Step::End => end(tokenizer),
     }

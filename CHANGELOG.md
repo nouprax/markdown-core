@@ -46,6 +46,13 @@ promised to remain compatible between releases.
   `markdown_core_optional_string` itself and cannot fail. Swift, Kotlin and
   ES `anchor`, the wire format and the dump carry only explicit anchors.
 
+- Callouts, cross links and cross embeds take attributes. A callout's
+  attribute block ends its marker line, after the title and the spaces
+  before it, `> [!note] Title {#id .c}`, and is the `Callout`'s; a title
+  that was only the block is null. A cross link's or an embed's follows its
+  closing brackets right away, `[[Note]]{.c}`, `![[clip.mp4|320]]{autoplay}`,
+  as a link's or an image's does.
+
 - A definition starts only with `:`; Pandoc's `~` marker is text. A lone
   `-` in an attribute container is an ordinary bare name, `{-}` giving the
   record `-="true"`, no longer the class `unnumbered`.
